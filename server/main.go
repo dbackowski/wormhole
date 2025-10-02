@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net/http"
 
@@ -42,9 +43,13 @@ func handleConnection(conn *websocket.Conn) {
 }
 
 func main() {
+	flag.Int("port", 8080, "Port to run the server on (default: 8080, can also use PORT env var)")
+	flag.Parse()
+
+	port := flag.Lookup("port").Value.String()
 	http.HandleFunc("/ws", wsHandler)
-	fmt.Println("WebSocket server started on :8080")
-	err := http.ListenAndServe(":8080", nil)
+	fmt.Println("WebSocket server started on :" + port)
+	err := http.ListenAndServe(":"+port, nil)
 	if err != nil {
 		fmt.Println("Error starting server:", err)
 	}
