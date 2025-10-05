@@ -9,13 +9,18 @@ import (
 )
 
 func main() {
-	var serverURL = flag.String("server", "http://localhost:8080", "Server URL")
-
+	var serverURL = flag.String("server", "localhost:8080", "Server URL")
+	var domain = flag.String("domain", "", "Custom domain")
 	flag.Parse()
 
-	fmt.Println("Connecting to", *serverURL)
+	if *domain == "" {
+		log.Fatal("domain is required. Use -domain flag")
+	}
 
-	c, _, err := websocket.DefaultDialer.Dial("ws://localhost:8080/ws", nil)
+	var websocketURL = fmt.Sprintf("ws://%s.%s/ws", *domain, *serverURL)
+	fmt.Println("Connecting to", websocketURL)
+
+	c, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
 	if err != nil {
 		log.Fatal("dial:", err)
 	}
