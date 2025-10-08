@@ -8,6 +8,18 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type Message struct {
+	Type string `json:"type"`
+}
+
+func closeWebsocket(c *websocket.Conn) {
+	err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+	if err != nil {
+		log.Println("write close:", err)
+		return
+	}
+}
+
 func main() {
 	var serverURL = flag.String("server", "localhost:8080", "Server URL")
 	var domain = flag.String("domain", "", "Custom domain")
@@ -26,16 +38,20 @@ func main() {
 	}
 	defer c.Close()
 
-	err = c.WriteMessage(websocket.TextMessage, []byte("Hello, WebSocket!"))
+	for {
+		var message Message
 
-	if err != nil {
-		log.Println("write:", err)
-		return
-	}
+		err := c.ReadJSON(&message)
+		if err != nil {
+			log.Printf("Read error: %v", err)
+			return
+		}
 
-	err = c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-	if err != nil {
-		log.Println("write close:", err)
-		return
+		switch message.Type {
+		case "domain_taken":
+			fmt.Println("Domain is already taken. Please choose another one.")
+			closeWebsocket(c)
+			return
+		}
 	}
 }

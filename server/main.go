@@ -3,10 +3,23 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/websocket"
 )
+
+type Connections struct {
+	Domain string
+	Conn   *websocket.Conn
+}
+
+type Message struct {
+	Type string `json:"type"`
+}
+
+var connections = make(map[string]*Connections)
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -21,10 +34,37 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Domain %s is already taken", "damian")
+
+	var domain = strings.Split(r.Host, ".")[0]
+
+	if checkIfDomainAvailable(domain) {
+		domainTakenMsg := Message{
+			Type: "domain_taken",
+		}
+
+		conn.WriteJSON(domainTakenMsg)
+		conn.Close()
+		return
+	}
+
+	connections[domain] = &Connections{
+		Domain: domain,
+		Conn:   conn,
+	}
+
+	fmt.Printf("New connection for domain: %s\n", domain)
+
 	go handleConnection(conn)
 }
 
+func checkIfDomainAvailable(domain string) bool {
+	_, exists := connections[domain]
+	return exists
+}
+
 func handleConnection(conn *websocket.Conn) {
+
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
