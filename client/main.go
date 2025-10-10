@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -9,7 +10,9 @@ import (
 )
 
 type Message struct {
-	Type string `json:"type"`
+	Type   string `json:"type"`
+	Method string `json:"method,omitempty"`
+	URL    string `json:"url,omitempty"`
 }
 
 func closeWebsocket(c *websocket.Conn) {
@@ -52,6 +55,10 @@ func main() {
 			fmt.Println("Domain is already taken. Please choose another one.")
 			closeWebsocket(c)
 			return
+		case "http_request":
+			fmt.Println("Received HTTP request notification from server.")
+			jsonMessage, _ := json.MarshalIndent(message, "", "  ")
+			fmt.Println(string(jsonMessage))
 		}
 	}
 }

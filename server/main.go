@@ -1,9 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 
@@ -16,10 +16,12 @@ type Connections struct {
 }
 
 type Message struct {
-	Type string `json:"type"`
+	Type   string `json:"type"`
+	Method string `json:"method,omitempty"`
+	URL    string `json:"url,omitempty"`
 }
 
-var connections = make(map[string]*Connections)
+var connections = make(map[string]*websocket.Conn)
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -34,8 +36,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Domain %s is already taken", "damian")
-
 	var domain = strings.Split(r.Host, ".")[0]
 
 	if checkIfDomainAvailable(domain) {
@@ -48,14 +48,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	connections[domain] = &Connections{
-		Domain: domain,
-		Conn:   conn,
-	}
+	connections[domain] = conn
 
 	fmt.Printf("New connection for domain: %s\n", domain)
 
-	go handleConnection(conn)
+	go handleWebSocketConnection(conn)
 }
 
 func checkIfDomainAvailable(domain string) bool {
@@ -63,8 +60,7 @@ func checkIfDomainAvailable(domain string) bool {
 	return exists
 }
 
-func handleConnection(conn *websocket.Conn) {
-
+func handleWebSocketConnection(conn *websocket.Conn) {
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
@@ -82,12 +78,34 @@ func handleConnection(conn *websocket.Conn) {
 	defer conn.Close()
 }
 
+func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
+	var domain = strings.Split(r.Host, ".")[0]
+
+	conn, exists := connections[domain]
+
+	if !exists {
+		http.Error(w, "Tunnel not found", http.StatusNotFound)
+		return
+	} else {
+		requestMsg := Message{
+			Type:   "http_request",
+			URL:    r.URL.String(),
+			Method: r.Method,
+		}
+		jsonMessage, _ := json.MarshalIndent(requestMsg, "", "  ")
+		fmt.Println(string(jsonMessage))
+		conn.WriteJSON(requestMsg)
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
 func main() {
 	flag.Int("port", 8080, "Port to run the server on (default: 8080, can also use PORT env var)")
 	flag.Parse()
 
 	port := flag.Lookup("port").Value.String()
 	http.HandleFunc("/ws", wsHandler)
+	http.HandleFunc("/", handleHTTPConnection)
 	fmt.Println("WebSocket server started on :" + port)
 	err := http.ListenAndServe(":"+port, nil)
 	if err != nil {
