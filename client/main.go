@@ -26,10 +26,16 @@ func closeWebsocket(c *websocket.Conn) {
 func main() {
 	var serverURL = flag.String("server", "localhost:8080", "Server URL")
 	var domain = flag.String("domain", "", "Custom domain")
+	var local = flag.String("local", "", "Local server URL")
+
 	flag.Parse()
 
 	if *domain == "" {
 		log.Fatal("domain is required. Use -domain flag")
+	}
+
+	if *local == "" {
+		log.Fatal("local is required. Use -local flag")
 	}
 
 	var websocketURL = fmt.Sprintf("ws://%s.%s/ws", *domain, *serverURL)
@@ -57,6 +63,8 @@ func main() {
 			return
 		case "http_request":
 			fmt.Println("Received HTTP request notification from server.")
+			localURL := *local + message.URL
+			fmt.Printf("Forwarding to local server at %s\n", localURL)
 			jsonMessage, _ := json.MarshalIndent(message, "", "  ")
 			fmt.Println(string(jsonMessage))
 		}
