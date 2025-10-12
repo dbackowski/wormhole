@@ -4,29 +4,40 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
-type Connections struct {
-	Domain string
-	Conn   *websocket.Conn
+type Connection struct {
+	Domain   string
+	Conn     *websocket.Conn
+	Requests map[string]chan *Message
 }
 
 type Message struct {
 	Type   string `json:"type"`
+	Domain string `json:"domain,omitempty"`
+	UUID   string `json:"uuid"`
 	Method string `json:"method,omitempty"`
 	URL    string `json:"url,omitempty"`
+	Body   []byte `json:"body,omitempty"`
+	Status int    `json:"status,omitempty"`
 }
 
-var connections = make(map[string]*websocket.Conn)
+var connections = make(map[string]*Connection)
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
+}
+
+func GenerateUUID() string {
+	return uuid.New().String()
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +59,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	connections[domain] = conn
+	connections[domain] = &Connection{
+		Domain:   domain,
+		Conn:     conn,
+		Requests: make(map[string]chan *Message),
+	}
 
 	fmt.Printf("New connection for domain: %s\n", domain)
 
@@ -61,27 +76,36 @@ func checkIfDomainAvailable(domain string) bool {
 }
 
 func handleWebSocketConnection(conn *websocket.Conn) {
-	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			fmt.Println("Error reading message:", err)
-			break
-		}
-		fmt.Printf("Received: %s\n", message)
+	defer conn.Close()
 
-		if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
-			fmt.Println("Error writing message:", err)
-			break
+	for {
+		var message Message
+
+		err := conn.ReadJSON(&message)
+		if err != nil {
+			log.Printf("Read error: %v", err)
+			return
+		}
+
+		switch message.Type {
+		case "http_response":
+			fmt.Println("Received HTTP response from client.")
+			jsonMessage, _ := json.MarshalIndent(message, "", "  ")
+			fmt.Println(string(jsonMessage))
+
+			connection, exists := connections[message.Domain]
+
+			if exists {
+				fmt.Printf("Forwarding response for UUID %s with status %d\n", message.UUID, message.Status)
+				connection.Requests[message.UUID] <- &message
+			}
 		}
 	}
-
-	defer conn.Close()
 }
 
 func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 	var domain = strings.Split(r.Host, ".")[0]
-
-	conn, exists := connections[domain]
+	connection, exists := connections[domain]
 
 	if !exists {
 		http.Error(w, "Tunnel not found", http.StatusNotFound)
@@ -89,13 +113,21 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 	} else {
 		requestMsg := Message{
 			Type:   "http_request",
+			UUID:   GenerateUUID(),
 			URL:    r.URL.String(),
 			Method: r.Method,
 		}
 		jsonMessage, _ := json.MarshalIndent(requestMsg, "", "  ")
 		fmt.Println(string(jsonMessage))
-		conn.WriteJSON(requestMsg)
-		w.WriteHeader(http.StatusOK)
+		connection.Conn.WriteJSON(requestMsg)
+
+		connection.Requests[requestMsg.UUID] = make(chan *Message)
+
+		responseMsg := <-connection.Requests[requestMsg.UUID]
+		fmt.Printf("Forwarding response for UUID %s with status %d\n", responseMsg.UUID, responseMsg.Status)
+		w.WriteHeader(responseMsg.Status)
+		w.Write(responseMsg.Body)
+		delete(connection.Requests, requestMsg.UUID)
 	}
 }
 

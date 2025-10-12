@@ -13,8 +13,12 @@ import (
 
 type Message struct {
 	Type   string `json:"type"`
+	Domain string `json:"domain,omitempty"`
+	UUID   string `json:"uuid"`
 	Method string `json:"method,omitempty"`
 	URL    string `json:"url,omitempty"`
+	Body   []byte `json:"body,omitempty"`
+	Status int    `json:"status,omitempty"`
 }
 
 func closeWebsocket(c *websocket.Conn) {
@@ -25,7 +29,7 @@ func closeWebsocket(c *websocket.Conn) {
 	}
 }
 
-func handleServerHTTPRequest(message Message, localURL string) {
+func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Message, localURL string) {
 	req, err := http.NewRequest(message.Method, localURL, nil)
 	if err != nil {
 		fmt.Printf("client: could not create request: %s\n", err)
@@ -45,6 +49,20 @@ func handleServerHTTPRequest(message Message, localURL string) {
 	}
 	fmt.Printf("client: response body: %s\n", resBody)
 	defer res.Body.Close()
+
+	responseMsg := Message{
+		Type:   "http_response",
+		Domain: domain,
+		URL:    string(resBody),
+		UUID:   message.UUID,
+		Body:   resBody,
+		Status: res.StatusCode,
+	}
+
+	conn.WriteJSON(responseMsg)
+
+	// jsonMessage, _ := json.MarshalIndent(responseMsg, "", "  ")
+	// fmt.Println(string(jsonMessage))
 }
 
 func main() {
@@ -65,16 +83,16 @@ func main() {
 	var websocketURL = fmt.Sprintf("ws://%s.%s/ws", *domain, *serverURL)
 	fmt.Println("Connecting to", websocketURL)
 
-	c, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
+	conn, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
 	if err != nil {
 		log.Fatal("dial:", err)
 	}
-	defer c.Close()
+	defer conn.Close()
 
 	for {
 		var message Message
 
-		err := c.ReadJSON(&message)
+		err := conn.ReadJSON(&message)
 		if err != nil {
 			log.Printf("Read error: %v", err)
 			return
@@ -83,7 +101,7 @@ func main() {
 		switch message.Type {
 		case "domain_taken":
 			fmt.Println("Domain is already taken. Please choose another one.")
-			closeWebsocket(c)
+			closeWebsocket(conn)
 			return
 		case "http_request":
 			fmt.Println("Received HTTP request notification from server.")
@@ -91,7 +109,7 @@ func main() {
 			fmt.Printf("Forwarding to local server at %s\n", localURL)
 			jsonMessage, _ := json.MarshalIndent(message, "", "  ")
 			fmt.Println(string(jsonMessage))
-			handleServerHTTPRequest(message, localURL)
+			handleServerHTTPRequest(conn, *domain, message, localURL)
 		}
 	}
 }
