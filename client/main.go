@@ -12,13 +12,14 @@ import (
 )
 
 type Message struct {
-	Type   string `json:"type"`
-	Domain string `json:"domain,omitempty"`
-	UUID   string `json:"uuid"`
-	Method string `json:"method,omitempty"`
-	URL    string `json:"url,omitempty"`
-	Body   []byte `json:"body,omitempty"`
-	Status int    `json:"status,omitempty"`
+	Type    string            `json:"type"`
+	Domain  string            `json:"domain,omitempty"`
+	UUID    string            `json:"uuid"`
+	Method  string            `json:"method,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    []byte            `json:"body,omitempty"`
+	Status  int               `json:"status,omitempty"`
 }
 
 func closeWebsocket(c *websocket.Conn) {
@@ -50,19 +51,25 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 	fmt.Printf("client: response body: %s\n", resBody)
 	defer res.Body.Close()
 
+	headers := make(map[string]string)
+
+	for key, values := range res.Header {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+
 	responseMsg := Message{
-		Type:   "http_response",
-		Domain: domain,
-		URL:    string(resBody),
-		UUID:   message.UUID,
-		Body:   resBody,
-		Status: res.StatusCode,
+		Type:    "http_response",
+		Domain:  domain,
+		URL:     string(resBody),
+		UUID:    message.UUID,
+		Headers: headers,
+		Body:    resBody,
+		Status:  res.StatusCode,
 	}
 
 	conn.WriteJSON(responseMsg)
-
-	// jsonMessage, _ := json.MarshalIndent(responseMsg, "", "  ")
-	// fmt.Println(string(jsonMessage))
 }
 
 func main() {

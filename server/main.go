@@ -19,13 +19,14 @@ type Connection struct {
 }
 
 type Message struct {
-	Type   string `json:"type"`
-	Domain string `json:"domain,omitempty"`
-	UUID   string `json:"uuid"`
-	Method string `json:"method,omitempty"`
-	URL    string `json:"url,omitempty"`
-	Body   []byte `json:"body,omitempty"`
-	Status int    `json:"status,omitempty"`
+	Type    string            `json:"type"`
+	Domain  string            `json:"domain,omitempty"`
+	UUID    string            `json:"uuid"`
+	Method  string            `json:"method,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    []byte            `json:"body,omitempty"`
+	Status  int               `json:"status,omitempty"`
 }
 
 var connections = make(map[string]*Connection)
@@ -127,6 +128,11 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 
 		responseMsg := <-connection.Requests[requestMsg.UUID]
 		fmt.Printf("Forwarding response for UUID %s with status %d\n", responseMsg.UUID, responseMsg.Status)
+
+		for key, value := range responseMsg.Headers {
+			w.Header().Set(key, value)
+		}
+
 		w.WriteHeader(responseMsg.Status)
 		w.Write(responseMsg.Body)
 		delete(connection.Requests, requestMsg.UUID)
