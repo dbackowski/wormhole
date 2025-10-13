@@ -67,7 +67,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("New connection for domain: %s\n", domain)
 
-	go handleWebSocketConnection(conn)
+	go handleWebSocketConnection(domain, conn)
 }
 
 func checkIfDomainAvailable(domain string) bool {
@@ -75,7 +75,7 @@ func checkIfDomainAvailable(domain string) bool {
 	return exists
 }
 
-func handleWebSocketConnection(conn *websocket.Conn) {
+func handleWebSocketConnection(domain string, conn *websocket.Conn) {
 	defer conn.Close()
 
 	for {
@@ -84,6 +84,8 @@ func handleWebSocketConnection(conn *websocket.Conn) {
 		err := conn.ReadJSON(&message)
 		if err != nil {
 			log.Printf("Read error: %v", err)
+			fmt.Printf("Closing connection for domain: %s\n", domain)
+			delete(connections, domain)
 			return
 		}
 
