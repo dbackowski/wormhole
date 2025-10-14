@@ -93,18 +93,23 @@ func handleWebSocketConnection(domain string, conn *websocket.Conn) {
 
 		switch message.Type {
 		case "http_response":
-			fmt.Println("Received HTTP response from client.")
-			jsonMessage, _ := json.MarshalIndent(message, "", "  ")
-			fmt.Println(string(jsonMessage))
+			fmt.Println("Received HTTP response from client:")
+			prettyPrintMessage(message)
 
 			connection, exists := connections[message.Domain]
 
 			if exists {
-				fmt.Printf("Forwarding response for UUID %s with status %d\n", message.UUID, message.Status)
 				connection.Requests[message.UUID] <- &message
 			}
 		}
 	}
+}
+
+func prettyPrintMessage(msg Message) {
+	clone := msg
+	clone.Body = nil
+	jsonMessage, _ := json.MarshalIndent(clone, "", "  ")
+	fmt.Println(string(jsonMessage))
 }
 
 func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
@@ -116,9 +121,11 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	} else {
 		reqBody, err := io.ReadAll(r.Body)
+		defer r.Body.Close()
 
 		if err != nil {
 			fmt.Printf("client: could not read response body: %s\n", err)
+			return
 		}
 		headers := make(map[string]string)
 
@@ -137,14 +144,12 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 			Body:    reqBody,
 		}
 
-		jsonMessage, _ := json.MarshalIndent(requestMsg, "", "  ")
-		fmt.Println(string(jsonMessage))
+		fmt.Println("Forwarding HTTP request to client:")
+		prettyPrintMessage(requestMsg)
+
 		connection.Conn.WriteJSON(requestMsg)
-
 		connection.Requests[requestMsg.UUID] = make(chan *Message)
-
 		responseMsg := <-connection.Requests[requestMsg.UUID]
-		fmt.Printf("Forwarding response for UUID %s with status %d\n", responseMsg.UUID, responseMsg.Status)
 
 		for key, value := range responseMsg.Headers {
 			w.Header().Set(key, value)
@@ -165,6 +170,7 @@ func main() {
 	http.HandleFunc("/", handleHTTPConnection)
 	fmt.Println("WebSocket server started on :" + port)
 	err := http.ListenAndServe(":"+port, nil)
+
 	if err != nil {
 		fmt.Println("Error starting server:", err)
 	}

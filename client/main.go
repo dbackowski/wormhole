@@ -35,6 +35,7 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 	req, err := http.NewRequest(message.Method, localURL, bytes.NewReader(message.Body))
 	if err != nil {
 		fmt.Printf("client: could not create request: %s\n", err)
+		return
 	}
 
 	for key, value := range message.Headers {
@@ -44,17 +45,17 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Printf("client: error making http request: %s\n", err)
+		return
 	}
+	defer res.Body.Close()
 
-	fmt.Printf("client: got response!\n")
-	fmt.Printf("client: status code: %d\n", res.StatusCode)
+	fmt.Printf("Response status code: %d\n", res.StatusCode)
 
 	resBody, err := io.ReadAll(res.Body)
 	if err != nil {
 		fmt.Printf("client: could not read response body: %s\n", err)
+		return
 	}
-	fmt.Printf("client: response body: %s\n", resBody)
-	defer res.Body.Close()
 
 	headers := make(map[string]string)
 
