@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -114,12 +115,28 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Tunnel not found", http.StatusNotFound)
 		return
 	} else {
-		requestMsg := Message{
-			Type:   "http_request",
-			UUID:   GenerateUUID(),
-			URL:    r.URL.String(),
-			Method: r.Method,
+		reqBody, err := io.ReadAll(r.Body)
+
+		if err != nil {
+			fmt.Printf("client: could not read response body: %s\n", err)
 		}
+		headers := make(map[string]string)
+
+		for key, values := range r.Header {
+			if len(values) > 0 {
+				headers[key] = values[0]
+			}
+		}
+
+		requestMsg := Message{
+			Type:    "http_request",
+			UUID:    GenerateUUID(),
+			URL:     r.URL.String(),
+			Method:  r.Method,
+			Headers: headers,
+			Body:    reqBody,
+		}
+
 		jsonMessage, _ := json.MarshalIndent(requestMsg, "", "  ")
 		fmt.Println(string(jsonMessage))
 		connection.Conn.WriteJSON(requestMsg)

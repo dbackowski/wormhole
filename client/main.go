@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -31,9 +32,13 @@ func closeWebsocket(c *websocket.Conn) {
 }
 
 func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Message, localURL string) {
-	req, err := http.NewRequest(message.Method, localURL, nil)
+	req, err := http.NewRequest(message.Method, localURL, bytes.NewReader(message.Body))
 	if err != nil {
 		fmt.Printf("client: could not create request: %s\n", err)
+	}
+
+	for key, value := range message.Headers {
+		req.Header.Set(key, value)
 	}
 
 	res, err := http.DefaultClient.Do(req)
@@ -62,7 +67,6 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 	responseMsg := Message{
 		Type:    "http_response",
 		Domain:  domain,
-		URL:     string(resBody),
 		UUID:    message.UUID,
 		Headers: headers,
 		Body:    resBody,
