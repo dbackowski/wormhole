@@ -23,6 +23,13 @@ type Message struct {
 	Status  int               `json:"status,omitempty"`
 }
 
+func prettyPrintMessage(msg Message) {
+	clone := msg
+	clone.Body = nil
+	jsonMessage, _ := json.MarshalIndent(clone, "", "  ")
+	fmt.Println(string(jsonMessage))
+}
+
 func closeWebsocket(c *websocket.Conn) {
 	err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 	if err != nil {
@@ -39,10 +46,21 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 	}
 
 	for key, value := range message.Headers {
-		req.Header.Set(key, value)
+		if key != "Origin" {
+			req.Header.Set(key, value)
+		}
 	}
 
-	res, err := http.DefaultClient.Do(req)
+	var customClient = &http.Client{
+		Transport: &http.Transport{
+			DisableKeepAlives: true, // Disable connection reuse
+		},
+	}
+
+	res, err := customClient.Do(req)
+
+	//res, err := http.DefaultClient.Do(req)
+
 	if err != nil {
 		fmt.Printf("client: error making http request: %s\n", err)
 		return
@@ -69,6 +87,8 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 		Type:    "http_response",
 		Domain:  domain,
 		UUID:    message.UUID,
+		Method:  message.Method,
+		URL:     message.URL,
 		Headers: headers,
 		Body:    resBody,
 		Status:  res.StatusCode,
@@ -116,11 +136,12 @@ func main() {
 			closeWebsocket(conn)
 			return
 		case "http_request":
-			fmt.Println("Received HTTP request notification from server.")
+			fmt.Println("Received HTTP request notification from server:")
+			prettyPrintMessage(message)
+
 			localURL := *local + message.URL
 			fmt.Printf("Forwarding to local server at %s\n", localURL)
-			jsonMessage, _ := json.MarshalIndent(message, "", "  ")
-			fmt.Println(string(jsonMessage))
+
 			handleServerHTTPRequest(conn, *domain, message, localURL)
 		}
 	}

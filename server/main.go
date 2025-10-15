@@ -130,6 +130,13 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 		headers := make(map[string]string)
 
 		for key, values := range r.Header {
+			// Ignore WebSocket upgrade requests, solve how to handle them later
+			if key == "Connection" && values[0] == "Upgrade" {
+				fmt.Println("Ignoring WebSocket upgrade request")
+				http.Error(w, "WebSocket upgrade not supported", http.StatusBadRequest)
+				return
+			}
+
 			if len(values) > 0 {
 				headers[key] = values[0]
 			}
@@ -147,7 +154,13 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Forwarding HTTP request to client:")
 		prettyPrintMessage(requestMsg)
 
-		connection.Conn.WriteJSON(requestMsg)
+		err = connection.Conn.WriteJSON(requestMsg)
+
+		if err != nil {
+			fmt.Printf("Error sending WebSocket message: %v\n", err)
+			return
+		}
+
 		connection.Requests[requestMsg.UUID] = make(chan *Message)
 		responseMsg := <-connection.Requests[requestMsg.UUID]
 
