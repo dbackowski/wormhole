@@ -20,14 +20,14 @@ type Connection struct {
 }
 
 type Message struct {
-	Type    string            `json:"type"`
-	Domain  string            `json:"domain,omitempty"`
-	UUID    string            `json:"uuid"`
-	Method  string            `json:"method,omitempty"`
-	URL     string            `json:"url,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    []byte            `json:"body,omitempty"`
-	Status  int               `json:"status,omitempty"`
+	Type    string              `json:"type"`
+	Domain  string              `json:"domain,omitempty"`
+	UUID    string              `json:"uuid"`
+	Method  string              `json:"method,omitempty"`
+	URL     string              `json:"url,omitempty"`
+	Headers map[string][]string `json:"headers,omitempty"`
+	Body    []byte              `json:"body,omitempty"`
+	Status  int                 `json:"status,omitempty"`
 }
 
 var connections = make(map[string]*Connection)
@@ -127,7 +127,7 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("client: could not read response body: %s\n", err)
 			return
 		}
-		headers := make(map[string]string)
+		headers := make(map[string][]string)
 
 		for key, values := range r.Header {
 			// Ignore WebSocket upgrade requests, solve how to handle them later
@@ -138,7 +138,7 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if len(values) > 0 {
-				headers[key] = values[0]
+				headers[key] = values
 			}
 		}
 
@@ -164,8 +164,10 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 		connection.Requests[requestMsg.UUID] = make(chan *Message)
 		responseMsg := <-connection.Requests[requestMsg.UUID]
 
-		for key, value := range responseMsg.Headers {
-			w.Header().Set(key, value)
+		for key, values := range responseMsg.Headers {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
 		}
 
 		w.WriteHeader(responseMsg.Status)

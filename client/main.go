@@ -13,14 +13,14 @@ import (
 )
 
 type Message struct {
-	Type    string            `json:"type"`
-	Domain  string            `json:"domain,omitempty"`
-	UUID    string            `json:"uuid"`
-	Method  string            `json:"method,omitempty"`
-	URL     string            `json:"url,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    []byte            `json:"body,omitempty"`
-	Status  int               `json:"status,omitempty"`
+	Type    string              `json:"type"`
+	Domain  string              `json:"domain,omitempty"`
+	UUID    string              `json:"uuid"`
+	Method  string              `json:"method,omitempty"`
+	URL     string              `json:"url,omitempty"`
+	Headers map[string][]string `json:"headers,omitempty"`
+	Body    []byte              `json:"body,omitempty"`
+	Status  int                 `json:"status,omitempty"`
 }
 
 func prettyPrintMessage(msg Message) {
@@ -45,9 +45,11 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 		return
 	}
 
-	for key, value := range message.Headers {
+	for key, values := range message.Headers {
 		if key != "Origin" {
-			req.Header.Set(key, value)
+			for _, value := range values {
+				req.Header.Add(key, value)
+			}
 		}
 	}
 
@@ -75,11 +77,11 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 		return
 	}
 
-	headers := make(map[string]string)
+	headers := make(map[string][]string)
 
 	for key, values := range res.Header {
 		if len(values) > 0 {
-			headers[key] = values[0]
+			headers[key] = values
 		}
 	}
 
