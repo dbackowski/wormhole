@@ -55,11 +55,11 @@ go run client/main.go -server=localhost:8080 -domain=mysubdomain -local=http://l
 
 ## Features
 
-✅ **Custom Subdomains** - Choose your own subdomain name
-✅ **Real-time Tunneling** - Instant request forwarding via WebSockets
-✅ **Header Preservation** - Complete HTTP headers are maintained
-✅ **Multiple Clients** - Support for multiple simultaneous tunnels
-✅ **Automatic Cleanup** - Domains are released when clients disconnect
+✅ **Custom Subdomains** - Choose your own subdomain name  
+✅ **Real-time Tunneling** - Instant request forwarding via WebSockets  
+✅ **Header Preservation** - Complete HTTP headers are maintained  
+✅ **Multiple Clients** - Support for multiple simultaneous tunnels  
+✅ **Automatic Cleanup** - Domains are released when clients disconnect  
 
 ## Example Use Cases
 
