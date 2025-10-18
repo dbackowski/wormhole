@@ -129,6 +129,8 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 		}
 		headers := make(map[string][]string)
 
+		headers["Host"] = []string{r.Host}
+
 		for key, values := range r.Header {
 			// Ignore WebSocket upgrade requests, solve how to handle them later
 			if key == "Connection" && values[0] == "Upgrade" {

@@ -45,11 +45,11 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 		return
 	}
 
+	req.Host = message.Headers["Host"][0]
+
 	for key, values := range message.Headers {
-		if key != "Origin" {
-			for _, value := range values {
-				req.Header.Add(key, value)
-			}
+		for _, value := range values {
+			req.Header.Add(key, value)
 		}
 	}
 
