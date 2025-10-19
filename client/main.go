@@ -57,6 +57,10 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 		Transport: &http.Transport{
 			DisableKeepAlives: true, // Disable connection reuse
 		},
+		// Don't follow redirects, instead pass them back to the browser
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
 	res, err := customClient.Do(req)
