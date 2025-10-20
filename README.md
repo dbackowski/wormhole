@@ -43,7 +43,7 @@ go run server/main.go -port=8080
 
 ### Client Options
 ```bash
-go run client/main.go -server=localhost:8080 -domain=mysubdomain -local=http://localhost:3000
+go run client/main.go -server=http://localhost:8080 -domain=mysubdomain -local=http://localhost:3000
 ```
 
 **Required flags:**
@@ -51,7 +51,7 @@ go run client/main.go -server=localhost:8080 -domain=mysubdomain -local=http://l
 - `-local`: URL of your local development server
 
 **Optional flags:**
-- `-server`: Server address (default: localhost:8080)
+- `-server`: Server URL (default: http://localhost:8080)
 
 ## Features
 
