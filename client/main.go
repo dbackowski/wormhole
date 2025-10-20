@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/websocket"
 )
@@ -104,7 +105,7 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 }
 
 func main() {
-	var serverURL = flag.String("server", "localhost:8080", "Server URL")
+	var server = flag.String("server", "http://localhost:8080", "Server URL")
 	var domain = flag.String("domain", "", "Custom domain")
 	var local = flag.String("local", "", "Local server URL")
 
@@ -117,14 +118,30 @@ func main() {
 	if *local == "" {
 		log.Fatal("local is required. Use -local flag")
 	}
+	var ws_scheme string
 
-	var websocketURL = fmt.Sprintf("ws://%s.%s/ws", *domain, *serverURL)
-	fmt.Println("Connecting to", websocketURL)
+	if strings.HasPrefix(*server, "https://") {
+		ws_scheme = "wss"
+	} else {
+		ws_scheme = "ws"
+	}
+
+	serverHost := strings.TrimPrefix(*server, "http://")
+	serverHost = strings.TrimPrefix(serverHost, "https://")
+	serverHost = strings.TrimRight(serverHost, "/")
+
+	var websocketURL = fmt.Sprintf("%s://%s.%s/ws", ws_scheme, *domain, serverHost)
 
 	conn, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
 	if err != nil {
 		log.Fatal("dial:", err)
 	}
+
+	fmt.Println("Connected to server.")
+	scheme := strings.Split(*server, "://")[0]
+	fmt.Println("Your tunnel is available at:", scheme+"://"+*domain+"."+serverHost)
+	fmt.Println("Waiting for incoming HTTP requests...")
+
 	defer conn.Close()
 
 	for {
