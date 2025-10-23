@@ -39,7 +39,7 @@ func closeWebsocket(c *websocket.Conn) {
 	}
 }
 
-func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Message, localURL string) {
+func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Message, localURL string, debug bool) {
 	req, err := http.NewRequest(message.Method, localURL, bytes.NewReader(message.Body))
 	if err != nil {
 		fmt.Printf("client: could not create request: %s\n", err)
@@ -66,15 +66,17 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 
 	res, err := customClient.Do(req)
 
-	//res, err := http.DefaultClient.Do(req)
-
 	if err != nil {
 		fmt.Printf("client: error making http request: %s\n", err)
 		return
 	}
 	defer res.Body.Close()
 
-	fmt.Printf("Response status code: %d\n", res.StatusCode)
+	if debug {
+		fmt.Printf("Response status code: %d\n", res.StatusCode)
+	} else {
+		fmt.Printf("%s %s -> %d\n", message.Method, localURL, res.StatusCode)
+	}
 
 	resBody, err := io.ReadAll(res.Body)
 	if err != nil {
@@ -108,6 +110,7 @@ func main() {
 	var server = flag.String("server", "http://localhost:8080", "Server URL")
 	var domain = flag.String("domain", "", "Custom domain")
 	var local = flag.String("local", "", "Local server URL")
+	var debug = flag.Bool("debug", false, "Enable debug mode")
 
 	flag.Parse()
 
@@ -159,13 +162,15 @@ func main() {
 			closeWebsocket(conn)
 			return
 		case "http_request":
-			fmt.Println("Received HTTP request notification from server:")
-			prettyPrintMessage(message)
-
 			localURL := *local + message.URL
-			fmt.Printf("Forwarding to local server at %s\n", localURL)
 
-			handleServerHTTPRequest(conn, *domain, message, localURL)
+			if *debug {
+				fmt.Println("Received HTTP request notification from server:")
+				prettyPrintMessage(message)
+				fmt.Printf("Forwarding to local server at %s\n", localURL)
+			}
+
+			handleServerHTTPRequest(conn, *domain, message, localURL, *debug)
 		}
 	}
 }
