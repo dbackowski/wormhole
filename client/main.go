@@ -67,7 +67,23 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 	res, err := customClient.Do(req)
 
 	if err != nil {
-		fmt.Printf("client: error making http request: %s\n", err)
+		responseMsg := Message{
+			Type:   "http_response",
+			Domain: domain,
+			UUID:   message.UUID,
+			Method: message.Method,
+			URL:    message.URL,
+			Status: 502,
+			Body:   []byte("Bad Gateway"),
+		}
+
+		if debug {
+			fmt.Printf("client: error making http request: %s\n", err)
+		} else {
+			fmt.Printf("%s %s -> %d\n", responseMsg.Method, localURL, responseMsg.Status)
+		}
+
+		conn.WriteJSON(responseMsg)
 		return
 	}
 	defer res.Body.Close()
