@@ -123,6 +123,8 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 }
 
 func main() {
+	fmt.Printf("\x1bc")
+
 	var server = flag.String("server", "http://localhost:8080", "Server URL")
 	var domain = flag.String("domain", "", "Custom domain")
 	var local = flag.String("local", "", "Local server URL")
