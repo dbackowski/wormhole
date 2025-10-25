@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -55,6 +56,7 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 	}
 
 	var customClient = &http.Client{
+		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
 			DisableKeepAlives: true, // Disable connection reuse
 		},

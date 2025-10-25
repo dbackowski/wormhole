@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -164,17 +165,23 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 		}
 
 		connection.Requests[requestMsg.UUID] = make(chan *Message)
-		responseMsg := <-connection.Requests[requestMsg.UUID]
 
-		for key, values := range responseMsg.Headers {
-			for _, value := range values {
-				w.Header().Add(key, value)
+		select {
+		case responseMsg := <-connection.Requests[requestMsg.UUID]:
+			for key, values := range responseMsg.Headers {
+				for _, value := range values {
+					w.Header().Add(key, value)
+				}
 			}
-		}
 
-		w.WriteHeader(responseMsg.Status)
-		w.Write(responseMsg.Body)
-		delete(connection.Requests, requestMsg.UUID)
+			w.WriteHeader(responseMsg.Status)
+			w.Write(responseMsg.Body)
+			delete(connection.Requests, requestMsg.UUID)
+		case <-time.After(10 * time.Second):
+			w.WriteHeader(http.StatusRequestTimeout)
+			w.Write([]byte("Request timeout"))
+			delete(connection.Requests, requestMsg.UUID)
+		}
 	}
 }
 
