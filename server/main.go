@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dbackowski/wormhole/common"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
@@ -17,18 +17,7 @@ import (
 type Connection struct {
 	Domain   string
 	Conn     *websocket.Conn
-	Requests map[string]chan *Message
-}
-
-type Message struct {
-	Type    string              `json:"type"`
-	Domain  string              `json:"domain,omitempty"`
-	UUID    string              `json:"uuid"`
-	Method  string              `json:"method,omitempty"`
-	URL     string              `json:"url,omitempty"`
-	Headers map[string][]string `json:"headers,omitempty"`
-	Body    []byte              `json:"body,omitempty"`
-	Status  int                 `json:"status,omitempty"`
+	Requests map[string]chan *common.Message
 }
 
 var connections = make(map[string]*Connection)
@@ -53,7 +42,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	var domain = strings.Split(r.Host, ".")[0]
 
 	if checkIfDomainAvailable(domain) {
-		domainTakenMsg := Message{
+		domainTakenMsg := common.Message{
 			Type: "domain_taken",
 		}
 
@@ -65,7 +54,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	connections[domain] = &Connection{
 		Domain:   domain,
 		Conn:     conn,
-		Requests: make(map[string]chan *Message),
+		Requests: make(map[string]chan *common.Message),
 	}
 
 	fmt.Printf("New connection for domain: %s\n", domain)
@@ -82,7 +71,7 @@ func handleWebSocketConnection(domain string, conn *websocket.Conn) {
 	defer conn.Close()
 
 	for {
-		var message Message
+		var message common.Message
 
 		err := conn.ReadJSON(&message)
 		if err != nil {
@@ -95,7 +84,7 @@ func handleWebSocketConnection(domain string, conn *websocket.Conn) {
 		switch message.Type {
 		case "http_response":
 			fmt.Println("Received HTTP response from client:")
-			prettyPrintMessage(message)
+			common.PrettyPrintMessage(message)
 
 			connection, exists := connections[message.Domain]
 
@@ -104,13 +93,6 @@ func handleWebSocketConnection(domain string, conn *websocket.Conn) {
 			}
 		}
 	}
-}
-
-func prettyPrintMessage(msg Message) {
-	clone := msg
-	clone.Body = nil
-	jsonMessage, _ := json.MarshalIndent(clone, "", "  ")
-	fmt.Println(string(jsonMessage))
 }
 
 func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
@@ -145,7 +127,7 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		requestMsg := Message{
+		requestMsg := common.Message{
 			Type:    "http_request",
 			UUID:    GenerateUUID(),
 			URL:     r.URL.String(),
@@ -155,7 +137,7 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 		}
 
 		fmt.Println("Forwarding HTTP request to client:")
-		prettyPrintMessage(requestMsg)
+		common.PrettyPrintMessage(requestMsg)
 
 		err = connection.Conn.WriteJSON(requestMsg)
 
@@ -164,16 +146,11 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		connection.Requests[requestMsg.UUID] = make(chan *Message)
+		connection.Requests[requestMsg.UUID] = make(chan *common.Message)
 
 		select {
 		case responseMsg := <-connection.Requests[requestMsg.UUID]:
-			for key, values := range responseMsg.Headers {
-				for _, value := range values {
-					w.Header().Add(key, value)
-				}
-			}
-
+			common.CopyHeaders(responseMsg.Headers, w.Header())
 			w.WriteHeader(responseMsg.Status)
 			w.Write(responseMsg.Body)
 			delete(connection.Requests, requestMsg.UUID)

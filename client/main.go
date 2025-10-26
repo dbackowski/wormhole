@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -11,26 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dbackowski/wormhole/common"
 	"github.com/gorilla/websocket"
 )
-
-type Message struct {
-	Type    string              `json:"type"`
-	Domain  string              `json:"domain,omitempty"`
-	UUID    string              `json:"uuid"`
-	Method  string              `json:"method,omitempty"`
-	URL     string              `json:"url,omitempty"`
-	Headers map[string][]string `json:"headers,omitempty"`
-	Body    []byte              `json:"body,omitempty"`
-	Status  int                 `json:"status,omitempty"`
-}
-
-func prettyPrintMessage(msg Message) {
-	clone := msg
-	clone.Body = nil
-	jsonMessage, _ := json.MarshalIndent(clone, "", "  ")
-	fmt.Println(string(jsonMessage))
-}
 
 func closeWebsocket(c *websocket.Conn) {
 	err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
@@ -40,7 +22,7 @@ func closeWebsocket(c *websocket.Conn) {
 	}
 }
 
-func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Message, localURL string, debug bool) {
+func handleServerHTTPRequest(conn *websocket.Conn, domain string, message common.Message, localURL string, debug bool) {
 	req, err := http.NewRequest(message.Method, localURL, bytes.NewReader(message.Body))
 	if err != nil {
 		fmt.Printf("client: could not create request: %s\n", err)
@@ -48,12 +30,7 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 	}
 
 	req.Host = message.Headers["Host"][0]
-
-	for key, values := range message.Headers {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
-	}
+	common.CopyHeaders(message.Headers, req.Header)
 
 	var customClient = &http.Client{
 		Timeout: 10 * time.Second,
@@ -69,7 +46,7 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 	res, err := customClient.Do(req)
 
 	if err != nil {
-		responseMsg := Message{
+		responseMsg := common.Message{
 			Type:   "http_response",
 			Domain: domain,
 			UUID:   message.UUID,
@@ -102,7 +79,7 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 		return
 	}
 
-	responseMsg := Message{
+	responseMsg := common.Message{
 		Type:    "http_response",
 		Domain:  domain,
 		UUID:    message.UUID,
@@ -160,7 +137,7 @@ func main() {
 	defer conn.Close()
 
 	for {
-		var message Message
+		var message common.Message
 
 		err := conn.ReadJSON(&message)
 		if err != nil {
@@ -178,7 +155,7 @@ func main() {
 
 			if *debug {
 				fmt.Println("Received HTTP request notification from server:")
-				prettyPrintMessage(message)
+				common.PrettyPrintMessage(message)
 				fmt.Printf("Forwarding to local server at %s\n", localURL)
 			}
 

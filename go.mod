@@ -1,4 +1,4 @@
-module wormhole
+module github.com/dbackowski/wormhole
 
 go 1.22.3
 
