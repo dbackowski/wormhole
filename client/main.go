@@ -102,21 +102,13 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message Messag
 		return
 	}
 
-	headers := make(map[string][]string)
-
-	for key, values := range res.Header {
-		if len(values) > 0 {
-			headers[key] = values
-		}
-	}
-
 	responseMsg := Message{
 		Type:    "http_response",
 		Domain:  domain,
 		UUID:    message.UUID,
 		Method:  message.Method,
 		URL:     message.URL,
-		Headers: headers,
+		Headers: res.Header,
 		Body:    resBody,
 		Status:  res.StatusCode,
 	}
