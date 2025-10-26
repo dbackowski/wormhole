@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -163,14 +164,16 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	flag.Int("port", 8080, "Port to run the server on (default: 8080, can also use PORT env var)")
+	fmt.Printf("\x1bc")
+
+	var port = flag.Int("port", 8080, "Port to run the server on")
+
 	flag.Parse()
 
-	port := flag.Lookup("port").Value.String()
 	http.HandleFunc("/ws", wsHandler)
 	http.HandleFunc("/", handleHTTPConnection)
-	fmt.Println("WebSocket server started on :" + port)
-	err := http.ListenAndServe(":"+port, nil)
+	fmt.Println("WebSocket server started on :" + strconv.Itoa(*port))
+	err := http.ListenAndServe(":"+strconv.Itoa(*port), nil)
 
 	if err != nil {
 		fmt.Println("Error starting server:", err)
