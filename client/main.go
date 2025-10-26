@@ -126,7 +126,7 @@ func main() {
 
 	conn, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
 	if err != nil {
-		log.Fatal("dial:", err)
+		log.Fatalf("Failed to connect to server at %s: %v\n", websocketURL, err)
 	}
 
 	fmt.Println("Connected to server.")
