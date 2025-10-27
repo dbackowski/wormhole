@@ -21,7 +21,9 @@ type Connection struct {
 	Requests map[string]chan *common.Message
 }
 
-var connections = make(map[string]*Connection)
+type Server struct {
+	clients map[string]*Connection
+}
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -33,7 +35,7 @@ func GenerateUUID() string {
 	return uuid.New().String()
 }
 
-func wsHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		fmt.Println("Error upgrading:", err)
@@ -42,7 +44,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	var domain = strings.Split(r.Host, ".")[0]
 
-	if checkIfDomainAvailable(domain) {
+	if s.checkIfDomainAvailable(domain) {
 		domainTakenMsg := common.Message{
 			Type: "domain_taken",
 		}
@@ -52,7 +54,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	connections[domain] = &Connection{
+	s.clients[domain] = &Connection{
 		Domain:   domain,
 		Conn:     conn,
 		Requests: make(map[string]chan *common.Message),
@@ -60,15 +62,15 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("New connection for domain: %s\n", domain)
 
-	go handleWebSocketConnection(domain, conn)
+	go s.handleWebSocketConnection(domain, conn)
 }
 
-func checkIfDomainAvailable(domain string) bool {
-	_, exists := connections[domain]
+func (s *Server) checkIfDomainAvailable(domain string) bool {
+	_, exists := s.clients[domain]
 	return exists
 }
 
-func handleWebSocketConnection(domain string, conn *websocket.Conn) {
+func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) {
 	defer conn.Close()
 
 	for {
@@ -78,7 +80,7 @@ func handleWebSocketConnection(domain string, conn *websocket.Conn) {
 		if err != nil {
 			log.Printf("Read error: %v", err)
 			fmt.Printf("Closing connection for domain: %s\n", domain)
-			delete(connections, domain)
+			delete(s.clients, domain)
 			return
 		}
 
@@ -87,8 +89,7 @@ func handleWebSocketConnection(domain string, conn *websocket.Conn) {
 			fmt.Println("Received HTTP response from client:")
 			common.PrettyPrintMessage(message)
 
-			connection, exists := connections[message.Domain]
-
+			connection, exists := s.clients[message.Domain]
 			if exists {
 				connection.Requests[message.UUID] <- &message
 			}
@@ -96,9 +97,9 @@ func handleWebSocketConnection(domain string, conn *websocket.Conn) {
 	}
 }
 
-func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var domain = strings.Split(r.Host, ".")[0]
-	connection, exists := connections[domain]
+	connection, exists := s.clients[domain]
 
 	if !exists {
 		http.Error(w, "Tunnel not found", http.StatusNotFound)
@@ -154,11 +155,11 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 			common.CopyHeaders(responseMsg.Headers, w.Header())
 			w.WriteHeader(responseMsg.Status)
 			w.Write(responseMsg.Body)
-			delete(connection.Requests, requestMsg.UUID)
+			delete(s.clients[domain].Requests, requestMsg.UUID)
 		case <-time.After(10 * time.Second):
 			w.WriteHeader(http.StatusRequestTimeout)
 			w.Write([]byte("Request timeout"))
-			delete(connection.Requests, requestMsg.UUID)
+			delete(s.clients[domain].Requests, requestMsg.UUID)
 		}
 	}
 }
@@ -166,12 +167,16 @@ func handleHTTPConnection(w http.ResponseWriter, r *http.Request) {
 func main() {
 	fmt.Printf("\x1bc")
 
+	var server = Server{
+		clients: make(map[string]*Connection),
+	}
+
 	var port = flag.Int("port", 8080, "Port to run the server on")
 
 	flag.Parse()
 
-	http.HandleFunc("/ws", wsHandler)
-	http.HandleFunc("/", handleHTTPConnection)
+	http.HandleFunc("/ws", server.ServeWebSocket)
+	http.HandleFunc("/", server.ServeHTTP)
 	fmt.Println("WebSocket server started on :" + strconv.Itoa(*port))
 	err := http.ListenAndServe(":"+strconv.Itoa(*port), nil)
 
