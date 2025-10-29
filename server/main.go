@@ -23,6 +23,7 @@ type Connection struct {
 
 type Server struct {
 	clients map[string]*Connection
+	debug   bool
 }
 
 var upgrader = websocket.Upgrader{
@@ -60,7 +61,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		Requests: make(map[string]chan *common.Message),
 	}
 
-	fmt.Printf("New connection for domain: %s\n", domain)
+	fmt.Printf("Registered connection for domain: %s\n", domain)
 
 	go s.handleWebSocketConnection(domain, conn)
 }
@@ -86,8 +87,12 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 
 		switch message.Type {
 		case "http_response":
-			fmt.Println("Received HTTP response from client:")
-			common.PrettyPrintMessage(message)
+			if s.debug {
+				fmt.Println("Received HTTP response from client:")
+				common.PrettyPrintMessage(message)
+			} else {
+				fmt.Printf("Received HTTP response %d for UUID: %s\n", message.Status, message.UUID)
+			}
 
 			connection, exists := s.clients[message.Domain]
 			if exists {
@@ -138,8 +143,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Body:    reqBody,
 		}
 
-		fmt.Println("Forwarding HTTP request to client:")
-		common.PrettyPrintMessage(requestMsg)
+		if s.debug {
+			fmt.Println("Forwarding HTTP request to client:")
+			common.PrettyPrintMessage(requestMsg)
+		} else {
+			fmt.Printf("Forwarding %s request %s for %s to domain %s\n", requestMsg.Method, requestMsg.UUID, requestMsg.URL, domain)
+		}
 
 		err = connection.Conn.WriteJSON(requestMsg)
 
@@ -167,13 +176,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func main() {
 	fmt.Printf("\x1bc")
 
-	var server = Server{
-		clients: make(map[string]*Connection),
-	}
-
 	var port = flag.Int("port", 8080, "Port to run the server on")
+	var debug = flag.Bool("debug", false, "Enable debug mode")
 
 	flag.Parse()
+
+	var server = Server{
+		clients: make(map[string]*Connection),
+		debug:   *debug,
+	}
 
 	http.HandleFunc("/ws", server.ServeWebSocket)
 	http.HandleFunc("/", server.ServeHTTP)
