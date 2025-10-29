@@ -41,6 +41,12 @@ go mod download
 go run server/main.go -port=8080
 ```
 
+**Required flags:**
+- `-port`: Port to run the server on (default: 8080)
+
+**Optional flags:**
+- `-debug`: Enable debug mode
+
 ### Client Options
 ```bash
 go run client/main.go -server=http://localhost:8080 -domain=mysubdomain -local=http://localhost:3000
@@ -52,6 +58,7 @@ go run client/main.go -server=http://localhost:8080 -domain=mysubdomain -local=h
 
 **Optional flags:**
 - `-server`: Server URL (default: http://localhost:8080)
+- `-debug`: Enable debug mode
 
 ## Features
 
