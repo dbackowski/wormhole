@@ -47,7 +47,7 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message common
 
 	if err != nil {
 		responseMsg := common.Message{
-			Type:   "http_response",
+			Type:   common.MessageTypeHTTPResponse,
 			Domain: domain,
 			UUID:   message.UUID,
 			Method: message.Method,
@@ -80,7 +80,7 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message common
 	}
 
 	responseMsg := common.Message{
-		Type:    "http_response",
+		Type:    common.MessageTypeHTTPResponse,
 		Domain:  domain,
 		UUID:    message.UUID,
 		Method:  message.Method,
