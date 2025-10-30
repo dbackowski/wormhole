@@ -17,6 +17,12 @@ type Message struct {
 	Status  int                 `json:"status,omitempty"`
 }
 
+const (
+	MessageTypeHTTPRequest  = "http_request"
+	MessageTypeHTTPResponse = "http_response"
+	MessageTypeDomainTaken  = "domain_taken"
+)
+
 func CopyHeaders(src http.Header, dest http.Header) {
 	for key, values := range src {
 		for _, value := range values {

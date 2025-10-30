@@ -46,10 +46,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	var domain = strings.Split(r.Host, ".")[0]
 
 	if s.checkIfDomainAvailable(domain) {
-		domainTakenMsg := common.Message{
-			Type: "domain_taken",
-		}
-
+		domainTakenMsg := common.Message{Type: common.MessageTypeDomainTaken}
 		conn.WriteJSON(domainTakenMsg)
 		conn.Close()
 		return
@@ -86,7 +83,7 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 		}
 
 		switch message.Type {
-		case "http_response":
+		case common.MessageTypeHTTPResponse:
 			if s.debug {
 				fmt.Println("Received HTTP response from client:")
 				common.PrettyPrintMessage(message)
@@ -135,7 +132,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		requestMsg := common.Message{
-			Type:    "http_request",
+			Type:    common.MessageTypeHTTPRequest,
 			UUID:    GenerateUUID(),
 			URL:     r.URL.String(),
 			Method:  r.Method,

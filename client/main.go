@@ -104,11 +104,11 @@ func handleConnection(conn *websocket.Conn, local string, domain string, debug b
 		}
 
 		switch message.Type {
-		case "domain_taken":
+		case common.MessageTypeDomainTaken:
 			fmt.Println("Domain is already taken. Please choose another one.")
 			closeWebsocket(conn)
 			return
-		case "http_request":
+		case common.MessageTypeHTTPRequest:
 			localURL := local + message.URL
 
 			if debug {
