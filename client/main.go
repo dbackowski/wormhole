@@ -93,6 +93,35 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message common
 	conn.WriteJSON(responseMsg)
 }
 
+func handleConnection(conn *websocket.Conn, local string, domain string, debug bool) {
+	var message common.Message
+
+	for {
+		err := conn.ReadJSON(&message)
+		if err != nil {
+			log.Printf("Read error: %v", err)
+			return
+		}
+
+		switch message.Type {
+		case "domain_taken":
+			fmt.Println("Domain is already taken. Please choose another one.")
+			closeWebsocket(conn)
+			return
+		case "http_request":
+			localURL := local + message.URL
+
+			if debug {
+				fmt.Println("Received HTTP request notification from server:")
+				common.PrettyPrintMessage(message)
+				fmt.Printf("Forwarding to local server at %s\n", localURL)
+			}
+
+			handleServerHTTPRequest(conn, domain, message, localURL, debug)
+		}
+	}
+}
+
 func main() {
 	fmt.Printf("\x1bc")
 
@@ -135,31 +164,5 @@ func main() {
 	fmt.Println("Waiting for incoming HTTP requests...")
 
 	defer conn.Close()
-
-	for {
-		var message common.Message
-
-		err := conn.ReadJSON(&message)
-		if err != nil {
-			log.Printf("Read error: %v", err)
-			return
-		}
-
-		switch message.Type {
-		case "domain_taken":
-			fmt.Println("Domain is already taken. Please choose another one.")
-			closeWebsocket(conn)
-			return
-		case "http_request":
-			localURL := *local + message.URL
-
-			if *debug {
-				fmt.Println("Received HTTP request notification from server:")
-				common.PrettyPrintMessage(message)
-				fmt.Printf("Forwarding to local server at %s\n", localURL)
-			}
-
-			handleServerHTTPRequest(conn, *domain, message, localURL, *debug)
-		}
-	}
+	handleConnection(conn, *local, *domain, *debug)
 }
