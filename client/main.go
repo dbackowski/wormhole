@@ -162,6 +162,9 @@ func main() {
 	scheme := strings.Split(*server, "://")[0]
 	fmt.Println("Your tunnel is available at:", scheme+"://"+*domain+"."+serverHost)
 	fmt.Println("Waiting for incoming HTTP requests...")
+	fmt.Println()
+	fmt.Println("-------------------")
+	fmt.Println()
 
 	defer conn.Close()
 	handleConnection(conn, *local, *domain, *debug)
