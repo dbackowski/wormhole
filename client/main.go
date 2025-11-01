@@ -14,6 +14,13 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type Client struct {
+	Domain string
+	Local  string
+	Conn   *websocket.Conn
+	Debug  bool
+}
+
 func closeWebsocket(c *websocket.Conn) {
 	err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 	if err != nil {
@@ -22,7 +29,7 @@ func closeWebsocket(c *websocket.Conn) {
 	}
 }
 
-func handleServerHTTPRequest(conn *websocket.Conn, domain string, message common.Message, localURL string, debug bool) {
+func (client *Client) handleServerHTTPRequest(message common.Message, localURL string) {
 	req, err := http.NewRequest(message.Method, localURL, bytes.NewReader(message.Body))
 	if err != nil {
 		fmt.Printf("client: could not create request: %s\n", err)
@@ -48,7 +55,7 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message common
 	if err != nil {
 		responseMsg := common.Message{
 			Type:   common.MessageTypeHTTPResponse,
-			Domain: domain,
+			Domain: client.Domain,
 			UUID:   message.UUID,
 			Method: message.Method,
 			URL:    message.URL,
@@ -56,18 +63,18 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message common
 			Body:   []byte("Bad Gateway"),
 		}
 
-		if debug {
+		if client.Debug {
 			fmt.Printf("client: error making http request: %s\n", err)
 		} else {
 			fmt.Printf("%s %s -> %d\n", responseMsg.Method, localURL, responseMsg.Status)
 		}
 
-		conn.WriteJSON(responseMsg)
+		client.Conn.WriteJSON(responseMsg)
 		return
 	}
 	defer res.Body.Close()
 
-	if debug {
+	if client.Debug {
 		fmt.Printf("Response status code: %d\n", res.StatusCode)
 	} else {
 		fmt.Printf("%s %s -> %d\n", message.Method, localURL, res.StatusCode)
@@ -81,7 +88,7 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message common
 
 	responseMsg := common.Message{
 		Type:    common.MessageTypeHTTPResponse,
-		Domain:  domain,
+		Domain:  client.Domain,
 		UUID:    message.UUID,
 		Method:  message.Method,
 		URL:     message.URL,
@@ -90,14 +97,14 @@ func handleServerHTTPRequest(conn *websocket.Conn, domain string, message common
 		Status:  res.StatusCode,
 	}
 
-	conn.WriteJSON(responseMsg)
+	client.Conn.WriteJSON(responseMsg)
 }
 
-func handleConnection(conn *websocket.Conn, local string, domain string, debug bool) {
+func (client *Client) handleConnection() {
 	var message common.Message
 
 	for {
-		err := conn.ReadJSON(&message)
+		err := client.Conn.ReadJSON(&message)
 		if err != nil {
 			log.Printf("Read error: %v", err)
 			return
@@ -106,18 +113,18 @@ func handleConnection(conn *websocket.Conn, local string, domain string, debug b
 		switch message.Type {
 		case common.MessageTypeDomainTaken:
 			fmt.Println("Domain is already taken. Please choose another one.")
-			closeWebsocket(conn)
+			closeWebsocket(client.Conn)
 			return
 		case common.MessageTypeHTTPRequest:
-			localURL := local + message.URL
+			localURL := client.Local + message.URL
 
-			if debug {
+			if client.Debug {
 				fmt.Println("Received HTTP request notification from server:")
 				common.PrettyPrintMessage(message)
 				fmt.Printf("Forwarding to local server at %s\n", localURL)
 			}
 
-			handleServerHTTPRequest(conn, domain, message, localURL, debug)
+			client.handleServerHTTPRequest(message, localURL)
 		}
 	}
 }
@@ -158,6 +165,13 @@ func main() {
 		log.Fatalf("Failed to connect to server at %s: %v\n", websocketURL, err)
 	}
 
+	var client = Client{
+		Domain: *domain,
+		Conn:   conn,
+		Local:  *local,
+		Debug:  *debug,
+	}
+
 	fmt.Println("Connected to server.")
 	scheme := strings.Split(*server, "://")[0]
 	fmt.Println("Your tunnel is available at:", scheme+"://"+*domain+"."+serverHost)
@@ -167,5 +181,5 @@ func main() {
 	fmt.Println()
 
 	defer conn.Close()
-	handleConnection(conn, *local, *domain, *debug)
+	client.handleConnection()
 }
