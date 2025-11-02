@@ -40,14 +40,9 @@ func (client *Client) handleServerHTTPRequest(message common.Message, localURL s
 	common.CopyHeaders(message.Headers, req.Header)
 
 	var customClient = &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			DisableKeepAlives: true, // Disable connection reuse
-		},
-		// Don't follow redirects, instead pass them back to the browser
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+		Timeout:       10 * time.Second,
+		Transport:     &http.Transport{DisableKeepAlives: true},                                              // Disable connection reuse
+		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }, // Don't follow redirects, instead pass them back to the browser
 	}
 
 	res, err := customClient.Do(req)
