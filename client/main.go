@@ -29,11 +29,10 @@ func closeWebsocket(c *websocket.Conn) {
 	}
 }
 
-func (client *Client) handleServerHTTPRequest(message common.Message, localURL string) {
+func makeHTTPRequestFromMessage(message common.Message, localURL string) (*http.Response, error) {
 	req, err := http.NewRequest(message.Method, localURL, bytes.NewReader(message.Body))
 	if err != nil {
-		fmt.Printf("client: could not create request: %s\n", err)
-		return
+		return nil, err
 	}
 
 	req.Host = message.Headers["Host"][0]
@@ -46,6 +45,11 @@ func (client *Client) handleServerHTTPRequest(message common.Message, localURL s
 	}
 
 	res, err := customClient.Do(req)
+	return res, err
+}
+
+func (client *Client) handleServerHTTPRequest(message common.Message, localURL string) {
+	res, err := makeHTTPRequestFromMessage(message, localURL)
 
 	if err != nil {
 		responseMsg := common.Message{
