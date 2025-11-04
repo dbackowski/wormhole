@@ -36,7 +36,7 @@ func GenerateUUID() string {
 	return uuid.New().String()
 }
 
-func (s *Server) AddClient(domain string, conn *websocket.Conn) error {
+func (s *Server) AddConnection(domain string, conn *websocket.Conn) error {
 	_, exists := s.clients[domain]
 	if exists {
 		return fmt.Errorf("domain %s is already taken", domain)
@@ -51,6 +51,10 @@ func (s *Server) AddClient(domain string, conn *websocket.Conn) error {
 	return nil
 }
 
+func (s *Server) RemoveConnection(domain string) {
+	delete(s.clients, domain)
+}
+
 func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -60,7 +64,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	var domain = strings.Split(r.Host, ".")[0]
 
-	err = s.AddClient(domain, conn)
+	err = s.AddConnection(domain, conn)
 
 	if err != nil {
 		conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
@@ -83,7 +87,7 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 		if err != nil {
 			log.Printf("Read error: %v", err)
 			fmt.Printf("Closing connection for domain: %s\n", domain)
-			delete(s.clients, domain)
+			s.RemoveConnection(domain)
 			return
 		}
 
