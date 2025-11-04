@@ -36,6 +36,21 @@ func GenerateUUID() string {
 	return uuid.New().String()
 }
 
+func (s *Server) AddClient(domain string, conn *websocket.Conn) error {
+	_, exists := s.clients[domain]
+	if exists {
+		return fmt.Errorf("domain %s is already taken", domain)
+	}
+
+	s.clients[domain] = &Connection{
+		Domain:   domain,
+		Conn:     conn,
+		Requests: make(map[string]chan *common.Message),
+	}
+
+	return nil
+}
+
 func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -45,27 +60,17 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	var domain = strings.Split(r.Host, ".")[0]
 
-	if s.checkIfDomainAvailable(domain) {
-		domainTakenMsg := common.Message{Type: common.MessageTypeDomainTaken}
-		conn.WriteJSON(domainTakenMsg)
+	err = s.AddClient(domain, conn)
+
+	if err != nil {
+		conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
 		conn.Close()
 		return
-	}
-
-	s.clients[domain] = &Connection{
-		Domain:   domain,
-		Conn:     conn,
-		Requests: make(map[string]chan *common.Message),
 	}
 
 	fmt.Printf("Registered connection for domain: %s\n", domain)
 
 	go s.handleWebSocketConnection(domain, conn)
-}
-
-func (s *Server) checkIfDomainAvailable(domain string) bool {
-	_, exists := s.clients[domain]
-	return exists
 }
 
 func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) {
