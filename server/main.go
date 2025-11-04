@@ -51,6 +51,18 @@ func (s *Server) AddConnection(domain string, conn *websocket.Conn) error {
 	return nil
 }
 
+func (s *Server) AddMessageToRequestsQueue(message *common.Message) {
+	connection, exists := s.clients[message.Domain]
+
+	if exists {
+		connection.Requests[message.UUID] <- message
+	}
+}
+
+func (s *Server) RemoveMessageUUIDFromRequestsQueue(domain string, uuid string) {
+	delete(s.clients[domain].Requests, uuid)
+}
+
 func (s *Server) RemoveConnection(domain string) {
 	delete(s.clients, domain)
 }
@@ -99,11 +111,7 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 			} else {
 				fmt.Printf("Received HTTP response %d for UUID: %s\n", message.Status, message.UUID)
 			}
-
-			connection, exists := s.clients[message.Domain]
-			if exists {
-				connection.Requests[message.UUID] <- &message
-			}
+			s.AddMessageToRequestsQueue(&message)
 		}
 	}
 }
@@ -170,11 +178,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			common.CopyHeaders(responseMsg.Headers, w.Header())
 			w.WriteHeader(responseMsg.Status)
 			w.Write(responseMsg.Body)
-			delete(s.clients[domain].Requests, requestMsg.UUID)
+			s.RemoveMessageUUIDFromRequestsQueue(domain, requestMsg.UUID)
 		case <-time.After(10 * time.Second):
 			w.WriteHeader(http.StatusRequestTimeout)
 			w.Write([]byte("Request timeout"))
-			delete(s.clients[domain].Requests, requestMsg.UUID)
+			s.RemoveMessageUUIDFromRequestsQueue(domain, requestMsg.UUID)
 		}
 	}
 }
