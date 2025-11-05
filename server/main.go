@@ -84,6 +84,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered})
 	fmt.Printf("Registered connection for domain: %s\n", domain)
 
 	go s.handleWebSocketConnection(domain, conn)

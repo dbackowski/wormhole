@@ -15,10 +15,11 @@ import (
 )
 
 type Client struct {
-	Domain string
-	Local  string
-	Conn   *websocket.Conn
-	Debug  bool
+	Domain     string
+	Local      string
+	ServerHost string
+	Conn       *websocket.Conn
+	Debug      bool
 }
 
 func closeWebsocket(c *websocket.Conn) {
@@ -110,10 +111,21 @@ func (client *Client) handleConnection() {
 		}
 
 		switch message.Type {
+		case common.MessageTypeDomainRegistered:
+			fmt.Printf("\x1bc") // Clear terminal
+			fmt.Println("Connected to server.")
+			scheme := strings.Split(client.ServerHost, "://")[0]
+			fmt.Println("Your tunnel is available at:", scheme+"://"+client.Domain+"."+client.ServerHost)
+			fmt.Println("Waiting for incoming HTTP requests...")
+			fmt.Println()
+			fmt.Println("-------------------")
+			fmt.Println()
+
 		case common.MessageTypeDomainTaken:
 			fmt.Println("Domain is already taken. Please choose another one.")
 			closeWebsocket(client.Conn)
 			return
+
 		case common.MessageTypeHTTPRequest:
 			localURL := client.Local + message.URL
 
@@ -129,8 +141,6 @@ func (client *Client) handleConnection() {
 }
 
 func main() {
-	fmt.Printf("\x1bc")
-
 	var server = flag.String("server", "http://localhost:8080", "Server URL")
 	var domain = flag.String("domain", "", "Custom domain")
 	var local = flag.String("local", "", "Local server URL")
@@ -165,19 +175,12 @@ func main() {
 	}
 
 	var client = Client{
-		Domain: *domain,
-		Conn:   conn,
-		Local:  *local,
-		Debug:  *debug,
+		Domain:     *domain,
+		Conn:       conn,
+		Local:      *local,
+		ServerHost: serverHost,
+		Debug:      *debug,
 	}
-
-	fmt.Println("Connected to server.")
-	scheme := strings.Split(*server, "://")[0]
-	fmt.Println("Your tunnel is available at:", scheme+"://"+*domain+"."+serverHost)
-	fmt.Println("Waiting for incoming HTTP requests...")
-	fmt.Println()
-	fmt.Println("-------------------")
-	fmt.Println()
 
 	defer conn.Close()
 	client.handleConnection()

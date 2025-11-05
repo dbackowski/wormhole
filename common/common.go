@@ -18,9 +18,10 @@ type Message struct {
 }
 
 const (
-	MessageTypeHTTPRequest  = "http_request"
-	MessageTypeHTTPResponse = "http_response"
-	MessageTypeDomainTaken  = "domain_taken"
+	MessageTypeHTTPRequest      = "http_request"
+	MessageTypeHTTPResponse     = "http_response"
+	MessageTypeDomainTaken      = "domain_taken"
+	MessageTypeDomainRegistered = "domain_registered"
 )
 
 func CopyHeaders(src http.Header, dest http.Header) {
