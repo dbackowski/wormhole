@@ -165,13 +165,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("Forwarding %s request %s for %s to domain %s\n", requestMsg.Method, requestMsg.UUID, requestMsg.URL, domain)
 		}
 
-		err = connection.Conn.WriteJSON(requestMsg)
-
-		if err != nil {
-			fmt.Printf("Error sending WebSocket message: %v\n", err)
-			return
-		}
-
+		connection.Conn.WriteJSON(requestMsg)
 		connection.Requests[requestMsg.UUID] = make(chan *common.Message)
 
 		select {
