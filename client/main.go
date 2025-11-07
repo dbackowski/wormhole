@@ -112,7 +112,7 @@ func (client *Client) handleConnection() {
 
 		switch message.Type {
 		case common.MessageTypeDomainRegistered:
-			fmt.Printf("\x1bc") // Clear terminal
+			common.ClearTerminal()
 			fmt.Println("Connected to server.")
 			scheme := strings.Split(client.ServerHost, "://")[0]
 			fmt.Println("Your tunnel is available at:", scheme+"://"+client.Domain+"."+client.ServerHost)

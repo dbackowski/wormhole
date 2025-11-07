@@ -38,3 +38,7 @@ func PrettyPrintMessage(msg Message) {
 	jsonMessage, _ := json.MarshalIndent(clone, "", "  ")
 	fmt.Println(string(jsonMessage))
 }
+
+func ClearTerminal() {
+	fmt.Printf("\x1bc")
+}

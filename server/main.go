@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -98,7 +97,6 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 
 		err := conn.ReadJSON(&message)
 		if err != nil {
-			log.Printf("Read error: %v", err)
 			fmt.Printf("Closing connection for domain: %s\n", domain)
 			s.RemoveConnection(domain)
 			return
@@ -183,8 +181,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	fmt.Printf("\x1bc")
-
+	common.ClearTerminal()
 	var port = flag.Int("port", 8080, "Port to run the server on")
 	var debug = flag.Bool("debug", false, "Enable debug mode")
 
