@@ -45,8 +45,7 @@ func makeHTTPRequestFromMessage(message common.Message, localURL string) (*http.
 		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }, // Don't follow redirects, instead pass them back to the browser
 	}
 
-	res, err := customClient.Do(req)
-	return res, err
+	return customClient.Do(req)
 }
 
 func (client *Client) handleServerHTTPRequest(message common.Message, localURL string) {
@@ -77,7 +76,7 @@ func (client *Client) handleServerHTTPRequest(message common.Message, localURL s
 	if client.Debug {
 		fmt.Printf("Response status code: %d\n", res.StatusCode)
 	} else {
-		fmt.Printf("%s %s -> %d\n", message.Method, localURL, res.StatusCode)
+		fmt.Printf("%s %s %s -> %d\n", time.Now().Format("2006-01-02 15:04:05"), message.Method, localURL, res.StatusCode)
 	}
 
 	resBody, err := io.ReadAll(res.Body)
@@ -114,7 +113,7 @@ func (client *Client) handleConnection() {
 		case common.MessageTypeDomainRegistered:
 			common.ClearTerminal()
 			fmt.Println("Connected to server.")
-			scheme := strings.Split(client.ServerHost, "://")[0]
+			scheme := strings.Split(client.Local, "://")[0]
 			fmt.Println("Your tunnel is available at:", scheme+"://"+client.Domain+"."+client.ServerHost)
 			fmt.Println("Waiting for incoming HTTP requests...")
 			fmt.Println()
