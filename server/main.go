@@ -35,6 +35,15 @@ func GenerateUUID() string {
 	return uuid.New().String()
 }
 
+func (s *Server) extractDomain(host string) (string, error) {
+	parts := strings.Split(host, ".")
+
+	if len(parts) == 0 || parts[0] == "" {
+		return "", fmt.Errorf("invalid host: %s", host)
+	}
+	return parts[0], nil
+}
+
 func (s *Server) AddConnection(domain string, conn *websocket.Conn) error {
 	_, exists := s.clients[domain]
 	if exists {
@@ -59,7 +68,9 @@ func (s *Server) AddMessageToRequestsQueue(message *common.Message) {
 }
 
 func (s *Server) RemoveMessageUUIDFromRequestsQueue(domain string, uuid string) {
-	delete(s.clients[domain].Requests, uuid)
+	if _, exists := s.clients[domain]; exists {
+		delete(s.clients[domain].Requests, uuid)
+	}
 }
 
 func (s *Server) RemoveConnection(domain string) {
@@ -73,7 +84,12 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var domain = strings.Split(r.Host, ".")[0]
+	domain, err := s.extractDomain(r.Host)
+
+	if err != nil {
+		conn.Close()
+		return
+	}
 
 	err = s.AddConnection(domain, conn)
 
@@ -116,7 +132,12 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var domain = strings.Split(r.Host, ".")[0]
+	domain, err := s.extractDomain(r.Host)
+	if err != nil {
+		http.Error(w, "Invalid host", http.StatusBadRequest)
+		return
+	}
+
 	connection, exists := s.clients[domain]
 
 	if !exists {
