@@ -144,13 +144,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Tunnel not found", http.StatusNotFound)
 		return
 	} else {
-		reqBody, err := io.ReadAll(r.Body)
 		defer r.Body.Close()
+		reqBody, err := io.ReadAll(r.Body)
 
 		if err != nil {
-			fmt.Printf("client: could not read response body: %s\n", err)
+			fmt.Printf("Error reading request body: %s\n", err)
+			http.Error(w, "Failed to read request body", http.StatusBadRequest)
 			return
 		}
+
 		headers := make(map[string][]string)
 
 		headers["Host"] = []string{r.Host}

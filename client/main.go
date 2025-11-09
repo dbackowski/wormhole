@@ -30,6 +30,19 @@ func closeWebsocket(c *websocket.Conn) {
 	}
 }
 
+func (client *Client) buildResponseMessage(message common.Message, status int, body []byte, headers http.Header) common.Message {
+	return common.Message{
+		Type:    common.MessageTypeHTTPResponse,
+		Domain:  client.Domain,
+		UUID:    message.UUID,
+		Method:  message.Method,
+		URL:     message.URL,
+		Status:  status,
+		Body:    body,
+		Headers: headers,
+	}
+}
+
 func makeHTTPRequestFromMessage(message common.Message, localURL string) (*http.Response, error) {
 	req, err := http.NewRequest(message.Method, localURL, bytes.NewReader(message.Body))
 	if err != nil {
@@ -52,15 +65,7 @@ func (client *Client) handleServerHTTPRequest(message common.Message, localURL s
 	res, err := makeHTTPRequestFromMessage(message, localURL)
 
 	if err != nil {
-		responseMsg := common.Message{
-			Type:   common.MessageTypeHTTPResponse,
-			Domain: client.Domain,
-			UUID:   message.UUID,
-			Method: message.Method,
-			URL:    message.URL,
-			Status: 502,
-			Body:   []byte("Bad Gateway"),
-		}
+		responseMsg := client.buildResponseMessage(message, 502, []byte("Bad Gateway"), nil)
 
 		if client.Debug {
 			fmt.Printf("client: error making http request: %s\n", err)
@@ -85,17 +90,7 @@ func (client *Client) handleServerHTTPRequest(message common.Message, localURL s
 		return
 	}
 
-	responseMsg := common.Message{
-		Type:    common.MessageTypeHTTPResponse,
-		Domain:  client.Domain,
-		UUID:    message.UUID,
-		Method:  message.Method,
-		URL:     message.URL,
-		Headers: res.Header,
-		Body:    resBody,
-		Status:  res.StatusCode,
-	}
-
+	responseMsg := client.buildResponseMessage(message, res.StatusCode, resBody, res.Header)
 	client.Conn.WriteJSON(responseMsg)
 }
 
@@ -139,6 +134,20 @@ func (client *Client) handleConnection() {
 	}
 }
 
+func buildWebSocketURL(serverURL, domain string) (string, string) {
+	scheme := "ws"
+	if strings.HasPrefix(serverURL, "https://") {
+		scheme = "wss"
+	}
+
+	host := strings.TrimPrefix(serverURL, "https://")
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimRight(host, "/")
+
+	wsURL := fmt.Sprintf("%s://%s.%s/ws", scheme, domain, host)
+	return wsURL, host
+}
+
 func main() {
 	var server = flag.String("server", "http://localhost:8080", "Server URL")
 	var domain = flag.String("domain", "", "Custom domain")
@@ -154,20 +163,8 @@ func main() {
 	if *local == "" {
 		log.Fatal("local is required. Use -local flag")
 	}
-	var ws_scheme string
 
-	if strings.HasPrefix(*server, "https://") {
-		ws_scheme = "wss"
-	} else {
-		ws_scheme = "ws"
-	}
-
-	serverHost := strings.TrimPrefix(*server, "http://")
-	serverHost = strings.TrimPrefix(serverHost, "https://")
-	serverHost = strings.TrimRight(serverHost, "/")
-
-	var websocketURL = fmt.Sprintf("%s://%s.%s/ws", ws_scheme, *domain, serverHost)
-
+	var websocketURL, serverHost = buildWebSocketURL(*server, *domain)
 	conn, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
 	if err != nil {
 		log.Fatalf("Failed to connect to server at %s: %v\n", websocketURL, err)
