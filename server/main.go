@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
@@ -21,6 +22,7 @@ type Connection struct {
 }
 
 type Server struct {
+	mu      sync.RWMutex
 	clients map[string]*Connection
 	debug   bool
 }
@@ -45,6 +47,9 @@ func (s *Server) extractDomain(host string) (string, error) {
 }
 
 func (s *Server) AddConnection(domain string, conn *websocket.Conn) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	_, exists := s.clients[domain]
 	if exists {
 		return fmt.Errorf("domain %s is already taken", domain)
@@ -138,7 +143,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.mu.RLock()
 	connection, exists := s.clients[domain]
+	s.mu.RUnlock()
 
 	if !exists {
 		http.Error(w, "Tunnel not found", http.StatusNotFound)
