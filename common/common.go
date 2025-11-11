@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
+
+const TimeFormat = "2006-01-02 15:04:05"
 
 type Message struct {
 	Type    string              `json:"type"`
@@ -41,4 +44,8 @@ func PrettyPrintMessage(msg Message) {
 
 func ClearTerminal() {
 	fmt.Printf("\x1bc")
+}
+
+func FormatTime(t time.Time) string {
+	return t.Format(TimeFormat)
 }

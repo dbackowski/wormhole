@@ -129,7 +129,7 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 				fmt.Println("Received HTTP response from client:")
 				common.PrettyPrintMessage(message)
 			} else {
-				fmt.Printf("%s Received HTTP response %d for UUID: %s\n", time.Now().Format("2006-01-02 15:04:05"), message.Status, message.UUID)
+				fmt.Printf("%s Received HTTP response %d for UUID: %s\n", common.FormatTime(time.Now()), message.Status, message.UUID)
 			}
 			s.AddMessageToRequestsQueue(&message)
 		}
@@ -190,7 +190,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fmt.Println("Forwarding HTTP request to client:")
 			common.PrettyPrintMessage(requestMsg)
 		} else {
-			fmt.Printf("%s Forwarding %s request %s for %s to domain %s\n", time.Now().Format("2006-01-02 15:04:05"), requestMsg.Method, requestMsg.UUID, requestMsg.URL, domain)
+			fmt.Printf("%s Forwarding %s request %s for %s to domain %s\n", common.FormatTime(time.Now()), requestMsg.Method, requestMsg.UUID, requestMsg.URL, domain)
 		}
 
 		connection.Conn.WriteJSON(requestMsg)

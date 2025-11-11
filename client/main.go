@@ -81,7 +81,7 @@ func (client *Client) handleServerHTTPRequest(message common.Message, localURL s
 	if client.Debug {
 		fmt.Printf("Response status code: %d\n", res.StatusCode)
 	} else {
-		fmt.Printf("%s %s %s -> %d\n", time.Now().Format("2006-01-02 15:04:05"), message.Method, localURL, res.StatusCode)
+		fmt.Printf("%s %s %s -> %d\n", common.FormatTime(time.Now()), message.Method, localURL, res.StatusCode)
 	}
 
 	resBody, err := io.ReadAll(res.Body)
