@@ -204,7 +204,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(responseMsg.Status)
 			w.Write(responseMsg.Body)
 			s.RemoveMessageUUIDFromRequestsQueue(domain, requestMsg.UUID)
-		case <-time.After(10 * time.Second):
+		case <-time.After(common.RequestTimeout):
 			w.WriteHeader(http.StatusRequestTimeout)
 			w.Write([]byte("Request timeout"))
 			s.RemoveMessageUUIDFromRequestsQueue(domain, requestMsg.UUID)
