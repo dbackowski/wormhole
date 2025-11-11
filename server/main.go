@@ -65,7 +65,9 @@ func (s *Server) AddConnection(domain string, conn *websocket.Conn) error {
 }
 
 func (s *Server) AddMessageToRequestsQueue(message *common.Message) {
+	s.mu.RLock()
 	connection, exists := s.clients[message.Domain]
+	s.mu.RUnlock()
 
 	if exists {
 		connection.Requests[message.UUID] <- message
