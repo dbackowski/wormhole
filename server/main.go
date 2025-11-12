@@ -138,11 +138,15 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 	}
 }
 
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) sendHTTPError(w http.ResponseWriter, message string, statusCode int) {
+	http.Error(w, message, statusCode)
+}
+
+func (s *Server) getConnectionForRequest(r *http.Request) (*Connection, string, error) {
 	domain, err := s.extractDomain(r.Host)
+
 	if err != nil {
-		http.Error(w, "Invalid host", http.StatusBadRequest)
-		return
+		return nil, "", err
 	}
 
 	s.mu.RLock()
@@ -150,66 +154,92 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if !exists {
-		http.Error(w, "Tunnel not found", http.StatusNotFound)
-		return
-	} else {
-		defer r.Body.Close()
-		reqBody, err := io.ReadAll(r.Body)
+		return nil, domain, fmt.Errorf("tunnel not found for domain: %s", domain)
+	}
 
-		if err != nil {
-			fmt.Printf("Error reading request body: %s\n", err)
-			http.Error(w, "Failed to read request body", http.StatusBadRequest)
-			return
-		}
+	return connection, domain, nil
+}
 
-		headers := make(map[string][]string)
+func isWebSocketUpgradeRequest(headers http.Header) bool {
+	return headers.Get("Connection") == "Upgrade" &&
+		headers.Get("Upgrade") == "websocket"
+}
 
-		headers["Host"] = []string{r.Host}
+func (s *Server) buildRequestMessage(r *http.Request) (*common.Message, error) {
+	defer r.Body.Close()
+	reqBody, err := io.ReadAll(r.Body)
 
-		for key, values := range r.Header {
-			// Ignore WebSocket upgrade requests, solve how to handle them later
-			if key == "Connection" && values[0] == "Upgrade" {
-				fmt.Println("Ignoring WebSocket upgrade request")
-				http.Error(w, "WebSocket upgrade not supported", http.StatusBadRequest)
-				return
-			}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read request body: %w", err)
+	}
 
-			if len(values) > 0 {
-				headers[key] = values
-			}
-		}
+	if isWebSocketUpgradeRequest(r.Header) {
+		return nil, fmt.Errorf("WebSocket upgrade not supported")
+	}
 
-		requestMsg := common.Message{
-			Type:    common.MessageTypeHTTPRequest,
-			UUID:    GenerateUUID(),
-			URL:     r.URL.String(),
-			Method:  r.Method,
-			Headers: headers,
-			Body:    reqBody,
-		}
+	headers := make(map[string][]string)
+	headers["Host"] = []string{r.Host}
 
-		if s.debug {
-			fmt.Println("Forwarding HTTP request to client:")
-			common.PrettyPrintMessage(requestMsg)
-		} else {
-			fmt.Printf("%s Forwarding %s request %s for %s to domain %s\n", common.FormatTime(time.Now()), requestMsg.Method, requestMsg.UUID, requestMsg.URL, domain)
-		}
-
-		connection.Conn.WriteJSON(requestMsg)
-		connection.Requests[requestMsg.UUID] = make(chan *common.Message)
-
-		select {
-		case responseMsg := <-connection.Requests[requestMsg.UUID]:
-			common.CopyHeaders(responseMsg.Headers, w.Header())
-			w.WriteHeader(responseMsg.Status)
-			w.Write(responseMsg.Body)
-			s.RemoveMessageUUIDFromRequestsQueue(domain, requestMsg.UUID)
-		case <-time.After(common.RequestTimeout):
-			w.WriteHeader(http.StatusRequestTimeout)
-			w.Write([]byte("Request timeout"))
-			s.RemoveMessageUUIDFromRequestsQueue(domain, requestMsg.UUID)
+	for key, values := range r.Header {
+		if len(values) > 0 {
+			headers[key] = values
 		}
 	}
+
+	return &common.Message{
+		Type:    common.MessageTypeHTTPRequest,
+		UUID:    GenerateUUID(),
+		URL:     r.URL.String(),
+		Method:  r.Method,
+		Headers: headers,
+		Body:    reqBody,
+	}, nil
+}
+
+func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Connection, requestMsg *common.Message, domain string) {
+	if s.debug {
+		fmt.Println("Forwarding HTTP request to client:")
+		common.PrettyPrintMessage(*requestMsg)
+	} else {
+		fmt.Printf("%s Forwarding %s request %s for %s to domain %s\n", common.FormatTime(time.Now()), requestMsg.Method, requestMsg.UUID, requestMsg.URL, domain)
+	}
+
+	connection.Requests[requestMsg.UUID] = make(chan *common.Message)
+	defer s.RemoveMessageUUIDFromRequestsQueue(domain, requestMsg.UUID)
+	connection.Conn.WriteJSON(requestMsg)
+
+	select {
+	case responseMsg := <-connection.Requests[requestMsg.UUID]:
+		common.CopyHeaders(responseMsg.Headers, w.Header())
+		w.WriteHeader(responseMsg.Status)
+		w.Write(responseMsg.Body)
+	case <-time.After(common.RequestTimeout):
+		w.WriteHeader(http.StatusRequestTimeout)
+		w.Write([]byte("Request timeout"))
+	}
+}
+
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	connection, domain, err := s.getConnectionForRequest(r)
+
+	if err != nil {
+		s.sendHTTPError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if connection == nil {
+		s.sendHTTPError(w, "Tunnel not found", http.StatusNotFound)
+		return
+	}
+
+	requestMsg, err := s.buildRequestMessage(r)
+
+	if err != nil {
+		s.sendHTTPError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	s.forwardAndWaitForResponse(w, connection, requestMsg, domain)
 }
 
 func main() {
