@@ -19,6 +19,7 @@ type Connection struct {
 	Domain   string
 	Conn     *websocket.Conn
 	Requests map[string]chan *common.Message
+	mu       sync.RWMutex
 }
 
 type Server struct {
@@ -75,8 +76,14 @@ func (s *Server) AddMessageToRequestsQueue(message *common.Message) {
 }
 
 func (s *Server) RemoveMessageUUIDFromRequestsQueue(domain string, uuid string) {
-	if _, exists := s.clients[domain]; exists {
+	s.mu.RLock()
+	connection, exists := s.clients[domain]
+	s.mu.RUnlock()
+
+	if exists {
+		connection.mu.Lock()
 		delete(s.clients[domain].Requests, uuid)
+		connection.mu.Unlock()
 	}
 }
 
