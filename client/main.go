@@ -7,6 +7,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -134,18 +136,42 @@ func (client *Client) handleConnection() {
 	}
 }
 
-func buildWebSocketURL(serverURL, domain string) (string, string) {
+func parseURL(rawURL string) (url.URL, error) {
+	if rawURL == "" {
+		return url.URL{}, fmt.Errorf("url is empty")
+	}
+
+	parsed, err := url.ParseRequestURI(rawURL)
+	if err != nil {
+		return url.URL{}, fmt.Errorf("invalid url: %w", err)
+	}
+
+	supportedSchemes := []string{"http", "https"}
+	if !slices.Contains(supportedSchemes, parsed.Scheme) {
+		return url.URL{}, fmt.Errorf("unsupported url scheme: %s", parsed.Scheme)
+	}
+
+	if parsed.Host == "" {
+		return url.URL{}, fmt.Errorf("url missing host")
+	}
+
+	return *parsed, nil
+}
+
+func buildWebSocketURL(serverURL, domain string) (string, string, error) {
+	parsed, err := parseURL(serverURL)
+	if err != nil {
+		return "", "", err
+	}
+
 	scheme := "ws"
-	if strings.HasPrefix(serverURL, "https://") {
+	if parsed.Scheme == "https" {
 		scheme = "wss"
 	}
 
-	host := strings.TrimPrefix(serverURL, "https://")
-	host = strings.TrimPrefix(host, "http://")
-	host = strings.TrimRight(host, "/")
-
+	host := parsed.Host
 	wsURL := fmt.Sprintf("%s://%s.%s/ws", scheme, domain, host)
-	return wsURL, host
+	return wsURL, host, nil
 }
 
 func main() {
@@ -164,7 +190,13 @@ func main() {
 		log.Fatal("local is required. Use -local flag")
 	}
 
-	var websocketURL, serverHost = buildWebSocketURL(*server, *domain)
+	var websocketURL, serverHost, err = buildWebSocketURL(*server, *domain)
+
+	fmt.Println(serverHost)
+	if err != nil {
+		log.Fatalf("Invalid server URL: %v\n", err)
+	}
+
 	conn, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
 	if err != nil {
 		log.Fatalf("Failed to connect to server at %s: %v\n", websocketURL, err)
