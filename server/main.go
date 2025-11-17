@@ -71,7 +71,9 @@ func (s *Server) AddMessageToRequestsQueue(message *common.Message) {
 	s.mu.RUnlock()
 
 	if exists {
+		connection.mu.Lock()
 		connection.Requests[message.UUID] <- message
+		connection.mu.Unlock()
 	}
 }
 
@@ -88,7 +90,9 @@ func (s *Server) RemoveMessageUUIDFromRequestsQueue(domain string, uuid string) 
 }
 
 func (s *Server) RemoveConnection(domain string) {
+	s.mu.Lock()
 	delete(s.clients, domain)
+	s.mu.Unlock()
 }
 
 func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
