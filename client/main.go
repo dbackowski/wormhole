@@ -190,7 +190,13 @@ func main() {
 		log.Fatal("local is required. Use -local flag")
 	}
 
-	var websocketURL, serverHost, err = buildWebSocketURL(*server, *domain)
+	_, err := parseURL(*local)
+
+	if err != nil {
+		log.Fatalf("Invalid local URL: %v\n", err)
+	}
+
+	websocketURL, serverHost, err := buildWebSocketURL(*server, *domain)
 
 	if err != nil {
 		log.Fatalf("Invalid server URL: %v\n", err)
