@@ -192,7 +192,6 @@ func main() {
 
 	var websocketURL, serverHost, err = buildWebSocketURL(*server, *domain)
 
-	fmt.Println(serverHost)
 	if err != nil {
 		log.Fatalf("Invalid server URL: %v\n", err)
 	}
