@@ -71,9 +71,7 @@ func (s *Server) AddMessageToRequestsQueue(message *common.Message) {
 	s.mu.RUnlock()
 
 	if exists {
-		connection.mu.Lock()
-		connection.Requests[message.UUID] <- message
-		connection.mu.Unlock()
+		connection.AddMessageToRequestsQueue(message)
 	}
 }
 
@@ -83,10 +81,20 @@ func (s *Server) RemoveMessageUUIDFromRequestsQueue(domain string, uuid string) 
 	s.mu.RUnlock()
 
 	if exists {
-		connection.mu.Lock()
-		delete(s.clients[domain].Requests, uuid)
-		connection.mu.Unlock()
+		connection.RemoveMessageUUIDFromRequestsQueue(uuid)
 	}
+}
+
+func (c *Connection) AddMessageToRequestsQueue(message *common.Message) {
+	c.mu.Lock()
+	c.Requests[message.UUID] <- message
+	c.mu.Unlock()
+}
+
+func (c *Connection) RemoveMessageUUIDFromRequestsQueue(uuid string) {
+	c.mu.Lock()
+	delete(c.Requests, uuid)
+	c.mu.Unlock()
 }
 
 func (s *Server) RemoveConnection(domain string) {
