@@ -65,10 +65,16 @@ func (s *Server) AddConnection(domain string, conn *websocket.Conn) error {
 	return nil
 }
 
-func (s *Server) AddMessageToRequestsQueue(message *common.Message) {
+func (s *Server) GetConnection(domain string) (*Connection, bool) {
 	s.mu.RLock()
-	connection, exists := s.clients[message.Domain]
-	s.mu.RUnlock()
+	defer s.mu.RUnlock()
+	connection, exists := s.clients[domain]
+
+	return connection, exists
+}
+
+func (s *Server) AddMessageToRequestsQueue(message *common.Message) {
+	connection, exists := s.GetConnection(message.Domain)
 
 	if exists {
 		connection.AddMessageToRequestsQueue(message)
@@ -76,9 +82,7 @@ func (s *Server) AddMessageToRequestsQueue(message *common.Message) {
 }
 
 func (s *Server) RemoveMessageUUIDFromRequestsQueue(domain string, uuid string) {
-	s.mu.RLock()
-	connection, exists := s.clients[domain]
-	s.mu.RUnlock()
+	connection, exists := s.GetConnection(domain)
 
 	if exists {
 		connection.RemoveMessageUUIDFromRequestsQueue(uuid)
