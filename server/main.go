@@ -128,7 +128,14 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered})
 	fmt.Printf("Registered connection for domain: %s\n", domain)
 
-	go s.handleWebSocketConnection(domain, conn)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("Panic in handleWebSocketConnection for %s: %v", domain, r)
+			}
+		}()
+		s.handleWebSocketConnection(domain, conn)
+	}()
 }
 
 func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) {
@@ -223,7 +230,9 @@ func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Co
 		fmt.Printf("%s Forwarding %s request %s for %s to domain %s\n", common.FormatTime(time.Now()), requestMsg.Method, requestMsg.UUID, requestMsg.URL, domain)
 	}
 
+	s.mu.Lock()
 	connection.Requests[requestMsg.UUID] = make(chan *common.Message)
+	s.mu.Unlock()
 	defer s.RemoveMessageUUIDFromRequestsQueue(domain, requestMsg.UUID)
 	connection.Conn.WriteJSON(requestMsg)
 
