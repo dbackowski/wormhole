@@ -96,6 +96,34 @@ func (client *Client) handleServerHTTPRequest(message common.Message, localURL s
 	client.Conn.WriteJSON(responseMsg)
 }
 
+func (c *Client) handleDomainRegistered() {
+	common.ClearTerminal()
+	fmt.Println("Connected to server.")
+	scheme := strings.Split(c.Local, "://")[0]
+	fmt.Println("Your tunnel is available at:", scheme+"://"+c.Domain+"."+c.ServerHost)
+	fmt.Println("Waiting for incoming HTTP requests...")
+	fmt.Println()
+	fmt.Println("-------------------")
+	fmt.Println()
+}
+
+func (c *Client) handleDomainTaken() {
+	fmt.Println("Domain is already taken. Please choose another one.")
+	closeWebsocket(c.Conn)
+
+}
+func (c *Client) handleHTTPRequest(message common.Message) {
+	localURL := c.Local + message.URL
+
+	if c.Debug {
+		fmt.Println("Received HTTP request notification from server:")
+		common.PrettyPrintMessage(message)
+		fmt.Printf("Forwarding to local server at %s\n", localURL)
+	}
+
+	c.handleServerHTTPRequest(message, localURL)
+}
+
 func (client *Client) handleConnection() {
 	var message common.Message
 
@@ -108,30 +136,11 @@ func (client *Client) handleConnection() {
 
 		switch message.Type {
 		case common.MessageTypeDomainRegistered:
-			common.ClearTerminal()
-			fmt.Println("Connected to server.")
-			scheme := strings.Split(client.Local, "://")[0]
-			fmt.Println("Your tunnel is available at:", scheme+"://"+client.Domain+"."+client.ServerHost)
-			fmt.Println("Waiting for incoming HTTP requests...")
-			fmt.Println()
-			fmt.Println("-------------------")
-			fmt.Println()
-
+			client.handleDomainRegistered()
 		case common.MessageTypeDomainTaken:
-			fmt.Println("Domain is already taken. Please choose another one.")
-			closeWebsocket(client.Conn)
-			return
-
+			client.handleDomainTaken()
 		case common.MessageTypeHTTPRequest:
-			localURL := client.Local + message.URL
-
-			if client.Debug {
-				fmt.Println("Received HTTP request notification from server:")
-				common.PrettyPrintMessage(message)
-				fmt.Printf("Forwarding to local server at %s\n", localURL)
-			}
-
-			client.handleServerHTTPRequest(message, localURL)
+			client.handleHTTPRequest(message)
 		}
 	}
 }
