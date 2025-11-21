@@ -51,7 +51,10 @@ func makeHTTPRequestFromMessage(message common.Message, localURL string) (*http.
 		return nil, err
 	}
 
-	req.Host = message.Headers["Host"][0]
+	if hosts, ok := message.Headers["Host"]; ok && len(hosts) > 0 {
+		req.Host = hosts[0]
+	}
+
 	common.CopyHeaders(message.Headers, req.Header)
 
 	var customClient = &http.Client{

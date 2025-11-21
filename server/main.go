@@ -79,7 +79,7 @@ func (s *Server) RemoveConnection(domain string) {
 	s.mu.Unlock()
 }
 
-func (s *Server) AddMessageToRequestsQueue(message *common.Message) {
+func (s *Server) RegisterRequest(message *common.Message) {
 	connection, exists := s.GetConnection(message.Domain)
 
 	if exists {
@@ -87,7 +87,7 @@ func (s *Server) AddMessageToRequestsQueue(message *common.Message) {
 	}
 }
 
-func (s *Server) RemoveMessageUUIDFromRequestsQueue(domain string, uuid string) {
+func (s *Server) UnregisterRequest(domain string, uuid string) {
 	connection, exists := s.GetConnection(domain)
 
 	if exists {
@@ -163,7 +163,7 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 			} else {
 				fmt.Printf("%s Received HTTP response %d for UUID: %s\n", common.FormatTime(time.Now()), message.Status, message.UUID)
 			}
-			s.AddMessageToRequestsQueue(&message)
+			s.RegisterRequest(&message)
 		}
 	}
 }
@@ -237,7 +237,7 @@ func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Co
 	s.mu.Lock()
 	connection.Requests[requestMsg.UUID] = make(chan *common.Message)
 	s.mu.Unlock()
-	defer s.RemoveMessageUUIDFromRequestsQueue(domain, requestMsg.UUID)
+	defer s.UnregisterRequest(domain, requestMsg.UUID)
 	connection.Conn.WriteJSON(requestMsg)
 
 	select {
