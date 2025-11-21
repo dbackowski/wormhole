@@ -22,6 +22,7 @@ type Client struct {
 	ServerHost string
 	Conn       *websocket.Conn
 	Debug      bool
+	HTTPClient *http.Client
 }
 
 func closeWebsocket(c *websocket.Conn) {
@@ -45,7 +46,7 @@ func (client *Client) buildResponseMessage(message common.Message, status int, b
 	}
 }
 
-func makeHTTPRequestFromMessage(message common.Message, localURL string) (*http.Response, error) {
+func makeHTTPRequestFromMessage(httpClient *http.Client, message common.Message, localURL string) (*http.Response, error) {
 	req, err := http.NewRequest(message.Method, localURL, bytes.NewReader(message.Body))
 	if err != nil {
 		return nil, err
@@ -56,18 +57,11 @@ func makeHTTPRequestFromMessage(message common.Message, localURL string) (*http.
 	}
 
 	common.CopyHeaders(message.Headers, req.Header)
-
-	var customClient = &http.Client{
-		Timeout:       common.RequestTimeout,
-		Transport:     &http.Transport{DisableKeepAlives: true},                                              // Disable connection reuse
-		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }, // Don't follow redirects, instead pass them back to the browser
-	}
-
-	return customClient.Do(req)
+	return httpClient.Do(req)
 }
 
 func (client *Client) handleServerHTTPRequest(message common.Message, localURL string) {
-	res, err := makeHTTPRequestFromMessage(message, localURL)
+	res, err := makeHTTPRequestFromMessage(client.HTTPClient, message, localURL)
 
 	if err != nil {
 		responseMsg := client.buildResponseMessage(message, 502, []byte("Bad Gateway"), nil)
@@ -225,6 +219,11 @@ func main() {
 		Local:      *local,
 		ServerHost: serverHost,
 		Debug:      *debug,
+		HTTPClient: &http.Client{
+			Timeout:       common.RequestTimeout,
+			Transport:     &http.Transport{DisableKeepAlives: true},                                              // Disable connection reuse
+			CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }, // Don't follow redirects, instead pass them back to the browser
+		},
 	}
 
 	defer conn.Close()
