@@ -73,6 +73,12 @@ func (s *Server) GetConnection(domain string) (*Connection, bool) {
 	return connection, exists
 }
 
+func (s *Server) RemoveConnection(domain string) {
+	s.mu.Lock()
+	delete(s.clients, domain)
+	s.mu.Unlock()
+}
+
 func (s *Server) AddMessageToRequestsQueue(message *common.Message) {
 	connection, exists := s.GetConnection(message.Domain)
 
@@ -99,12 +105,6 @@ func (c *Connection) RemoveMessageUUIDFromRequestsQueue(uuid string) {
 	c.mu.Lock()
 	delete(c.Requests, uuid)
 	c.mu.Unlock()
-}
-
-func (s *Server) RemoveConnection(domain string) {
-	s.mu.Lock()
-	delete(s.clients, domain)
-	s.mu.Unlock()
 }
 
 func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
