@@ -234,9 +234,9 @@ func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Co
 		fmt.Printf("%s Forwarding %s request %s for %s to domain %s\n", common.FormatTime(time.Now()), requestMsg.Method, requestMsg.UUID, requestMsg.URL, domain)
 	}
 
-	s.mu.Lock()
+	connection.mu.Lock()
 	connection.Requests[requestMsg.UUID] = make(chan *common.Message)
-	s.mu.Unlock()
+	connection.mu.Unlock()
 	defer s.UnregisterRequest(domain, requestMsg.UUID)
 	connection.Conn.WriteJSON(requestMsg)
 
@@ -256,11 +256,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		s.sendHTTPError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if connection == nil {
-		s.sendHTTPError(w, "Tunnel not found", http.StatusNotFound)
 		return
 	}
 

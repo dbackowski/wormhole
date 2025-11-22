@@ -86,6 +86,8 @@ func (client *Client) handleServerHTTPRequest(message common.Message, localURL s
 	resBody, err := io.ReadAll(res.Body)
 	if err != nil {
 		fmt.Printf("client: could not read response body: %s\n", err)
+		errorMsg := client.buildResponseMessage(message, 502, []byte("Bad Gateway"), nil)
+		client.Conn.WriteJSON(errorMsg)
 		return
 	}
 
