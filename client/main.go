@@ -64,7 +64,7 @@ func (client *Client) handleServerHTTPRequest(message common.Message, localURL s
 	res, err := makeHTTPRequestFromMessage(client.HTTPClient, message, localURL)
 
 	if err != nil {
-		responseMsg := client.buildResponseMessage(message, 502, []byte("Bad Gateway"), nil)
+		responseMsg := client.buildResponseMessage(message, http.StatusBadGateway, []byte("Bad Gateway"), nil)
 
 		if client.Debug {
 			fmt.Printf("client: error making http request: %s\n", err)
@@ -99,7 +99,7 @@ func (c *Client) handleDomainRegistered() {
 	common.ClearTerminal()
 	fmt.Println("Connected to server.")
 	scheme := strings.Split(c.Local, "://")[0]
-	fmt.Println("Your tunnel is available at:", scheme+"://"+c.Domain+"."+c.ServerHost)
+	fmt.Printf("Your tunnel is available at: %s://%s.%s\n", scheme, c.Domain, c.ServerHost)
 	fmt.Println("Waiting for incoming HTTP requests...")
 	fmt.Println()
 	fmt.Println("-------------------")

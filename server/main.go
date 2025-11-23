@@ -75,8 +75,8 @@ func (s *Server) GetConnection(domain string) (*Connection, bool) {
 
 func (s *Server) RemoveConnection(domain string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	delete(s.clients, domain)
-	s.mu.Unlock()
 }
 
 func (s *Server) RegisterRequest(message *common.Message) {
@@ -97,14 +97,14 @@ func (s *Server) UnregisterRequest(domain string, uuid string) {
 
 func (c *Connection) AddMessageToRequestsQueue(message *common.Message) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.Requests[message.UUID] <- message
-	c.mu.Unlock()
 }
 
 func (c *Connection) RemoveMessageUUIDFromRequestsQueue(uuid string) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	delete(c.Requests, uuid)
-	c.mu.Unlock()
 }
 
 func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -180,8 +180,8 @@ func (s *Server) getConnectionForRequest(r *http.Request) (*Connection, string, 
 	}
 
 	s.mu.RLock()
+	defer s.mu.RUnlock()
 	connection, exists := s.clients[domain]
-	s.mu.RUnlock()
 
 	if !exists {
 		return nil, domain, fmt.Errorf("tunnel not found for domain: %s", domain)
