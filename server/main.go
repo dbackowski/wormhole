@@ -226,28 +226,55 @@ func (s *Server) buildRequestMessage(r *http.Request) (*common.Message, error) {
 	}, nil
 }
 
-func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Connection, requestMsg *common.Message, domain string) {
+func (s *Server) logForwardingRequest(requestMsg *common.Message, domain string) {
 	if s.debug {
 		fmt.Println("Forwarding HTTP request to client:")
 		common.PrettyPrintMessage(*requestMsg)
 	} else {
-		fmt.Printf("%s Forwarding %s request %s for %s to domain %s\n", common.FormatTime(time.Now()), requestMsg.Method, requestMsg.UUID, requestMsg.URL, domain)
+		fmt.Printf("%s Forwarding %s request %s for %s to domain %s\n",
+			common.FormatTime(time.Now()),
+			requestMsg.Method,
+			requestMsg.UUID,
+			requestMsg.URL,
+			domain)
 	}
+}
 
+func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Connection, requestMsg *common.Message, domain string) {
+	s.logForwardingRequest(requestMsg, domain)
+
+	responseChan := s.registerAndForwardRequest(connection, requestMsg)
+	defer s.UnregisterRequest(domain, requestMsg.UUID)
+
+	s.handleResponse(w, responseChan)
+}
+
+func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *common.Message) chan *common.Message {
 	connection.mu.Lock()
 	connection.Requests[requestMsg.UUID] = make(chan *common.Message)
 	connection.mu.Unlock()
-	defer s.UnregisterRequest(domain, requestMsg.UUID)
-	connection.Conn.WriteJSON(requestMsg)
 
+	connection.Conn.WriteJSON(requestMsg)
+	return connection.Requests[requestMsg.UUID]
+}
+
+func (s *Server) writeSuccessResponse(w http.ResponseWriter, responseMsg *common.Message) {
+	common.CopyHeaders(responseMsg.Headers, w.Header())
+	w.WriteHeader(responseMsg.Status)
+	w.Write(responseMsg.Body)
+}
+
+func (s *Server) writeTimeoutResponse(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusRequestTimeout)
+	w.Write([]byte("Request timeout"))
+}
+
+func (s *Server) handleResponse(w http.ResponseWriter, responseChan chan *common.Message) {
 	select {
-	case responseMsg := <-connection.Requests[requestMsg.UUID]:
-		common.CopyHeaders(responseMsg.Headers, w.Header())
-		w.WriteHeader(responseMsg.Status)
-		w.Write(responseMsg.Body)
+	case responseMsg := <-responseChan:
+		s.writeSuccessResponse(w, responseMsg)
 	case <-time.After(common.RequestTimeout):
-		w.WriteHeader(http.StatusRequestTimeout)
-		w.Write([]byte("Request timeout"))
+		s.writeTimeoutResponse(w)
 	}
 }
 
