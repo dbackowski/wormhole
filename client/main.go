@@ -88,7 +88,6 @@ func (client *Client) handleServerHTTPRequest(message common.Message, localURL s
 	res, err := client.makeLocalRequest(message, localURL)
 
 	if err != nil {
-		client.logResponse(message, localURL, 502)
 		client.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
 		return
 	}
@@ -190,7 +189,7 @@ func buildWebSocketURL(serverURL, domain string) (string, string, error) {
 }
 
 func main() {
-	var server = flag.String("server", "http://localhost:8080", "Server URL")
+	var server = flag.String("server", common.DefaultClientServerURL, "Server URL")
 	var domain = flag.String("domain", "", "Custom domain")
 	var local = flag.String("local", "", "Local server URL")
 	var debug = flag.Bool("debug", false, "Enable debug mode")

@@ -298,7 +298,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	common.ClearTerminal()
-	var port = flag.Int("port", 8080, "Port to run the server on")
+	var port = flag.Int("port", common.DefaultServerPort, "Port to run the server on")
 	var debug = flag.Bool("debug", false, "Enable debug mode")
 
 	flag.Parse()
