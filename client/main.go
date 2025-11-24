@@ -46,7 +46,7 @@ func (client *Client) buildResponseMessage(message common.Message, status int, b
 	}
 }
 
-func makeHTTPRequestFromMessage(httpClient *http.Client, message common.Message, localURL string) (*http.Response, error) {
+func (client *Client) makeLocalRequest(message common.Message, localURL string) (*http.Response, error) {
 	req, err := http.NewRequest(message.Method, localURL, bytes.NewReader(message.Body))
 	if err != nil {
 		return nil, err
@@ -57,42 +57,49 @@ func makeHTTPRequestFromMessage(httpClient *http.Client, message common.Message,
 	}
 
 	common.CopyHeaders(message.Headers, req.Header)
-	return httpClient.Do(req)
+	return client.HTTPClient.Do(req)
+}
+
+func (client *Client) logResponse(message common.Message, localURL string, statusCode int) {
+	if client.Debug {
+		fmt.Printf("Response status code: %d\n", statusCode)
+	} else {
+		fmt.Printf("%s %s %s -> %d\n", common.FormatTime(time.Now()), message.Method, localURL, statusCode)
+	}
+}
+
+func (client *Client) forwardResponse(message common.Message, res *http.Response) error {
+	resBody, err := io.ReadAll(res.Body)
+
+	if err != nil {
+		return fmt.Errorf("could not read response body: %w", err)
+	}
+
+	responseMsg := client.buildResponseMessage(message, res.StatusCode, resBody, res.Header)
+	return client.Conn.WriteJSON(responseMsg)
+}
+
+func (client *Client) sendErrorResponse(message common.Message, status int, errorMessage string) {
+	responseMsg := client.buildResponseMessage(message, status, []byte(errorMessage), nil)
+	client.Conn.WriteJSON(responseMsg)
 }
 
 func (client *Client) handleServerHTTPRequest(message common.Message, localURL string) {
-	res, err := makeHTTPRequestFromMessage(client.HTTPClient, message, localURL)
+	res, err := client.makeLocalRequest(message, localURL)
 
 	if err != nil {
-		responseMsg := client.buildResponseMessage(message, http.StatusBadGateway, []byte("Bad Gateway"), nil)
-
-		if client.Debug {
-			fmt.Printf("client: error making http request: %s\n", err)
-		} else {
-			fmt.Printf("%s %s -> %d\n", responseMsg.Method, localURL, responseMsg.Status)
-		}
-
-		client.Conn.WriteJSON(responseMsg)
+		client.logResponse(message, localURL, 502)
+		client.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
 		return
 	}
 	defer res.Body.Close()
 
-	if client.Debug {
-		fmt.Printf("Response status code: %d\n", res.StatusCode)
-	} else {
-		fmt.Printf("%s %s %s -> %d\n", common.FormatTime(time.Now()), message.Method, localURL, res.StatusCode)
-	}
+	client.logResponse(message, localURL, res.StatusCode)
+	err = client.forwardResponse(message, res)
 
-	resBody, err := io.ReadAll(res.Body)
 	if err != nil {
-		fmt.Printf("client: could not read response body: %s\n", err)
-		errorMsg := client.buildResponseMessage(message, 502, []byte("Bad Gateway"), nil)
-		client.Conn.WriteJSON(errorMsg)
-		return
+		client.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
 	}
-
-	responseMsg := client.buildResponseMessage(message, res.StatusCode, resBody, res.Header)
-	client.Conn.WriteJSON(responseMsg)
 }
 
 func (c *Client) handleDomainRegistered() {
