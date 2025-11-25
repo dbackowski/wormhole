@@ -124,12 +124,19 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	err = s.AddConnection(domain, conn)
 
 	if err != nil {
-		conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
+		if err = conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken}); err != nil {
+			fmt.Printf("Failed to send message: %v\n", err)
+		}
 		conn.Close()
 		return
 	}
 
-	conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered})
+	if err = conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
+		fmt.Printf("Failed to send message: %v\n", err)
+		s.RemoveConnection(domain)
+		return
+	}
+
 	fmt.Printf("Registered connection for domain: %s\n", domain)
 
 	go func() {
@@ -243,18 +250,24 @@ func (s *Server) logForwardingRequest(requestMsg *common.Message, domain string)
 func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Connection, requestMsg *common.Message, domain string) {
 	s.logForwardingRequest(requestMsg, domain)
 
-	responseChan := s.registerAndForwardRequest(connection, requestMsg)
+	responseChan, err := s.registerAndForwardRequest(connection, requestMsg)
+	if err != nil {
+		s.sendHTTPError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	defer s.UnregisterRequest(domain, requestMsg.UUID)
 
 	s.handleResponse(w, responseChan)
 }
 
-func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *common.Message) chan *common.Message {
+func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *common.Message) (chan *common.Message, error) {
 	connection.mu.Lock()
 	defer connection.mu.Unlock()
 	connection.Requests[requestMsg.UUID] = make(chan *common.Message)
-	connection.Conn.WriteJSON(requestMsg)
-	return connection.Requests[requestMsg.UUID]
+	if err := connection.Conn.WriteJSON(requestMsg); err != nil {
+		return nil, fmt.Errorf("failed to forward request to client: %v", err)
+	}
+	return connection.Requests[requestMsg.UUID], nil
 }
 
 func (s *Server) writeSuccessResponse(w http.ResponseWriter, responseMsg *common.Message) {
