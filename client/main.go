@@ -88,6 +88,7 @@ func (client *Client) handleServerHTTPRequest(message common.Message, localURL s
 	res, err := client.makeLocalRequest(message, localURL)
 
 	if err != nil {
+		client.logResponse(message, localURL, 502)
 		client.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
 		return
 	}

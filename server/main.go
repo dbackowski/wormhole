@@ -251,9 +251,8 @@ func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Co
 
 func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *common.Message) chan *common.Message {
 	connection.mu.Lock()
+	defer connection.mu.Unlock()
 	connection.Requests[requestMsg.UUID] = make(chan *common.Message)
-	connection.mu.Unlock()
-
 	connection.Conn.WriteJSON(requestMsg)
 	return connection.Requests[requestMsg.UUID]
 }
