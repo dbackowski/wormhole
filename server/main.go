@@ -34,10 +34,6 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-func GenerateUUID() string {
-	return uuid.New().String()
-}
-
 func (s *Server) extractDomain(host string) (string, error) {
 	parts := strings.Split(host, ".")
 
@@ -232,7 +228,7 @@ func (s *Server) buildRequestMessage(r *http.Request) (*common.Message, error) {
 
 	return &common.Message{
 		Type:    common.MessageTypeHTTPRequest,
-		UUID:    GenerateUUID(),
+		UUID:    uuid.New().String(),
 		URL:     r.URL.String(),
 		Method:  r.Method,
 		Headers: headers,
