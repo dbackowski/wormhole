@@ -98,7 +98,14 @@ func (s *Server) UnregisterRequest(domain string, uuid string) {
 func (c *Connection) AddMessageToRequestsQueue(message *common.Message) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Requests[message.UUID] <- message
+
+	ch, exists := c.Requests[message.UUID]
+	if !exists {
+		fmt.Printf("Received late response for UUID %s (already timed out)\n", message.UUID)
+		return
+	}
+
+	ch <- message
 }
 
 func (c *Connection) RemoveMessageUUIDFromRequestsQueue(uuid string) {
