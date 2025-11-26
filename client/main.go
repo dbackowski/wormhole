@@ -99,6 +99,7 @@ func (client *Client) handleServerHTTPRequest(message common.Message, localURL s
 
 	if err != nil {
 		client.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
+		return
 	}
 }
 
