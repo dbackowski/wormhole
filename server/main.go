@@ -22,16 +22,58 @@ type Connection struct {
 	mu       sync.RWMutex
 }
 
-type Server struct {
+type ConnectionManager struct {
 	mu      sync.RWMutex
 	clients map[string]*Connection
-	debug   bool
+}
+
+type Server struct {
+	connManager *ConnectionManager
+	debug       bool
 }
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
+}
+
+func NewConnectionManager() *ConnectionManager {
+	return &ConnectionManager{
+		clients: make(map[string]*Connection),
+	}
+}
+
+func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	_, exists := cm.clients[domain]
+	if exists {
+		return fmt.Errorf("domain %s is already taken", domain)
+	}
+
+	cm.clients[domain] = &Connection{
+		Domain:   domain,
+		Conn:     conn,
+		Requests: make(map[string]chan *common.Message),
+	}
+
+	return nil
+}
+
+func (cm *ConnectionManager) GetConnection(domain string) (*Connection, bool) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	connection, exists := cm.clients[domain]
+
+	return connection, exists
+}
+
+func (cm *ConnectionManager) RemoveConnection(domain string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	delete(cm.clients, domain)
 }
 
 func (s *Server) extractDomain(host string) (string, error) {
@@ -43,40 +85,8 @@ func (s *Server) extractDomain(host string) (string, error) {
 	return parts[0], nil
 }
 
-func (s *Server) AddConnection(domain string, conn *websocket.Conn) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	_, exists := s.clients[domain]
-	if exists {
-		return fmt.Errorf("domain %s is already taken", domain)
-	}
-
-	s.clients[domain] = &Connection{
-		Domain:   domain,
-		Conn:     conn,
-		Requests: make(map[string]chan *common.Message),
-	}
-
-	return nil
-}
-
-func (s *Server) GetConnection(domain string) (*Connection, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	connection, exists := s.clients[domain]
-
-	return connection, exists
-}
-
-func (s *Server) RemoveConnection(domain string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.clients, domain)
-}
-
 func (s *Server) RegisterRequest(message *common.Message) {
-	connection, exists := s.GetConnection(message.Domain)
+	connection, exists := s.connManager.GetConnection(message.Domain)
 
 	if exists {
 		connection.AddMessageToRequestsQueue(message)
@@ -84,7 +94,7 @@ func (s *Server) RegisterRequest(message *common.Message) {
 }
 
 func (s *Server) UnregisterRequest(domain string, uuid string) {
-	connection, exists := s.GetConnection(domain)
+	connection, exists := s.connManager.GetConnection(domain)
 
 	if exists {
 		connection.RemoveMessageUUIDFromRequestsQueue(uuid)
@@ -124,7 +134,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.AddConnection(domain, conn)
+	err = s.connManager.AddConnection(domain, conn)
 
 	if err != nil {
 		if err = conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken}); err != nil {
@@ -136,7 +146,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	if err = conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
 		fmt.Printf("Failed to send message: %v\n", err)
-		s.RemoveConnection(domain)
+		s.connManager.RemoveConnection(domain)
 		return
 	}
 
@@ -161,7 +171,7 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 		err := conn.ReadJSON(&message)
 		if err != nil {
 			fmt.Printf("Closing connection for domain: %s\n", domain)
-			s.RemoveConnection(domain)
+			s.connManager.RemoveConnection(domain)
 			return
 		}
 
@@ -189,9 +199,9 @@ func (s *Server) getConnectionForRequest(r *http.Request) (*Connection, string, 
 		return nil, "", err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	connection, exists := s.clients[domain]
+	s.connManager.mu.RLock()
+	defer s.connManager.mu.RUnlock()
+	connection, exists := s.connManager.clients[domain]
 
 	if !exists {
 		return nil, domain, fmt.Errorf("tunnel not found for domain: %s", domain)
@@ -318,9 +328,9 @@ func main() {
 
 	flag.Parse()
 
-	var server = Server{
-		clients: make(map[string]*Connection),
-		debug:   *debug,
+	server := Server{
+		connManager: NewConnectionManager(),
+		debug:       *debug,
 	}
 
 	http.HandleFunc("/ws", server.ServeWebSocket)
