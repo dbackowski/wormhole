@@ -275,12 +275,13 @@ func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Co
 
 func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *common.Message) (chan *common.Message, error) {
 	connection.mu.Lock()
-	defer connection.mu.Unlock()
-	connection.Requests[requestMsg.UUID] = make(chan *common.Message)
+	responseChan := connection.Requests[requestMsg.UUID] = make(chan *common.Message)
+	connection.mu.Unlock()
+	
 	if err := connection.Conn.WriteJSON(requestMsg); err != nil {
 		return nil, fmt.Errorf("failed to forward request to client: %v", err)
 	}
-	return connection.Requests[requestMsg.UUID], nil
+	return responseChan, nil
 }
 
 func (s *Server) writeSuccessResponse(w http.ResponseWriter, responseMsg *common.Message) {
