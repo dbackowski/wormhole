@@ -201,7 +201,7 @@ func (s *Server) getConnectionForRequest(r *http.Request) (*Connection, string, 
 
 	s.connManager.mu.RLock()
 	defer s.connManager.mu.RUnlock()
-	connection, exists := s.connManager.clients[domain]
+	connection, exists := s.connManager.GetConnection(domain)
 
 	if !exists {
 		return nil, domain, fmt.Errorf("tunnel not found for domain: %s", domain)

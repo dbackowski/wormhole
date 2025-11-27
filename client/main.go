@@ -82,6 +82,10 @@ func (client *Client) forwardResponse(message common.Message, res *http.Response
 func (client *Client) sendErrorResponse(message common.Message, status int, errorMessage string) {
 	responseMsg := client.buildResponseMessage(message, status, []byte(errorMessage), nil)
 	client.Conn.WriteJSON(responseMsg)
+
+	if err := client.Conn.WriteJSON(responseMsg); err != nil {
+		log.Printf("Failed to send error response: %v", err)
+	}
 }
 
 func (client *Client) handleServerHTTPRequest(message common.Message, localURL string) {
