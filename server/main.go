@@ -44,6 +44,11 @@ func NewConnectionManager() *ConnectionManager {
 	}
 }
 
+func isWebSocketUpgradeRequest(headers http.Header) bool {
+	return headers.Get("Connection") == "Upgrade" &&
+		headers.Get("Upgrade") == "websocket"
+}
+
 func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -76,6 +81,25 @@ func (cm *ConnectionManager) RemoveConnection(domain string) {
 	delete(cm.clients, domain)
 }
 
+func (c *Connection) AddMessageToRequestsQueue(message *common.Message) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	ch, exists := c.Requests[message.UUID]
+	if !exists {
+		fmt.Printf("Received late response for UUID %s (already timed out)\n", message.UUID)
+		return
+	}
+
+	ch <- message
+}
+
+func (c *Connection) RemoveMessageUUIDFromRequestsQueue(uuid string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.Requests, uuid)
+}
+
 func (s *Server) extractDomain(host string) (string, error) {
 	parts := strings.Split(host, ".")
 
@@ -99,25 +123,6 @@ func (s *Server) UnregisterRequest(domain string, uuid string) {
 	if exists {
 		connection.RemoveMessageUUIDFromRequestsQueue(uuid)
 	}
-}
-
-func (c *Connection) AddMessageToRequestsQueue(message *common.Message) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	ch, exists := c.Requests[message.UUID]
-	if !exists {
-		fmt.Printf("Received late response for UUID %s (already timed out)\n", message.UUID)
-		return
-	}
-
-	ch <- message
-}
-
-func (c *Connection) RemoveMessageUUIDFromRequestsQueue(uuid string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.Requests, uuid)
 }
 
 func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -206,11 +211,6 @@ func (s *Server) getConnectionForRequest(r *http.Request) (*Connection, string, 
 	}
 
 	return connection, domain, nil
-}
-
-func isWebSocketUpgradeRequest(headers http.Header) bool {
-	return headers.Get("Connection") == "Upgrade" &&
-		headers.Get("Upgrade") == "websocket"
 }
 
 func (s *Server) buildRequestMessage(r *http.Request) (*common.Message, error) {
