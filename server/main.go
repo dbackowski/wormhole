@@ -199,8 +199,6 @@ func (s *Server) getConnectionForRequest(r *http.Request) (*Connection, string, 
 		return nil, "", err
 	}
 
-	s.connManager.mu.RLock()
-	defer s.connManager.mu.RUnlock()
 	connection, exists := s.connManager.GetConnection(domain)
 
 	if !exists {
@@ -337,7 +335,7 @@ func main() {
 	http.HandleFunc("/ws", server.ServeWebSocket)
 	http.HandleFunc("/", server.ServeHTTP)
 	fmt.Println("WebSocket server started on :" + strconv.Itoa(*port))
-	err := http.ListenAndServe(":"+strconv.Itoa(*port), nil)
+	err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
 
 	if err != nil {
 		fmt.Println("Error starting server:", err)
