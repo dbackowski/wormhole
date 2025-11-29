@@ -33,10 +33,10 @@ func closeWebsocket(c *websocket.Conn) {
 	}
 }
 
-func (client *Client) buildResponseMessage(message common.Message, status int, body []byte, headers http.Header) common.Message {
+func (c *Client) buildResponseMessage(message common.Message, status int, body []byte, headers http.Header) common.Message {
 	return common.Message{
 		Type:    common.MessageTypeHTTPResponse,
-		Domain:  client.Domain,
+		Domain:  c.Domain,
 		UUID:    message.UUID,
 		Method:  message.Method,
 		URL:     message.URL,
@@ -46,7 +46,7 @@ func (client *Client) buildResponseMessage(message common.Message, status int, b
 	}
 }
 
-func (client *Client) makeLocalRequest(message common.Message, localURL string) (*http.Response, error) {
+func (c *Client) makeLocalRequest(message common.Message, localURL string) (*http.Response, error) {
 	req, err := http.NewRequest(message.Method, localURL, bytes.NewReader(message.Body))
 	if err != nil {
 		return nil, err
@@ -57,52 +57,52 @@ func (client *Client) makeLocalRequest(message common.Message, localURL string) 
 	}
 
 	common.CopyHeaders(message.Headers, req.Header)
-	return client.HTTPClient.Do(req)
+	return c.HTTPClient.Do(req)
 }
 
-func (client *Client) logResponse(message common.Message, localURL string, statusCode int) {
-	if client.Debug {
+func (c *Client) logResponse(message common.Message, localURL string, statusCode int) {
+	if c.Debug {
 		fmt.Printf("Response status code: %d\n", statusCode)
 	} else {
 		fmt.Printf("%s %s %s -> %d\n", common.FormatTime(time.Now()), message.Method, localURL, statusCode)
 	}
 }
 
-func (client *Client) forwardResponse(message common.Message, res *http.Response) error {
+func (c *Client) forwardResponse(message common.Message, res *http.Response) error {
 	resBody, err := io.ReadAll(res.Body)
 
 	if err != nil {
 		return fmt.Errorf("could not read response body: %w", err)
 	}
 
-	responseMsg := client.buildResponseMessage(message, res.StatusCode, resBody, res.Header)
-	return client.Conn.WriteJSON(responseMsg)
+	responseMsg := c.buildResponseMessage(message, res.StatusCode, resBody, res.Header)
+	return c.Conn.WriteJSON(responseMsg)
 }
 
-func (client *Client) sendErrorResponse(message common.Message, status int, errorMessage string) {
-	responseMsg := client.buildResponseMessage(message, status, []byte(errorMessage), nil)
-	err := client.Conn.WriteJSON(responseMsg)
+func (c *Client) sendErrorResponse(message common.Message, status int, errorMessage string) {
+	responseMsg := c.buildResponseMessage(message, status, []byte(errorMessage), nil)
+	err := c.Conn.WriteJSON(responseMsg)
 
 	if err != nil {
 		log.Printf("Failed to send error response: %v", err)
 	}
 }
 
-func (client *Client) handleServerHTTPRequest(message common.Message, localURL string) {
-	res, err := client.makeLocalRequest(message, localURL)
+func (c *Client) handleServerHTTPRequest(message common.Message, localURL string) {
+	res, err := c.makeLocalRequest(message, localURL)
 
 	if err != nil {
-		client.logResponse(message, localURL, 502)
-		client.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
+		c.logResponse(message, localURL, 502)
+		c.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
 		return
 	}
 	defer res.Body.Close()
 
-	client.logResponse(message, localURL, res.StatusCode)
-	err = client.forwardResponse(message, res)
+	c.logResponse(message, localURL, res.StatusCode)
+	err = c.forwardResponse(message, res)
 
 	if err != nil {
-		client.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
+		c.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
 		return
 	}
 }
@@ -135,11 +135,11 @@ func (c *Client) handleHTTPRequest(message common.Message) {
 	c.handleServerHTTPRequest(message, localURL)
 }
 
-func (client *Client) handleConnection() {
+func (c *Client) handleConnection() {
 	var message common.Message
 
 	for {
-		err := client.Conn.ReadJSON(&message)
+		err := c.Conn.ReadJSON(&message)
 		if err != nil {
 			log.Printf("Read error: %v", err)
 			return
@@ -147,11 +147,11 @@ func (client *Client) handleConnection() {
 
 		switch message.Type {
 		case common.MessageTypeDomainRegistered:
-			client.handleDomainRegistered()
+			c.handleDomainRegistered()
 		case common.MessageTypeDomainTaken:
-			client.handleDomainTaken()
+			c.handleDomainTaken()
 		case common.MessageTypeHTTPRequest:
-			client.handleHTTPRequest(message)
+			c.handleHTTPRequest(message)
 		}
 	}
 }
