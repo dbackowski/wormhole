@@ -125,46 +125,57 @@ func (s *Server) UnregisterRequest(domain string, uuid string) {
 	}
 }
 
-func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
+func (s *Server) upgradeAndExtractDomain(w http.ResponseWriter, r *http.Request) (*websocket.Conn, string, error) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		fmt.Println("Error upgrading:", err)
-		return
+		return nil, "", err
 	}
 
 	domain, err := s.extractDomain(r.Host)
 
 	if err != nil {
 		conn.Close()
-		return
+		return nil, "", err
 	}
 
-	err = s.connManager.AddConnection(domain, conn)
+	return conn, domain, nil
+}
+
+func (s Server) registerClient(conn *websocket.Conn, domain string) error {
+	err := s.connManager.AddConnection(domain, conn)
 
 	if err != nil {
-		if err = conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken}); err != nil {
-			fmt.Printf("Failed to send message: %v\n", err)
-		}
+		err = conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
 		conn.Close()
-		return
+		return err
 	}
 
 	if err = conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
-		fmt.Printf("Failed to send message: %v\n", err)
 		s.connManager.RemoveConnection(domain)
+		conn.Close()
+		return err
+	}
+
+	return nil
+}
+
+func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, domain, err := s.upgradeAndExtractDomain(w, r)
+
+	if err != nil {
+		fmt.Printf("WebSocket upgrade or extracting domain failed: %v\n", err)
+		return
+	}
+
+	err = s.registerClient(conn, domain)
+
+	if err != nil {
+		fmt.Printf("Client registration failed for domain %s: %v\n", domain, err)
 		return
 	}
 
 	fmt.Printf("Registered connection for domain: %s\n", domain)
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				fmt.Printf("Panic in handleWebSocketConnection for %s: %v", domain, r)
-			}
-		}()
-		s.handleWebSocketConnection(domain, conn)
-	}()
+	s.handleWebSocketConnection(domain, conn)
 }
 
 func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) {
@@ -174,6 +185,7 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 		var message common.Message
 
 		err := conn.ReadJSON(&message)
+
 		if err != nil {
 			fmt.Printf("Closing connection for domain: %s\n", domain)
 			s.connManager.RemoveConnection(domain)
