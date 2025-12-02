@@ -194,52 +194,58 @@ func buildWebSocketURL(serverURL, domain string) (string, string, error) {
 	return wsURL, host, nil
 }
 
-func main() {
-	var server = flag.String("server", common.DefaultClientServerURL, "Server URL")
-	var domain = flag.String("domain", "", "Custom domain")
-	var local = flag.String("local", "", "Local server URL")
-	var debug = flag.Bool("debug", false, "Enable debug mode")
-
-	flag.Parse()
-
-	if *domain == "" {
-		log.Fatal("domain is required. Use -domain flag")
+func NewClient(server, domain, local string, debug bool) (*Client, error) {
+	if domain == "" {
+		return nil, fmt.Errorf("domain is required. Use -domain flag")
 	}
 
-	if *local == "" {
-		log.Fatal("local is required. Use -local flag")
+	if local == "" {
+		return nil, fmt.Errorf("local is required. Use -local flag")
 	}
 
-	_, err := parseURL(*local)
+	_, err := parseURL(local)
 
 	if err != nil {
-		log.Fatalf("Invalid local URL: %v\n", err)
+		return nil, fmt.Errorf("invalid local URL: %w", err)
 	}
 
-	websocketURL, serverHost, err := buildWebSocketURL(*server, *domain)
+	websocketURL, serverHost, err := buildWebSocketURL(server, domain)
 
 	if err != nil {
-		log.Fatalf("Invalid server URL: %v\n", err)
+		return nil, fmt.Errorf("invalid server URL: %w", err)
 	}
 
 	conn, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
 	if err != nil {
-		log.Fatalf("Failed to connect to server at %s: %v\n", websocketURL, err)
+		return nil, fmt.Errorf("failed to connect to server at %s: %w", websocketURL, err)
 	}
 
-	var client = Client{
-		Domain:     *domain,
+	return &Client{
+		Domain:     domain,
 		Conn:       conn,
-		Local:      *local,
+		Local:      local,
 		ServerHost: serverHost,
-		Debug:      *debug,
+		Debug:      debug,
 		HTTPClient: &http.Client{
 			Timeout:       common.RequestTimeout,
 			Transport:     &http.Transport{DisableKeepAlives: true},                                              // Disable connection reuse
 			CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }, // Don't follow redirects, instead pass them back to the browser
 		},
+	}, nil
+}
+
+func main() {
+	var server = flag.String("server", common.DefaultClientServerURL, "Server URL")
+	var domain = flag.String("domain", "", "Custom domain")
+	var local = flag.String("local", "", "Local server URL")
+	var debug = flag.Bool("debug", false, "Enable debug mode")
+	flag.Parse()
+
+	client, err := NewClient(*server, *domain, *local, *debug)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	defer conn.Close()
+	defer client.Conn.Close()
 	client.handleConnection()
 }

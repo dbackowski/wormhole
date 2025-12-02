@@ -43,7 +43,13 @@ func CopyHeaders(src http.Header, dest http.Header) {
 func PrettyPrintMessage(msg Message) {
 	clone := msg
 	clone.Body = nil
-	jsonMessage, _ := json.MarshalIndent(clone, "", "  ")
+	jsonMessage, err := json.MarshalIndent(clone, "", "  ")
+
+	if err != nil {
+		fmt.Printf("Failed to marshal message: %v\n", err)
+		return
+	}
+
 	fmt.Println(string(jsonMessage))
 }
 
