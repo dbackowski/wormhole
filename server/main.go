@@ -225,6 +225,19 @@ func (s *Server) getConnectionForRequest(r *http.Request) (*Connection, string, 
 	return connection, domain, nil
 }
 
+func prepareRequestHeaders(r *http.Request) map[string][]string {
+	headers := make(map[string][]string)
+	headers["Host"] = []string{r.Host}
+
+	for key, values := range r.Header {
+		if len(values) > 0 {
+			headers[key] = values
+		}
+	}
+
+	return headers
+}
+
 func (s *Server) buildRequestMessage(r *http.Request) (*common.Message, error) {
 	defer r.Body.Close()
 	reqBody, err := io.ReadAll(r.Body)
@@ -237,21 +250,12 @@ func (s *Server) buildRequestMessage(r *http.Request) (*common.Message, error) {
 		return nil, fmt.Errorf("WebSocket upgrade not supported")
 	}
 
-	headers := make(map[string][]string)
-	headers["Host"] = []string{r.Host}
-
-	for key, values := range r.Header {
-		if len(values) > 0 {
-			headers[key] = values
-		}
-	}
-
 	return &common.Message{
 		Type:    common.MessageTypeHTTPRequest,
 		UUID:    uuid.New().String(),
 		URL:     r.URL.String(),
 		Method:  r.Method,
-		Headers: headers,
+		Headers: prepareRequestHeaders(r),
 		Body:    reqBody,
 	}, nil
 }
