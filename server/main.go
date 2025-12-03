@@ -141,7 +141,7 @@ func (s *Server) upgradeAndExtractDomain(w http.ResponseWriter, r *http.Request)
 	return conn, domain, nil
 }
 
-func (s Server) registerClient(conn *websocket.Conn, domain string) error {
+func (s *Server) registerClient(conn *websocket.Conn, domain string) error {
 	err := s.connManager.AddConnection(domain, conn)
 
 	if err != nil {
