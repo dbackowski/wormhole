@@ -109,7 +109,7 @@ func (s *Server) extractDomain(host string) (string, error) {
 	return parts[0], nil
 }
 
-func (s *Server) RegisterRequest(message *common.Message) {
+func (s *Server) DeliverResponse(message *common.Message) {
 	connection, exists := s.connManager.GetConnection(message.Domain)
 
 	if exists {
@@ -117,7 +117,7 @@ func (s *Server) RegisterRequest(message *common.Message) {
 	}
 }
 
-func (s *Server) UnregisterRequest(domain string, uuid string) {
+func (s *Server) CleanupRequest(domain string, uuid string) {
 	connection, exists := s.connManager.GetConnection(domain)
 
 	if exists {
@@ -200,7 +200,7 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 			} else {
 				fmt.Printf("%s Received HTTP response %d for UUID: %s\n", common.FormatTime(time.Now()), message.Status, message.UUID)
 			}
-			s.RegisterRequest(&message)
+			s.DeliverResponse(&message)
 		}
 	}
 }
@@ -282,7 +282,7 @@ func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Co
 		s.sendHTTPError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer s.UnregisterRequest(domain, requestMsg.UUID)
+	defer s.CleanupRequest(domain, requestMsg.UUID)
 
 	s.handleResponse(w, responseChan)
 }
