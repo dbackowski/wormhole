@@ -79,6 +79,15 @@ func (c *Client) forwardResponse(message common.Message, res *http.Response) err
 	return c.Conn.WriteJSON(responseMsg)
 }
 
+func (c *Client) respondToServer(message common.Message, res *http.Response, err error) {
+	if err != nil {
+		c.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
+		return
+	}
+	defer res.Body.Close()
+	c.forwardResponse(message, res)
+}
+
 func (c *Client) sendErrorResponse(message common.Message, status int, errorMessage string) {
 	responseMsg := c.buildResponseMessage(message, status, []byte(errorMessage), nil)
 	err := c.Conn.WriteJSON(responseMsg)
@@ -91,20 +100,14 @@ func (c *Client) sendErrorResponse(message common.Message, status int, errorMess
 func (c *Client) handleServerHTTPRequest(message common.Message, localURL string) {
 	res, err := c.makeLocalRequest(message, localURL)
 
-	if err != nil {
-		c.logResponse(message, localURL, 502)
-		c.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
-		return
-	}
-	defer res.Body.Close()
+	statusCode := http.StatusBadGateway
 
-	c.logResponse(message, localURL, res.StatusCode)
-	err = c.forwardResponse(message, res)
-
-	if err != nil {
-		c.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
-		return
+	if err == nil {
+		statusCode = res.StatusCode
 	}
+
+	c.logResponse(message, localURL, statusCode)
+	c.respondToServer(message, res, err)
 }
 
 func (c *Client) handleDomainRegistered() {
