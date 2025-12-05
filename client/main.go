@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
@@ -19,10 +18,16 @@ import (
 type Client struct {
 	Domain     string
 	Local      string
-	ServerHost string
+	Tunnel     string
 	Conn       *websocket.Conn
 	Debug      bool
 	HTTPClient *http.Client
+}
+
+type ServerConfig struct {
+	HTTPScheme string
+	WSScheme   string
+	Host       string
 }
 
 func closeWebsocket(c *websocket.Conn) {
@@ -113,8 +118,7 @@ func (c *Client) handleServerHTTPRequest(message common.Message, localURL string
 func (c *Client) handleDomainRegistered() {
 	common.ClearTerminal()
 	fmt.Println("Connected to server.")
-	scheme := strings.Split(c.Local, "://")[0]
-	fmt.Printf("Your tunnel is available at: %s://%s.%s\n", scheme, c.Domain, c.ServerHost)
+	fmt.Printf("Your tunnel is available at: %s\n", c.Tunnel)
 	fmt.Println("Waiting for incoming HTTP requests...")
 	fmt.Println()
 	fmt.Println("-------------------")
@@ -159,6 +163,24 @@ func (c *Client) handleConnection() {
 	}
 }
 
+func validateAndParseServerURL(rawURL string) (*ServerConfig, error) {
+	parsed, err := parseURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+
+	wsScheme := "ws"
+	if parsed.Scheme == "https" {
+		wsScheme = "wss"
+	}
+
+	return &ServerConfig{
+		HTTPScheme: parsed.Scheme,
+		WSScheme:   wsScheme,
+		Host:       parsed.Host,
+	}, nil
+}
+
 func parseURL(rawURL string) (url.URL, error) {
 	if rawURL == "" {
 		return url.URL{}, fmt.Errorf("url is empty")
@@ -181,54 +203,55 @@ func parseURL(rawURL string) (url.URL, error) {
 	return *parsed, nil
 }
 
-func buildWebSocketURL(serverURL, domain string) (string, string, error) {
-	parsed, err := parseURL(serverURL)
-	if err != nil {
-		return "", "", err
-	}
-
-	scheme := "ws"
-	if parsed.Scheme == "https" {
-		scheme = "wss"
-	}
-
-	host := parsed.Host
-	wsURL := fmt.Sprintf("%s://%s.%s/ws", scheme, domain, host)
-	return wsURL, host, nil
+func buildWebSocketURL(s *ServerConfig, domain string) string {
+	return fmt.Sprintf("%s://%s.%s/ws", s.WSScheme, domain, s.Host)
 }
 
-func NewClient(server, domain, local string, debug bool) (*Client, error) {
+func validateClientConfig(domain, local string) error {
 	if domain == "" {
-		return nil, fmt.Errorf("domain is required. Use -domain flag")
+		return fmt.Errorf("domain is required. Use -domain flag")
 	}
 
 	if local == "" {
-		return nil, fmt.Errorf("local is required. Use -local flag")
+		return fmt.Errorf("local is required. Use -local flag")
 	}
 
 	_, err := parseURL(local)
 
 	if err != nil {
-		return nil, fmt.Errorf("invalid local URL: %w", err)
+		return fmt.Errorf("invalid local URL: %w", err)
 	}
 
-	websocketURL, serverHost, err := buildWebSocketURL(server, domain)
+	return nil
+}
 
+func connectToServer(websocketURL string) (*websocket.Conn, error) {
+	conn, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
+
+	return conn, err
+}
+
+func NewClient(server, domain, local string, debug bool) (*Client, error) {
+	if err := validateClientConfig(domain, local); err != nil {
+		return nil, err
+	}
+
+	serverConfig, err := validateAndParseServerURL(server)
 	if err != nil {
 		return nil, fmt.Errorf("invalid server URL: %w", err)
 	}
 
-	conn, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
+	conn, err := connectToServer(buildWebSocketURL(serverConfig, domain))
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to server at %s: %w", websocketURL, err)
+		return nil, err
 	}
 
 	return &Client{
-		Domain:     domain,
-		Conn:       conn,
-		Local:      local,
-		ServerHost: serverHost,
-		Debug:      debug,
+		Domain: domain,
+		Conn:   conn,
+		Local:  local,
+		Tunnel: fmt.Sprintf("%s://%s.%s", serverConfig.HTTPScheme, domain, serverConfig.Host),
+		Debug:  debug,
 		HTTPClient: &http.Client{
 			Timeout:       common.RequestTimeout,
 			Transport:     &http.Transport{DisableKeepAlives: true},                                              // Disable connection reuse
