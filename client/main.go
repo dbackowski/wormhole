@@ -20,7 +20,6 @@ type Client struct {
 	Local      string
 	Tunnel     string
 	Conn       *websocket.Conn
-	Debug      bool
 	HTTPClient *http.Client
 }
 
@@ -66,11 +65,7 @@ func (c *Client) makeLocalRequest(message common.Message, localURL string) (*htt
 }
 
 func (c *Client) logResponse(message common.Message, localURL string, statusCode int) {
-	if c.Debug {
-		fmt.Printf("Response status code: %d\n", statusCode)
-	} else {
-		fmt.Printf("%s %s %s -> %d\n", common.FormatTime(time.Now()), message.Method, localURL, statusCode)
-	}
+	fmt.Printf("%s %s %s -> %d\n", common.FormatTime(time.Now()), message.Method, localURL, statusCode)
 }
 
 func (c *Client) forwardResponse(message common.Message, res *http.Response) error {
@@ -132,13 +127,6 @@ func (c *Client) handleDomainTaken() {
 }
 func (c *Client) handleHTTPRequest(message common.Message) {
 	localURL := c.Local + message.URL
-
-	if c.Debug {
-		fmt.Println("Received HTTP request notification from server:")
-		common.PrettyPrintMessage(message)
-		fmt.Printf("Forwarding to local server at %s\n", localURL)
-	}
-
 	c.handleServerHTTPRequest(message, localURL)
 }
 
@@ -231,7 +219,7 @@ func connectToServer(websocketURL string) (*websocket.Conn, error) {
 	return conn, err
 }
 
-func NewClient(server, domain, local string, debug bool) (*Client, error) {
+func NewClient(server, domain, local string) (*Client, error) {
 	if err := validateClientConfig(domain, local); err != nil {
 		return nil, err
 	}
@@ -251,7 +239,6 @@ func NewClient(server, domain, local string, debug bool) (*Client, error) {
 		Conn:   conn,
 		Local:  local,
 		Tunnel: fmt.Sprintf("%s://%s.%s", serverConfig.HTTPScheme, domain, serverConfig.Host),
-		Debug:  debug,
 		HTTPClient: &http.Client{
 			Timeout:       common.RequestTimeout,
 			Transport:     &http.Transport{DisableKeepAlives: true},                                              // Disable connection reuse
@@ -264,10 +251,9 @@ func main() {
 	var server = flag.String("server", common.DefaultClientServerURL, "Server URL")
 	var domain = flag.String("domain", "", "Custom domain")
 	var local = flag.String("local", "", "Local server URL")
-	var debug = flag.Bool("debug", false, "Enable debug mode")
 	flag.Parse()
 
-	client, err := NewClient(*server, *domain, *local, *debug)
+	client, err := NewClient(*server, *domain, *local)
 	if err != nil {
 		log.Fatal(err)
 	}

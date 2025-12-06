@@ -58,7 +58,6 @@ go run client/main.go -server=http://localhost:8080 -domain=mysubdomain -local=h
 
 **Optional flags:**
 - `-server`: Server URL (default: http://localhost:8080)
-- `-debug`: Enable debug mode
 
 ## Features
 
