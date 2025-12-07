@@ -18,11 +18,10 @@ import (
 type Connection struct {
 	Domain   string
 	Conn     *websocket.Conn
-	Requests Request
-	mu       sync.RWMutex
+	Requests *PendingRequests
 }
 
-type Request struct {
+type PendingRequests struct {
 	pending map[string]chan *common.Message
 	mu      sync.RWMutex
 }
@@ -49,9 +48,48 @@ func NewConnectionManager() *ConnectionManager {
 	}
 }
 
+func NewPendingRequests() *PendingRequests {
+	return &PendingRequests{
+		pending: make(map[string]chan *common.Message),
+	}
+}
+
 func isWebSocketUpgradeRequest(headers http.Header) bool {
 	return headers.Get("Connection") == "Upgrade" &&
 		headers.Get("Upgrade") == "websocket"
+}
+
+func (pr *PendingRequests) Register(uuid string) chan *common.Message {
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+
+	ch := make(chan *common.Message)
+	pr.pending[uuid] = ch
+	return ch
+}
+
+func (pr *PendingRequests) Deliver(message *common.Message) bool {
+	pr.mu.RLock()
+	ch, exists := pr.pending[message.UUID]
+	pr.mu.RUnlock()
+
+	if !exists {
+		fmt.Printf("Received late response for UUID %s (already timed out)\n", message.UUID)
+		return false
+	}
+
+	ch <- message
+	return true
+}
+
+func (pr *PendingRequests) Cleanup(uuid string) {
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+
+	if ch, exists := pr.pending[uuid]; exists {
+		close(ch)
+		delete(pr.pending, uuid)
+	}
 }
 
 func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) error {
@@ -64,11 +102,9 @@ func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) 
 	}
 
 	cm.clients[domain] = &Connection{
-		Domain: domain,
-		Conn:   conn,
-		Requests: Request{
-			pending: make(map[string]chan *common.Message),
-		},
+		Domain:   domain,
+		Conn:     conn,
+		Requests: NewPendingRequests(),
 	}
 
 	return nil
@@ -88,25 +124,6 @@ func (cm *ConnectionManager) RemoveConnection(domain string) {
 	delete(cm.clients, domain)
 }
 
-func (c *Connection) RegisterPendingRequest(message *common.Message) {
-	c.Requests.mu.Lock()
-	defer c.Requests.mu.Unlock()
-
-	ch, exists := c.Requests.pending[message.UUID]
-	if !exists {
-		fmt.Printf("Received late response for UUID %s (already timed out)\n", message.UUID)
-		return
-	}
-
-	ch <- message
-}
-
-func (c *Connection) CleanupPendingRequest(uuid string) {
-	c.Requests.mu.Lock()
-	defer c.Requests.mu.Unlock()
-	delete(c.Requests.pending, uuid)
-}
-
 func (s *Server) extractDomain(host string) (string, error) {
 	parts := strings.Split(host, ".")
 
@@ -120,7 +137,7 @@ func (s *Server) DeliverResponse(message *common.Message) {
 	connection, exists := s.connManager.GetConnection(message.Domain)
 
 	if exists {
-		connection.RegisterPendingRequest(message)
+		connection.Requests.Deliver(message)
 	}
 }
 
@@ -128,7 +145,7 @@ func (s *Server) CleanupRequest(domain string, uuid string) {
 	connection, exists := s.connManager.GetConnection(domain)
 
 	if exists {
-		connection.CleanupPendingRequest(uuid)
+		connection.Requests.Cleanup(uuid)
 	}
 }
 
@@ -295,13 +312,10 @@ func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Co
 }
 
 func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *common.Message) (chan *common.Message, error) {
-	connection.Requests.mu.Lock()
-	defer connection.Requests.mu.Unlock()
-	responseChan := make(chan *common.Message)
-	connection.Requests.pending[requestMsg.UUID] = responseChan
+	responseChan := connection.Requests.Register(requestMsg.UUID)
 
 	if err := connection.Conn.WriteJSON(requestMsg); err != nil {
-		delete(connection.Requests.pending, requestMsg.UUID)
+		connection.Requests.Cleanup(requestMsg.UUID)
 		return nil, err
 	}
 
