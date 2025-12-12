@@ -68,18 +68,20 @@ func (pr *PendingRequests) Register(uuid string) chan *common.Message {
 	return ch
 }
 
-func (pr *PendingRequests) Deliver(message *common.Message) bool {
+func (pr *PendingRequests) Deliver(message *common.Message) {
 	pr.mu.RLock()
+	defer pr.mu.RUnlock()
 	ch, exists := pr.pending[message.UUID]
-	pr.mu.RUnlock()
 
 	if !exists {
-		fmt.Printf("Received late response for UUID %s (already timed out)\n", message.UUID)
-		return false
+		return
 	}
 
-	ch <- message
-	return true
+	select {
+	case ch <- message:
+	default:
+		// Channel closed or not ready, silently ignore
+	}
 }
 
 func (pr *PendingRequests) Cleanup(uuid string) {
