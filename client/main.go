@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"time"
 
@@ -125,8 +126,15 @@ func (c *Client) handleDomainTaken() {
 	closeWebsocket(c.Conn)
 
 }
+
+func (c *Client) buildLocalURL(requestPath string) string {
+	baseURL, _ := url.Parse(c.Local)
+	baseURL.Path = path.Join(baseURL.Path, requestPath)
+	return baseURL.String()
+}
+
 func (c *Client) handleHTTPRequest(message common.Message) {
-	localURL := c.Local + message.URL
+	localURL := c.buildLocalURL(message.URL)
 	c.handleServerHTTPRequest(message, localURL)
 }
 
