@@ -9,7 +9,7 @@ import (
 
 const (
 	DefaultServerPort      = 8080
-	DefaultClientServerURL = "http://localhost:8080"
+	DefaultClientServerURL = "https://wormhole.tools"
 	TimeFormat             = "2006-01-02 15:04:05"
 	RequestTimeout         = 10 * time.Second
 )

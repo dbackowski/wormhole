@@ -57,7 +57,7 @@ go run client/main.go -server=http://localhost:8080 -domain=mysubdomain -local=h
 - `-local`: URL of your local development server
 
 **Optional flags:**
-- `-server`: Server URL (default: http://localhost:8080)
+- `-server`: Server URL (default: https://wormhole.tools)
 
 ## Features
 
