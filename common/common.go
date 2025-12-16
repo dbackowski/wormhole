@@ -12,6 +12,7 @@ const (
 	DefaultClientServerURL = "https://wormhole.tools"
 	TimeFormat             = "2006-01-02 15:04:05"
 	RequestTimeout         = 10 * time.Second
+	RequestTimeoutBuffer   = RequestTimeout + 5*time.Second
 )
 
 type Message struct {

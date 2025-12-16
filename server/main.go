@@ -68,7 +68,7 @@ func (pr *PendingRequests) Register(uuid string) chan *common.Message {
 
 	// Auto-cleanup after timeout
 	go func() {
-		time.Sleep(common.RequestTimeout + 5*time.Second)
+		time.Sleep(common.RequestTimeoutBuffer)
 		pr.Cleanup(uuid)
 	}()
 
