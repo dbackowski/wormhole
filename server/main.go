@@ -63,8 +63,15 @@ func (pr *PendingRequests) Register(uuid string) chan *common.Message {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 
-	ch := make(chan *common.Message)
+	ch := make(chan *common.Message, 1)
 	pr.pending[uuid] = ch
+
+	// Auto-cleanup after timeout
+	go func() {
+		time.Sleep(common.RequestTimeout + 5*time.Second)
+		pr.Cleanup(uuid)
+	}()
+
 	return ch
 }
 
