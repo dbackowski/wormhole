@@ -82,11 +82,14 @@ func (c *Client) forwardResponse(message common.Message, res *http.Response) err
 
 func (c *Client) respondToServer(message common.Message, res *http.Response, err error) {
 	if err != nil {
-		c.sendErrorResponse(message, http.StatusBadGateway, "Bad Gateway")
+		c.sendErrorResponse(message, http.StatusBadGateway, http.StatusText(http.StatusBadGateway))
 		return
 	}
 	defer res.Body.Close()
-	c.forwardResponse(message, res)
+
+	if err = c.forwardResponse(message, res); err != nil {
+		log.Printf("Failed to forward response: %v", err)
+	}
 }
 
 func (c *Client) sendErrorResponse(message common.Message, status int, errorMessage string) {
