@@ -33,6 +33,7 @@ type ConnectionManager struct {
 
 type Server struct {
 	connManager *ConnectionManager
+	dispatcher  *common.MessageDispatcher
 	debug       bool
 }
 
@@ -142,6 +143,20 @@ func (s *Server) extractDomain(host string) (string, error) {
 	return parts[0], nil
 }
 
+func (s *Server) setupMessageHandlers() {
+	s.dispatcher = common.NewMessageDispatcher()
+
+	s.dispatcher.Register(common.MessageTypeHTTPResponse, func(msg *common.Message) {
+		if s.debug {
+			fmt.Println("Received HTTP response from client:")
+			common.PrettyPrintMessage(*msg)
+		} else {
+			fmt.Printf("%s Received HTTP response %d for UUID: %s\n", common.FormatTime(time.Now()), msg.Status, msg.UUID)
+		}
+		s.DeliverResponse(msg)
+	})
+}
+
 func (s *Server) DeliverResponse(message *common.Message) {
 	connection, exists := s.connManager.GetConnection(message.Domain)
 
@@ -225,15 +240,9 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 			return
 		}
 
-		switch message.Type {
-		case common.MessageTypeHTTPResponse:
-			if s.debug {
-				fmt.Println("Received HTTP response from client:")
-				common.PrettyPrintMessage(message)
-			} else {
-				fmt.Printf("%s Received HTTP response %d for UUID: %s\n", common.FormatTime(time.Now()), message.Status, message.UUID)
-			}
-			s.DeliverResponse(&message)
+		err = s.dispatcher.Dispatch(&message)
+		if err != nil {
+			fmt.Printf("Failed to dispatch message: %v\n", err)
 		}
 	}
 }
@@ -369,17 +378,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.forwardAndWaitForResponse(w, connection, requestMsg, domain)
 }
 
+func NewServer(debug *bool) *Server {
+	server := Server{
+		connManager: NewConnectionManager(),
+		debug:       *debug,
+	}
+	server.setupMessageHandlers()
+	return &server
+}
+
 func main() {
 	common.ClearTerminal()
 	var port = flag.Int("port", common.DefaultServerPort, "Port to run the server on")
 	var debug = flag.Bool("debug", false, "Enable debug mode")
 
 	flag.Parse()
-
-	server := Server{
-		connManager: NewConnectionManager(),
-		debug:       *debug,
-	}
+	server := NewServer(debug)
 
 	http.HandleFunc("/ws", server.ServeWebSocket)
 	http.HandleFunc("/", server.ServeHTTP)

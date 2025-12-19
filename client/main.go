@@ -22,6 +22,7 @@ type Client struct {
 	Tunnel     string
 	Conn       *websocket.Conn
 	HTTPClient *http.Client
+	dispatcher *common.MessageDispatcher
 }
 
 type ServerConfig struct {
@@ -127,7 +128,6 @@ func (c *Client) handleDomainRegistered() {
 func (c *Client) handleDomainTaken() {
 	fmt.Println("Domain is already taken. Please choose another one.")
 	closeWebsocket(c.Conn)
-
 }
 
 func (c *Client) buildLocalURL(requestPath string) string {
@@ -141,6 +141,22 @@ func (c *Client) handleHTTPRequest(message common.Message) {
 	c.handleServerHTTPRequest(message, localURL)
 }
 
+func (c *Client) setupMessageHandlers() {
+	c.dispatcher = common.NewMessageDispatcher()
+
+	c.dispatcher.Register(common.MessageTypeDomainRegistered, func(msg *common.Message) {
+		c.handleDomainRegistered()
+	})
+
+	c.dispatcher.Register(common.MessageTypeDomainTaken, func(msg *common.Message) {
+		c.handleDomainTaken()
+	})
+
+	c.dispatcher.Register(common.MessageTypeHTTPRequest, func(msg *common.Message) {
+		c.handleHTTPRequest(*msg)
+	})
+}
+
 func (c *Client) handleConnection() {
 	var message common.Message
 
@@ -151,13 +167,9 @@ func (c *Client) handleConnection() {
 			return
 		}
 
-		switch message.Type {
-		case common.MessageTypeDomainRegistered:
-			c.handleDomainRegistered()
-		case common.MessageTypeDomainTaken:
-			c.handleDomainTaken()
-		case common.MessageTypeHTTPRequest:
-			c.handleHTTPRequest(message)
+		err = c.dispatcher.Dispatch(&message)
+		if err != nil {
+			log.Printf("Failed to dispatch message: %v", err)
 		}
 	}
 }
@@ -245,7 +257,7 @@ func NewClient(server, domain, local string) (*Client, error) {
 		return nil, err
 	}
 
-	return &Client{
+	client := &Client{
 		Domain: domain,
 		Conn:   conn,
 		Local:  local,
@@ -255,7 +267,10 @@ func NewClient(server, domain, local string) (*Client, error) {
 			Transport:     &http.Transport{DisableKeepAlives: true},                                              // Disable connection reuse
 			CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }, // Don't follow redirects, instead pass them back to the browser
 		},
-	}, nil
+	}
+	client.setupMessageHandlers()
+
+	return client, nil
 }
 
 func main() {
