@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -60,20 +61,21 @@ func isWebSocketUpgradeRequest(headers http.Header) bool {
 		headers.Get("Upgrade") == "websocket"
 }
 
-func (pr *PendingRequests) Register(uuid string) chan *common.Message {
+func (pr *PendingRequests) Register(ctx context.Context, uuid string) (chan *common.Message, context.CancelFunc) {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, common.RequestTimeoutBuffer)
 
 	ch := make(chan *common.Message, 1)
 	pr.pending[uuid] = ch
 
-	// Auto-cleanup after timeout
 	go func() {
-		time.Sleep(common.RequestTimeoutBuffer)
+		<-timeoutCtx.Done()
 		pr.Cleanup(uuid)
 	}()
 
-	return ch
+	return ch, cancel
 }
 
 func (pr *PendingRequests) Deliver(message *common.Message) {
@@ -319,25 +321,25 @@ func (s *Server) logForwardingRequest(requestMsg *common.Message, domain string)
 func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Connection, requestMsg *common.Message, domain string) {
 	s.logForwardingRequest(requestMsg, domain)
 
-	responseChan, err := s.registerAndForwardRequest(connection, requestMsg)
+	responseChan, cancelCleanup, err := s.registerAndForwardRequest(connection, requestMsg)
 	if err != nil {
 		s.sendHTTPError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer s.CleanupRequest(domain, requestMsg.UUID)
-
+	defer cancelCleanup()
 	s.handleResponse(w, responseChan)
 }
 
-func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *common.Message) (chan *common.Message, error) {
-	responseChan := connection.Requests.Register(requestMsg.UUID)
-
+func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *common.Message) (chan *common.Message, context.CancelFunc, error) {
+	ctx := context.Background()
+	responseChan, cancelCleanup := connection.Requests.Register(ctx, requestMsg.UUID)
 	if err := connection.Conn.WriteJSON(requestMsg); err != nil {
 		connection.Requests.Cleanup(requestMsg.UUID)
-		return nil, err
+		return nil, cancelCleanup, err
 	}
 
-	return responseChan, nil
+	return responseChan, cancelCleanup, nil
 }
 
 func (s *Server) writeSuccessResponse(w http.ResponseWriter, responseMsg *common.Message) {
