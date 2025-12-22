@@ -15,12 +15,12 @@ Wormhole creates a secure tunnel between your local development server and the i
 
 ### 1. Start the server
 ```bash
-go run server/main.go
+go run cmd/server/main.go
 ```
 
 ### 2. Connect your local app
 ```bash
-go run client/main.go -domain=myapp -local=http://localhost:3000
+go run cmd/client/main.go -domain=myapp -local=http://localhost:3000
 ```
 
 ### 3. Access your app
@@ -38,7 +38,7 @@ go mod download
 
 ### Server Options
 ```bash
-go run server/main.go -port=8080
+go run cmd/server/main.go -port=8080
 ```
 
 **Required flags:**
@@ -49,7 +49,7 @@ go run server/main.go -port=8080
 
 ### Client Options
 ```bash
-go run client/main.go -server=http://localhost:8080 -domain=mysubdomain -local=http://localhost:3000
+go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -local=http://localhost:3000
 ```
 
 **Required flags:**

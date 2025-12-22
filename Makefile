@@ -3,8 +3,8 @@ deps:
 	go mod download
 
 build: deps
-	go build -o cmd/server/wormhole server/main.go
-	go build -o cmd/client/wormhole client/main.go
+	go build -o bin/server/wormhole cmd/server/main.go
+	go build -o bin/client/wormhole cmd/client/main.go
 
 clean:
-	rm -rf cmd
+	rm -rf bin
