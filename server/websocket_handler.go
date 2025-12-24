@@ -53,7 +53,7 @@ func (s *Server) registerClient(conn *websocket.Conn, domain string) error {
 	err := s.connManager.AddConnection(domain, conn)
 
 	if err != nil {
-		err = conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
+		conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
 		conn.Close()
 		return err
 	}
