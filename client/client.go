@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
@@ -13,13 +14,22 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type RequestLog struct {
+	Timestamp  time.Time
+	Method     string
+	URL        string
+	StatusCode int
+}
+
 type Client struct {
-	Domain     string
-	Local      string
-	Tunnel     string
-	Conn       *websocket.Conn
-	HTTPClient *http.Client
-	dispatcher *common.MessageDispatcher
+	Domain      string
+	Local       string
+	Tunnel      string
+	Conn        *websocket.Conn
+	HTTPClient  *http.Client
+	dispatcher  *common.MessageDispatcher
+	requestLogs []RequestLog
+	logsMutex   sync.Mutex
 }
 
 func NewClient(cfg *Config) (*Client, error) {
@@ -47,6 +57,7 @@ func NewClient(cfg *Config) (*Client, error) {
 			Transport:     &http.Transport{DisableKeepAlives: true},                                              // Disable connection reuse
 			CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }, // Don't follow redirects, instead pass them back to the browser
 		},
+		requestLogs: make([]RequestLog, 0),
 	}
 	client.setupMessageHandlers()
 
@@ -78,8 +89,38 @@ func closeWebsocket(c *websocket.Conn) {
 	}
 }
 
+func (c *Client) printSummary() {
+	common.ClearTerminal()
+	fmt.Println("Connected to server.")
+	fmt.Printf("Your tunnel is available at: %s\n", c.Tunnel)
+	fmt.Println("Waiting for incoming HTTP requests...")
+	fmt.Println()
+	fmt.Printf("------------------- last %d requests -------------------\n", common.ClientRequestHistorySize)
+	fmt.Println()
+
+	start := 0
+
+	if len(c.requestLogs) > common.ClientRequestHistorySize {
+		start = len(c.requestLogs) - common.ClientRequestHistorySize
+	}
+
+	for _, rl := range c.requestLogs[start:] {
+		fmt.Printf("%s %s %s -> %d\n", common.FormatTime(rl.Timestamp), rl.Method, rl.URL, rl.StatusCode)
+	}
+}
+
 func (c *Client) logResponse(message common.Message, localURL string, statusCode int) {
-	fmt.Printf("%s %s %s -> %d\n", common.FormatTime(time.Now()), message.Method, localURL, statusCode)
+	c.logsMutex.Lock()
+	defer c.logsMutex.Unlock()
+
+	c.requestLogs = append(c.requestLogs, RequestLog{
+		Timestamp:  time.Now(),
+		Method:     message.Method,
+		URL:        localURL,
+		StatusCode: statusCode,
+	})
+
+	c.printSummary()
 }
 
 func (c *Client) buildLocalURL(requestPath string) string {

@@ -7,13 +7,7 @@ import (
 )
 
 func (c *Client) handleDomainRegistered() {
-	common.ClearTerminal()
-	fmt.Println("Connected to server.")
-	fmt.Printf("Your tunnel is available at: %s\n", c.Tunnel)
-	fmt.Println("Waiting for incoming HTTP requests...")
-	fmt.Println()
-	fmt.Println("-------------------")
-	fmt.Println()
+	c.printSummary()
 }
 
 func (c *Client) handleDomainTaken() {
