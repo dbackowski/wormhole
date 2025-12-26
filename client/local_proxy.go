@@ -79,5 +79,6 @@ func (c *Client) handleServerHTTPRequest(message common.Message, localURL string
 	}
 
 	c.logResponse(message, localURL, statusCode)
+	c.printSummary()
 	c.respondToServer(message, res, err)
 }

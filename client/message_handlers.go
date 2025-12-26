@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/dbackowski/wormhole/common"
 )
@@ -16,7 +17,12 @@ func (c *Client) handleDomainTaken() {
 }
 
 func (c *Client) handleHTTPRequest(message common.Message) {
-	localURL := c.buildLocalURL(message.URL)
+	localURL, err := c.buildLocalURL(message.URL)
+	if err != nil {
+		c.sendErrorResponse(message, http.StatusBadRequest, "Invalid request URL")
+		return
+	}
+
 	c.handleServerHTTPRequest(message, localURL)
 }
 

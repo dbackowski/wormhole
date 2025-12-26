@@ -119,14 +119,16 @@ func (c *Client) logResponse(message common.Message, localURL string, statusCode
 		URL:        localURL,
 		StatusCode: statusCode,
 	})
-
-	c.printSummary()
 }
 
-func (c *Client) buildLocalURL(requestPath string) string {
-	baseURL, _ := url.Parse(c.Local)
+func (c *Client) buildLocalURL(requestPath string) (string, error) {
+	baseURL, err := url.Parse(c.Local)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse local URL: %w", err)
+	}
+
 	baseURL.Path = path.Join(baseURL.Path, requestPath)
-	return baseURL.String()
+	return baseURL.String(), nil
 }
 
 func buildWebSocketURL(s *ServerConfig, domain string) string {
