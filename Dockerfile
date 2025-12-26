@@ -5,7 +5,7 @@ WORKDIR /usr/src/app
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 COPY . .
-RUN cd server && go build -v -o /run-app .
+RUN cd cmd/server && go build -v -o /run-app .
 
 FROM debian:bookworm
 
