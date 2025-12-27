@@ -24,16 +24,7 @@ func NewServer(debug *bool) *Server {
 
 func (s *Server) setupMessageHandlers() {
 	s.dispatcher = common.NewMessageDispatcher()
-
-	s.dispatcher.Register(common.MessageTypeHTTPResponse, func(msg *common.Message) {
-		if s.debug {
-			fmt.Println("Received HTTP response from client:")
-			common.PrettyPrintMessage(*msg)
-		} else {
-			fmt.Printf("%s Received HTTP response %d for UUID: %s\n", common.FormatTime(time.Now()), msg.Status, msg.UUID)
-		}
-		s.DeliverResponse(msg)
-	})
+	s.dispatcher.Register(common.MessageTypeHTTPResponse, s.handleHTTPResponse)
 }
 
 func (s *Server) DeliverResponse(message *common.Message) {
@@ -50,4 +41,14 @@ func (s *Server) CleanupRequest(domain string, uuid string) {
 	if exists {
 		connection.Requests.Cleanup(uuid)
 	}
+}
+
+func (s *Server) handleHTTPResponse(msg *common.Message) {
+	if s.debug {
+		fmt.Println("Received HTTP response from client:")
+		common.PrettyPrintMessage(*msg)
+	} else {
+		fmt.Printf("%s Received HTTP response %d for UUID: %s\n", common.FormatTime(time.Now()), msg.Status, msg.UUID)
+	}
+	s.DeliverResponse(msg)
 }
