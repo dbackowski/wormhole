@@ -32,9 +32,38 @@ type Client struct {
 	logsMutex   sync.Mutex
 }
 
+func createHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: common.RequestTimeout,
+		Transport: &http.Transport{
+			// Disable connection pooling to prevent stale connections
+			// when tunnel connections are frequently created/destroyed
+			DisableKeepAlives: true,
+		},
+		// Don't follow redirects automatically - we need to pass them
+		// back to the original client so they see the redirect
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func buildTunnelURL(serverConfig *ServerConfig, domain string) string {
+	return fmt.Sprintf("%s://%s.%s", serverConfig.HTTPScheme, domain, serverConfig.Host)
+}
+
+func establishConnection(serverConfig *ServerConfig, domain string) (*websocket.Conn, error) {
+	wsURL := buildWebSocketURL(serverConfig, domain)
+	conn, err := ConnectToServer(wsURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to %s: %w", wsURL, err)
+	}
+	return conn, nil
+}
+
 func NewClient(cfg *Config) (*Client, error) {
 	if err := validateClientConfig(cfg.Domain, cfg.Local); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid client config: %w", err)
 	}
 
 	serverConfig, err := validateAndParseServerURL(cfg.ServerURL)
@@ -42,23 +71,20 @@ func NewClient(cfg *Config) (*Client, error) {
 		return nil, fmt.Errorf("invalid server URL: %w", err)
 	}
 
-	conn, err := ConnectToServer(buildWebSocketURL(serverConfig, cfg.Domain))
+	conn, err := establishConnection(serverConfig, cfg.Domain)
 	if err != nil {
 		return nil, err
 	}
 
 	client := &Client{
-		Domain: cfg.Domain,
-		Conn:   conn,
-		Local:  cfg.Local,
-		Tunnel: fmt.Sprintf("%s://%s.%s", serverConfig.HTTPScheme, cfg.Domain, serverConfig.Host),
-		HTTPClient: &http.Client{
-			Timeout:       common.RequestTimeout,
-			Transport:     &http.Transport{DisableKeepAlives: true},                                              // Disable connection reuse
-			CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }, // Don't follow redirects, instead pass them back to the browser
-		},
+		Domain:      cfg.Domain,
+		Local:       cfg.Local,
+		Conn:        conn,
+		Tunnel:      buildTunnelURL(serverConfig, cfg.Domain),
+		HTTPClient:  createHTTPClient(),
 		requestLogs: make([]RequestLog, 0),
 	}
+
 	client.setupMessageHandlers()
 
 	return client, nil
