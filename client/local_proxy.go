@@ -48,16 +48,18 @@ func (c *Client) forwardResponse(message common.Message, res *http.Response) err
 	return c.Conn.WriteJSON(responseMsg)
 }
 
-func (c *Client) respondToServer(message common.Message, res *http.Response, err error) {
+func (c *Client) respondToServer(message common.Message, res *http.Response, err error) error {
 	if err != nil {
 		c.sendErrorResponse(message, http.StatusBadGateway, http.StatusText(http.StatusBadGateway))
-		return
+		return fmt.Errorf("local request failed: %w", err)
 	}
 	defer res.Body.Close()
 
 	if err = c.forwardResponse(message, res); err != nil {
-		log.Printf("Failed to forward response: %v", err)
+		return fmt.Errorf("failed to forward response to server: %w", err)
 	}
+
+	return nil
 }
 
 func (c *Client) sendErrorResponse(message common.Message, status int, errorMessage string) {
@@ -78,7 +80,12 @@ func (c *Client) handleServerHTTPRequest(message common.Message, localURL string
 		statusCode = res.StatusCode
 	}
 
-	c.logResponse(message, localURL, statusCode)
+	if err := c.respondToServer(message, res, err); err != nil {
+		log.Printf("Request failed: %v", err)
+		c.logResponse(message, localURL, http.StatusBadGateway)
+	} else {
+		c.logResponse(message, localURL, statusCode)
+	}
+
 	c.printSummary()
-	c.respondToServer(message, res, err)
 }
