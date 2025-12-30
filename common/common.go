@@ -34,7 +34,7 @@ const (
 	MessageTypeDomainRegistered = "domain_registered"
 )
 
-func CopyHeaders(src http.Header, dest http.Header) {
+func CopyHTTPHeaders(src http.Header, dest http.Header) {
 	for key, values := range src {
 		for _, value := range values {
 			dest.Add(key, value)

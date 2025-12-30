@@ -33,7 +33,7 @@ func (c *Client) makeLocalRequest(message common.Message, localURL string) (*htt
 		req.Host = hosts[0]
 	}
 
-	common.CopyHeaders(message.Headers, req.Header)
+	common.CopyHTTPHeaders(message.Headers, req.Header)
 	return c.HTTPClient.Do(req)
 }
 

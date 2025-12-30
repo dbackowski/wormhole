@@ -98,7 +98,7 @@ func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *c
 }
 
 func (s *Server) writeSuccessResponse(w http.ResponseWriter, responseMsg *common.Message) {
-	common.CopyHeaders(responseMsg.Headers, w.Header())
+	common.CopyHTTPHeaders(responseMsg.Headers, w.Header())
 	w.WriteHeader(responseMsg.Status)
 	w.Write(responseMsg.Body)
 }
