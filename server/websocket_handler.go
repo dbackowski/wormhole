@@ -53,15 +53,18 @@ func (s *Server) registerClient(conn *websocket.Conn, domain string) error {
 	err := s.connManager.AddConnection(domain, conn)
 
 	if err != nil {
-		conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
+		if writeErr := conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken}); writeErr != nil {
+			conn.Close()
+			return fmt.Errorf("domain %s already taken, failed to notify client: %w", domain, writeErr)
+		}
 		conn.Close()
-		return err
+		return fmt.Errorf("domain %s already taken", domain)
 	}
 
 	if err = conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
 		s.connManager.RemoveConnection(domain)
 		conn.Close()
-		return err
+		return fmt.Errorf("failed to send registration confirmation: %w", err)
 	}
 
 	return nil
