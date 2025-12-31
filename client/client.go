@@ -29,7 +29,7 @@ type Client struct {
 	HTTPClient  *http.Client
 	dispatcher  *common.MessageDispatcher
 	requestLogs []RequestLog
-	logsMutex   sync.Mutex
+	logsMutex   sync.RWMutex
 }
 
 func createHTTPClient() *http.Client {
@@ -116,6 +116,9 @@ func closeWebsocket(c *websocket.Conn) {
 }
 
 func (c *Client) printSummary() {
+	c.logsMutex.RLock()
+	defer c.logsMutex.RUnlock()
+
 	common.ClearTerminal()
 	fmt.Println("Connected to server.")
 	fmt.Printf("Your tunnel is available at: %s\n", c.Tunnel)
