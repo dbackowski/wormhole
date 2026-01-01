@@ -50,7 +50,7 @@ func (c *Client) forwardResponse(message common.Message, res *http.Response) err
 
 func (c *Client) respondToServer(message common.Message, res *http.Response, err error) error {
 	if err != nil {
-		c.sendErrorResponse(message, http.StatusBadGateway, http.StatusText(http.StatusBadGateway))
+		c.sendErrorResponse(message, http.StatusGatewayTimeout, http.StatusText(http.StatusGatewayTimeout))
 		return fmt.Errorf("local request failed: %w", err)
 	}
 	defer res.Body.Close()

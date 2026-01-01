@@ -112,7 +112,7 @@ func (s *Server) handleResponse(w http.ResponseWriter, responseChan chan *common
 	select {
 	case responseMsg := <-responseChan:
 		s.writeSuccessResponse(w, responseMsg)
-	case <-time.After(common.RequestTimeout):
+	case <-time.After(common.RequestTimeoutBuffer):
 		s.writeTimeoutResponse(w)
 	}
 }
