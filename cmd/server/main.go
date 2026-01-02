@@ -27,7 +27,7 @@ func main() {
 
 	go func() {
 		if err := srv.Start(); err != nil {
-			fmt.Printf("Server error: %v\n", err)
+			srv.Logger.Error("Server error", "error", err)
 			os.Exit(1)
 		}
 	}()
@@ -38,7 +38,7 @@ func main() {
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		fmt.Printf("Shutdown error: %v\n", err)
+		srv.Logger.Error("Shutdown error", "error", err)
 		os.Exit(1)
 	}
 }

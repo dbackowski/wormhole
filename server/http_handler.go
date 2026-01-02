@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/dbackowski/wormhole/common"
 	"github.com/google/uuid"
@@ -121,15 +120,16 @@ func (s *Server) handleResponse(w http.ResponseWriter, responseChan chan *common
 }
 
 func (s *Server) logForwardingRequest(requestMsg *common.Message, domain string) {
-	if s.debug {
-		fmt.Println("Forwarding HTTP request to client:")
-		common.PrettyPrintMessage(*requestMsg)
-	} else {
-		fmt.Printf("%s Forwarding %s request %s for %s to domain %s\n",
-			common.FormatTime(time.Now()),
-			requestMsg.Method,
-			requestMsg.UUID,
-			requestMsg.URL,
-			domain)
-	}
+	s.Logger.Info("Forwarding HTTP request to client",
+		"domain", domain,
+		"uuid", requestMsg.UUID,
+		"method", requestMsg.Method,
+		"url", requestMsg.URL,
+	)
+
+	s.Logger.Debug("Request details",
+		"domain", domain,
+		"uuid", requestMsg.UUID,
+		"headers", requestMsg.Headers,
+		"body", string(requestMsg.Body))
 }

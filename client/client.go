@@ -2,9 +2,9 @@ package client
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"sync"
 	"time"
@@ -30,6 +30,8 @@ type Client struct {
 	dispatcher  *common.MessageDispatcher
 	requestLogs []RequestLog
 	logsMutex   sync.RWMutex
+	Logger      *common.Logger
+	ui          *common.UIWriter
 }
 
 func createHTTPClient() *http.Client {
@@ -62,6 +64,12 @@ func establishConnection(serverConfig *ServerConfig, domain string) (*websocket.
 }
 
 func NewClient(cfg *Config) (*Client, error) {
+	logCfg := common.LoggerConfig{
+		Level:  common.LevelError,
+		Format: "text",
+		Output: os.Stderr,
+	}
+
 	if err := validateClientConfig(cfg.Domain, cfg.Local); err != nil {
 		return nil, fmt.Errorf("invalid client config: %w", err)
 	}
@@ -83,6 +91,8 @@ func NewClient(cfg *Config) (*Client, error) {
 		Tunnel:      buildTunnelURL(serverConfig, cfg.Domain),
 		HTTPClient:  createHTTPClient(),
 		requestLogs: make([]RequestLog, 0),
+		Logger:      common.NewLogger(logCfg),
+		ui:          common.NewUIWriter(),
 	}
 
 	client.setupMessageHandlers()
@@ -96,36 +106,30 @@ func (c *Client) HandleConnection() {
 	for {
 		err := c.Conn.ReadJSON(&message)
 		if err != nil {
-			log.Printf("Read error: %v", err)
+			c.Logger.Error("Read error", "error", err)
 			return
 		}
 
 		err = c.dispatcher.Dispatch(&message)
 		if err != nil {
-			log.Printf("Failed to dispatch message: %v", err)
+			c.Logger.Error("Failed to dispatch message", "error", err)
 		}
 	}
 }
 
-func closeWebsocket(c *websocket.Conn) {
-	err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-	if err != nil {
-		log.Println("write close:", err)
-		return
-	}
+func closeWebsocket(c *websocket.Conn) error {
+	return c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 }
 
 func (c *Client) printSummary() {
 	c.logsMutex.RLock()
 	defer c.logsMutex.RUnlock()
 
-	common.ClearTerminal()
-	fmt.Println("Connected to server.")
-	fmt.Printf("Your tunnel is available at: %s\n", c.Tunnel)
-	fmt.Println("Waiting for incoming HTTP requests...")
-	fmt.Println()
-	fmt.Printf("------------------- last %d requests -------------------\n", common.ClientRequestHistorySize)
-	fmt.Println()
+	c.ui.ClearScreen()
+	c.ui.Println("Connected to server.")
+	c.ui.Printf("Your tunnel is available at: %s\n", c.Tunnel)
+	c.ui.Printf("Waiting for incoming HTTP requests...\n\n")
+	c.ui.Printf("------------------- last %d requests -------------------\n\n", common.ClientRequestHistorySize)
 
 	start := 0
 
@@ -134,7 +138,7 @@ func (c *Client) printSummary() {
 	}
 
 	for _, rl := range c.requestLogs[start:] {
-		fmt.Printf("%s %s %s -> %d\n", common.FormatTime(rl.Timestamp), rl.Method, rl.URL, rl.StatusCode)
+		c.ui.Printf("%s %s %s -> %d\n", common.FormatTime(rl.Timestamp), rl.Method, rl.URL, rl.StatusCode)
 	}
 }
 

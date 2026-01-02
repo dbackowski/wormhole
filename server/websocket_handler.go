@@ -18,18 +18,18 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, domain, err := s.upgradeAndExtractDomain(w, r)
 
 	if err != nil {
-		fmt.Printf("WebSocket upgrade or extracting domain failed: %v\n", err)
+		s.Logger.Error("WebSocket upgrade or domain extraction failed", "error", err, "remote_addr", r.RemoteAddr)
 		return
 	}
 
 	err = s.registerClient(conn, domain)
 
 	if err != nil {
-		fmt.Printf("Client registration failed for domain %s: %v\n", domain, err)
+		s.Logger.Error("Client registration failed", "domain", domain, "error", err)
 		return
 	}
 
-	fmt.Printf("Registered connection for domain: %s\n", domain)
+	s.Logger.Info("Client registered", "domain", domain, "remote_addr", r.RemoteAddr)
 	s.handleWebSocketConnection(domain, conn)
 }
 
@@ -79,14 +79,14 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 		err := conn.ReadJSON(&message)
 
 		if err != nil {
-			fmt.Printf("Closing connection for domain: %s\n", domain)
+			s.Logger.Info("Closing connection", "domain", domain)
 			s.connManager.RemoveConnection(domain)
 			return
 		}
 
 		err = s.dispatcher.Dispatch(&message)
 		if err != nil {
-			fmt.Printf("Failed to dispatch message: %v\n", err)
+			s.Logger.Error("Failed to dispatch message", "error", err)
 		}
 	}
 }

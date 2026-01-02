@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
+	"os"
 
 	"github.com/dbackowski/wormhole/common"
 )
@@ -12,6 +12,7 @@ import (
 type Server struct {
 	connManager *ConnectionManager
 	dispatcher  *common.MessageDispatcher
+	Logger      *common.Logger
 	httpServer  *http.Server
 	mux         *http.ServeMux
 	debug       bool
@@ -22,10 +23,21 @@ func NewServer(cfg *Config) (*Server, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	logCfg := common.LoggerConfig{
+		Level:  common.LevelInfo,
+		Format: "text",
+		Output: os.Stderr,
+	}
+
+	if cfg.Debug {
+		logCfg.Level = common.LevelDebug
+	}
+
 	server := Server{
 		connManager: NewConnectionManager(),
 		mux:         http.NewServeMux(),
 		debug:       cfg.Debug,
+		Logger:      common.NewLogger(logCfg),
 	}
 
 	server.setupMessageHandlers()
@@ -64,7 +76,9 @@ func (s *Server) DeliverResponse(message *common.Message) {
 	connection, exists := s.connManager.GetConnection(message.Domain)
 
 	if exists {
-		connection.Requests.Deliver(message)
+		if err := connection.Requests.Deliver(message); err != nil {
+			s.Logger.Error("Failed to deliver response", "error", err)
+		}
 	}
 }
 
@@ -77,17 +91,14 @@ func (s *Server) CleanupRequest(domain string, uuid string) {
 }
 
 func (s *Server) handleHTTPResponse(msg *common.Message) {
-	if s.debug {
-		fmt.Println("Received HTTP response from client:")
-		common.PrettyPrintMessage(*msg)
-	} else {
-		fmt.Printf("%s Received HTTP response %d for UUID: %s\n", common.FormatTime(time.Now()), msg.Status, msg.UUID)
-	}
+	s.Logger.Info("Received HTTP response from client", "domain", msg.Domain, "uuid", msg.UUID, "status", msg.Status)
+	s.Logger.Debug("HTTP response details", "domain", msg.Domain, "uuid", msg.UUID, "body", string(msg.Body))
+
 	s.DeliverResponse(msg)
 }
 
 func (s *Server) Start() error {
-	fmt.Printf("WebSocket server starting on %s\n", s.httpServer.Addr)
+	s.Logger.Info("Starting WebSocket server", "addr", s.httpServer.Addr)
 
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("server failed: %w", err)
@@ -97,14 +108,13 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
-	fmt.Println("Shutting down server gracefully...")
-
+	s.Logger.Info("Shutting down server gracefully")
 	s.connManager.CloseAll()
 
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		return fmt.Errorf("server shutdown failed: %w", err)
 	}
 
-	fmt.Println("Server stopped")
+	s.Logger.Info("Server stopped")
 	return nil
 }

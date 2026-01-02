@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 
 	"github.com/dbackowski/wormhole/common"
@@ -67,7 +66,7 @@ func (c *Client) sendErrorResponse(message common.Message, status int, errorMess
 	err := c.Conn.WriteJSON(responseMsg)
 
 	if err != nil {
-		log.Printf("Failed to send error response: %v", err)
+		c.Logger.Error("Failed to send error response", "error", err)
 	}
 }
 
@@ -81,7 +80,7 @@ func (c *Client) handleServerHTTPRequest(message common.Message, localURL string
 	}
 
 	if err := c.respondToServer(message, res, err); err != nil {
-		log.Printf("Request failed: %v", err)
+		c.Logger.Error("Request failed", "error", err)
 		c.logResponse(message, localURL, http.StatusBadGateway)
 	} else {
 		c.logResponse(message, localURL, statusCode)
