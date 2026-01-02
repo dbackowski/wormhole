@@ -26,7 +26,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.forwardAndWaitForResponse(w, connection, requestMsg, domain)
+	s.forwardAndWaitForResponse(w, connection, requestMsg, domain, r.Context())
 }
 
 func isWebSocketUpgradeRequest(headers http.Header) bool {
@@ -73,21 +73,20 @@ func (s *Server) sendHTTPError(w http.ResponseWriter, message string, statusCode
 	http.Error(w, message, statusCode)
 }
 
-func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Connection, requestMsg *common.Message, domain string) {
+func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Connection, requestMsg *common.Message, domain string, ctx context.Context) {
 	s.logForwardingRequest(requestMsg, domain)
 
-	responseChan, cancelCleanup, err := s.registerAndForwardRequest(connection, requestMsg)
+	responseChan, cancelCleanup, err := s.registerAndForwardRequest(connection, requestMsg, ctx)
 	if err != nil {
 		s.sendHTTPError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer s.CleanupRequest(domain, requestMsg.UUID)
 	defer cancelCleanup()
-	s.handleResponse(w, responseChan)
+	s.handleResponse(w, responseChan, ctx)
 }
 
-func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *common.Message) (chan *common.Message, context.CancelFunc, error) {
-	ctx := context.Background()
+func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *common.Message, ctx context.Context) (chan *common.Message, context.CancelFunc, error) {
 	responseChan, cancelCleanup := connection.Requests.Register(ctx, requestMsg.UUID)
 	if err := connection.Conn.WriteJSON(requestMsg); err != nil {
 		connection.Requests.Cleanup(requestMsg.UUID)
@@ -108,11 +107,15 @@ func (s *Server) writeTimeoutResponse(w http.ResponseWriter) {
 	w.Write([]byte("Request timeout"))
 }
 
-func (s *Server) handleResponse(w http.ResponseWriter, responseChan chan *common.Message) {
+func (s *Server) handleResponse(w http.ResponseWriter, responseChan chan *common.Message, ctx context.Context) {
 	select {
-	case responseMsg := <-responseChan:
+	case responseMsg, ok := <-responseChan:
+		if !ok || responseMsg == nil {
+			s.writeTimeoutResponse(w)
+			return
+		}
 		s.writeSuccessResponse(w, responseMsg)
-	case <-time.After(common.RequestTimeoutBuffer):
+	case <-ctx.Done():
 		s.writeTimeoutResponse(w)
 	}
 }
