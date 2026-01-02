@@ -55,3 +55,19 @@ func (cm *ConnectionManager) RemoveConnection(domain string) {
 	defer cm.mu.Unlock()
 	delete(cm.clients, domain)
 }
+
+func (cm *ConnectionManager) CloseAll() {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	for domain, connection := range cm.clients {
+		connection.Conn.Close()
+		delete(cm.clients, domain)
+	}
+}
+
+func (cm *ConnectionManager) Count() int {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return len(cm.clients)
+}

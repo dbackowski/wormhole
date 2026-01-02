@@ -3,7 +3,6 @@ package server
 import (
 	"flag"
 	"fmt"
-	"net/http"
 
 	"github.com/dbackowski/wormhole/common"
 )
@@ -24,14 +23,10 @@ func ParseFlags() *Config {
 	}
 }
 
-func Run(cfg *Config) error {
-	server := NewServer(&cfg.Debug)
+func (c *Config) Validate() error {
+	if c.Port < 1 || c.Port > 65535 {
+		return fmt.Errorf("invalid port: %d (must be 1-65535)", c.Port)
+	}
 
-	http.HandleFunc("/ws", server.ServeWebSocket)
-	http.HandleFunc("/", server.ServeHTTP)
-
-	addr := fmt.Sprintf(":%d", cfg.Port)
-	fmt.Println("WebSocket server started on " + addr)
-
-	return http.ListenAndServe(addr, nil)
+	return nil
 }
