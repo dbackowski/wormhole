@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/dbackowski/wormhole/common"
@@ -47,7 +48,7 @@ func (pr *PendingRequests) Deliver(message *common.Message) {
 	select {
 	case ch <- message:
 	default:
-		// Channel closed or not ready, silently ignore
+		fmt.Println("Unable to deliver message %s, channel closed or not ready", message.UUID)
 	}
 }
 
