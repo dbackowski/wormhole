@@ -11,13 +11,13 @@ func main() {
 	common.ClearTerminal()
 
 	clientCfg := client.ParseFlags()
-	client, err := client.NewClient(clientCfg)
+	c, err := client.NewClient(clientCfg)
 
 	if err != nil {
-		client.Logger.Error("Error creating client:", "error", err)
+		c.Logger.Error("Error creating client:", "error", err)
 		os.Exit(1)
 	}
 
-	defer client.Conn.Close()
-	client.HandleConnection()
+	defer c.Conn.Close()
+	c.HandleConnection()
 }
