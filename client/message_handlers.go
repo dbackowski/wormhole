@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/dbackowski/wormhole/common"
@@ -11,7 +12,7 @@ func (c *Client) handleDomainRegistered(msg *common.Message) {
 }
 
 func (c *Client) handleDomainTaken(msg *common.Message) {
-	c.ui.Println("Domain is already taken. Please choose another one.")
+	fmt.Println("Domain is already taken. Please choose another one.")
 	err := closeWebsocket(c.Conn)
 	if err != nil {
 		c.Logger.Error("Failed to close websocket", "error", err)

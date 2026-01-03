@@ -31,7 +31,6 @@ type Client struct {
 	requestLogs []RequestLog
 	logsMutex   sync.RWMutex
 	Logger      *common.Logger
-	ui          *common.UIWriter
 }
 
 func createHTTPClient() *http.Client {
@@ -92,7 +91,6 @@ func NewClient(cfg *Config) (*Client, error) {
 		HTTPClient:  createHTTPClient(),
 		requestLogs: make([]RequestLog, 0),
 		Logger:      common.NewLogger(logCfg),
-		ui:          common.NewUIWriter(),
 	}
 
 	client.setupMessageHandlers()
@@ -125,11 +123,11 @@ func (c *Client) printSummary() {
 	c.logsMutex.RLock()
 	defer c.logsMutex.RUnlock()
 
-	c.ui.ClearScreen()
-	c.ui.Println("Connected to server.")
-	c.ui.Printf("Your tunnel is available at: %s\n", c.Tunnel)
-	c.ui.Printf("Waiting for incoming HTTP requests...\n\n")
-	c.ui.Printf("------------------- last %d requests -------------------\n\n", common.ClientRequestHistorySize)
+	common.ClearTerminal()
+	fmt.Println("Connected to server.")
+	fmt.Printf("Your tunnel is available at: %s\n", c.Tunnel)
+	fmt.Printf("Waiting for incoming HTTP requests...\n\n")
+	fmt.Printf("------------------- last %d requests -------------------\n\n", common.ClientRequestHistorySize)
 
 	start := 0
 
@@ -138,7 +136,7 @@ func (c *Client) printSummary() {
 	}
 
 	for _, rl := range c.requestLogs[start:] {
-		c.ui.Printf("%s %s %s -> %d\n", common.FormatTime(rl.Timestamp), rl.Method, rl.URL, rl.StatusCode)
+		fmt.Printf("%s %s %s -> %d\n", common.FormatTime(rl.Timestamp), rl.Method, rl.URL, rl.StatusCode)
 	}
 }
 
