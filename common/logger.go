@@ -1,7 +1,6 @@
 package common
 
 import (
-	"io"
 	"log/slog"
 	"os"
 )
@@ -19,40 +18,36 @@ const (
 	LevelError LogLevel = "error"
 )
 
-type LoggerConfig struct {
-	Level  LogLevel
-	Format string
-	Output io.Writer
+func mapLogLevelToSlogLevel(level LogLevel) slog.Level {
+	switch level {
+	case LevelDebug:
+		return slog.LevelDebug
+	case LevelInfo:
+		return slog.LevelInfo
+	case LevelWarn:
+		return slog.LevelWarn
+	case LevelError:
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
-func NewLogger(cfg LoggerConfig) *Logger {
-	var level slog.Level
-	switch cfg.Level {
-	case LevelDebug:
-		level = slog.LevelDebug
-	case LevelInfo:
-		level = slog.LevelInfo
-	case LevelWarn:
-		level = slog.LevelWarn
-	case LevelError:
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
-	}
-
+func NewLogger(lvl LogLevel, format string) *Logger {
+	level := mapLogLevelToSlogLevel(lvl)
 	opts := &slog.HandlerOptions{
 		Level:     level,
 		AddSource: level == slog.LevelDebug,
 	}
 
 	var handler slog.Handler
-	output := cfg.Output
+	var output = os.Stderr
 
-	if output == nil {
-		output = os.Stderr
+	if format == "" {
+		format = "text"
 	}
 
-	if cfg.Format == "json" {
+	if format == "json" {
 		handler = slog.NewJSONHandler(output, opts)
 	} else {
 		handler = slog.NewTextHandler(output, opts)

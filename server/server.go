@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/dbackowski/wormhole/common"
 )
@@ -23,21 +22,16 @@ func NewServer(cfg *Config) (*Server, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	logCfg := common.LoggerConfig{
-		Level:  common.LevelInfo,
-		Format: "text",
-		Output: os.Stderr,
-	}
-
+	logLvl := common.LevelInfo
 	if cfg.Debug {
-		logCfg.Level = common.LevelDebug
+		logLvl = common.LevelDebug
 	}
 
 	server := Server{
 		connManager: NewConnectionManager(),
 		mux:         http.NewServeMux(),
 		debug:       cfg.Debug,
-		Logger:      common.NewLogger(logCfg),
+		Logger:      common.NewLogger(logLvl, "text"),
 	}
 
 	server.setupMessageHandlers()

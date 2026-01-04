@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"sync"
 	"time"
@@ -63,12 +62,6 @@ func establishConnection(serverConfig *ServerConfig, domain string) (*websocket.
 }
 
 func NewClient(cfg *Config) (*Client, error) {
-	logCfg := common.LoggerConfig{
-		Level:  common.LevelError,
-		Format: "text",
-		Output: os.Stderr,
-	}
-
 	if err := validateClientConfig(cfg.Domain, cfg.Local); err != nil {
 		return nil, fmt.Errorf("invalid client config: %w", err)
 	}
@@ -90,7 +83,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		Tunnel:      buildTunnelURL(serverConfig, cfg.Domain),
 		HTTPClient:  createHTTPClient(),
 		requestLogs: make([]RequestLog, 0),
-		Logger:      common.NewLogger(logCfg),
+		Logger:      common.NewLogger(common.LevelError, "text"),
 	}
 
 	client.setupMessageHandlers()
