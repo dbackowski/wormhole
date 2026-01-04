@@ -1,7 +1,7 @@
 package main
 
 import (
-	"os"
+	"log"
 
 	"github.com/dbackowski/wormhole/client"
 	"github.com/dbackowski/wormhole/common"
@@ -14,8 +14,7 @@ func main() {
 	c, err := client.NewClient(clientCfg)
 
 	if err != nil {
-		c.Logger.Error("Error creating client:", "error", err)
-		os.Exit(1)
+		log.Fatal("Error creating client", err)
 	}
 
 	defer c.Conn.Close()
