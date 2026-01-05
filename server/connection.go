@@ -13,6 +13,7 @@ type Connection struct {
 	Domain   string
 	conn     *websocket.Conn
 	requests *PendingRequests
+	mu       sync.Mutex
 }
 
 type ConnectionManager struct {
@@ -79,6 +80,8 @@ func (c *Connection) RegisterRequest(ctx context.Context, uuid string) (chan *co
 }
 
 func (c *Connection) SendMessage(msg *common.Message) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.conn.WriteJSON(msg)
 }
 
