@@ -7,6 +7,7 @@ import (
 
 type Logger struct {
 	*slog.Logger
+	level slog.Level
 }
 
 type LogLevel string
@@ -53,5 +54,12 @@ func NewLogger(lvl LogLevel, format string) *Logger {
 		handler = slog.NewTextHandler(output, opts)
 	}
 
-	return &Logger{Logger: slog.New(handler)}
+	return &Logger{
+		Logger: slog.New(handler),
+		level:  level,
+	}
+}
+
+func (l *Logger) IsDebug() bool {
+	return l.level <= slog.LevelDebug
 }

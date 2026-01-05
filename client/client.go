@@ -21,15 +21,16 @@ type RequestLog struct {
 }
 
 type Client struct {
-	Domain      string
-	Local       string
-	Tunnel      string
-	Conn        *websocket.Conn
-	HTTPClient  *http.Client
-	dispatcher  *common.MessageDispatcher
-	requestLogs []RequestLog
-	logsMutex   sync.RWMutex
-	Logger      *common.Logger
+	Domain        string
+	Local         string
+	Tunnel        string
+	Conn          *websocket.Conn
+	HTTPClient    *http.Client
+	dispatcher    *common.MessageDispatcher
+	requestLogs   []RequestLog
+	logsMutex     sync.RWMutex
+	Logger        *common.Logger
+	requestLogger *RequestLogger
 }
 
 func createHTTPClient() *http.Client {
@@ -76,14 +77,17 @@ func NewClient(cfg *Config) (*Client, error) {
 		return nil, err
 	}
 
+	logger := common.NewLogger(common.LevelError, "text")
+
 	client := &Client{
-		Domain:      cfg.Domain,
-		Local:       cfg.Local,
-		Conn:        conn,
-		Tunnel:      buildTunnelURL(serverConfig, cfg.Domain),
-		HTTPClient:  createHTTPClient(),
-		requestLogs: make([]RequestLog, 0),
-		Logger:      common.NewLogger(common.LevelError, "text"),
+		Domain:        cfg.Domain,
+		Local:         cfg.Local,
+		Conn:          conn,
+		Tunnel:        buildTunnelURL(serverConfig, cfg.Domain),
+		HTTPClient:    createHTTPClient(),
+		requestLogs:   make([]RequestLog, 0),
+		Logger:        logger,
+		requestLogger: NewRequestLogger(logger),
 	}
 
 	client.setupMessageHandlers()

@@ -80,7 +80,7 @@ func (c *Client) handleServerHTTPRequest(message common.Message, localURL string
 	}
 
 	if err := c.respondToServer(message, res, err); err != nil {
-		c.Logger.Error("Request failed", "error", err)
+		c.requestLogger.LogRequestError("respond to server", err)
 		c.logResponse(message, localURL, http.StatusBadGateway)
 	} else {
 		c.logResponse(message, localURL, statusCode)

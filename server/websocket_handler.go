@@ -18,18 +18,22 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, domain, err := s.upgradeAndExtractDomain(w, r)
 
 	if err != nil {
-		s.Logger.Error("WebSocket upgrade or domain extraction failed", "error", err, "remote_addr", r.RemoteAddr)
+		s.requestLogger.LogConnectionError("Websocker upgrade failed", err, map[string]interface{}{
+			"remote_addr": r.RemoteAddr,
+		})
 		return
 	}
 
 	err = s.registerClient(conn, domain)
 
 	if err != nil {
-		s.Logger.Error("Client registration failed", "domain", domain, "error", err)
+		s.requestLogger.LogConnectionError("Client registration failed", err, map[string]interface{}{
+			"domain": domain,
+		})
 		return
 	}
 
-	s.Logger.Info("Client registered", "domain", domain, "remote_addr", r.RemoteAddr)
+	s.requestLogger.LogClientRegistered(domain, r.RemoteAddr)
 	s.handleWebSocketConnection(domain, conn)
 }
 
@@ -79,14 +83,14 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 		err := conn.ReadJSON(&message)
 
 		if err != nil {
-			s.Logger.Info("Closing connection", "domain", domain)
+			s.requestLogger.LogClientDisconnected(domain, "", "normal closure")
 			s.connManager.RemoveConnection(domain)
 			return
 		}
 
 		err = s.dispatcher.Dispatch(&message)
 		if err != nil {
-			s.Logger.Error("Failed to dispatch message", "error", err)
+			s.requestLogger.LogDispatchError(message.UUID, err)
 		}
 	}
 }

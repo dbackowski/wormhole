@@ -9,12 +9,13 @@ import (
 )
 
 type Server struct {
-	connManager *ConnectionManager
-	dispatcher  *common.MessageDispatcher
-	Logger      *common.Logger
-	httpServer  *http.Server
-	mux         *http.ServeMux
-	debug       bool
+	connManager   *ConnectionManager
+	dispatcher    *common.MessageDispatcher
+	Logger        *common.Logger
+	requestLogger *RequestLogger
+	httpServer    *http.Server
+	mux           *http.ServeMux
+	debug         bool
 }
 
 func NewServer(cfg *Config) (*Server, error) {
@@ -27,11 +28,14 @@ func NewServer(cfg *Config) (*Server, error) {
 		logLvl = common.LevelDebug
 	}
 
+	logger := common.NewLogger(logLvl, "text")
+
 	server := Server{
-		connManager: NewConnectionManager(),
-		mux:         http.NewServeMux(),
-		debug:       cfg.Debug,
-		Logger:      common.NewLogger(logLvl, "text"),
+		connManager:   NewConnectionManager(),
+		mux:           http.NewServeMux(),
+		debug:         cfg.Debug,
+		Logger:        logger,
+		requestLogger: NewRequestLogger(logger),
 	}
 
 	server.setupMessageHandlers()
@@ -83,9 +87,7 @@ func (s *Server) CleanupRequest(domain string, uuid string) {
 }
 
 func (s *Server) handleHTTPResponse(msg *common.Message) {
-	s.Logger.Info("Received HTTP response from client", "domain", msg.Domain, "uuid", msg.UUID, "status", msg.Status)
-	s.Logger.Debug("HTTP response details", "domain", msg.Domain, "uuid", msg.UUID, "body", string(msg.Body))
-
+	s.requestLogger.LogHTTPResponse(msg.Domain, msg.UUID, msg.Status, msg.Body)
 	s.DeliverResponse(msg)
 }
 

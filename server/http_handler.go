@@ -120,16 +120,12 @@ func (s *Server) handleResponse(w http.ResponseWriter, responseChan chan *common
 }
 
 func (s *Server) logForwardingRequest(requestMsg *common.Message, domain string) {
-	s.Logger.Info("Forwarding HTTP request to client",
-		"domain", domain,
-		"uuid", requestMsg.UUID,
-		"method", requestMsg.Method,
-		"url", requestMsg.URL,
+	s.requestLogger.LogHTTPRequest(
+		domain,
+		requestMsg.UUID,
+		requestMsg.Method,
+		requestMsg.URL,
+		requestMsg.Headers,
+		requestMsg.Body,
 	)
-
-	s.Logger.Debug("Request details",
-		"domain", domain,
-		"uuid", requestMsg.UUID,
-		"headers", requestMsg.Headers,
-		"body", string(requestMsg.Body))
 }
