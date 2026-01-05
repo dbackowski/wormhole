@@ -68,9 +68,8 @@ func (s *Server) setupMessageHandlers() {
 
 func (s *Server) DeliverResponse(message *common.Message) {
 	connection, exists := s.connManager.GetConnection(message.Domain)
-
 	if exists {
-		if err := connection.Requests.Deliver(message); err != nil {
+		if err := connection.DeliverResponse(message); err != nil {
 			s.Logger.Error("Failed to deliver response", "error", err)
 		}
 	}
@@ -78,9 +77,8 @@ func (s *Server) DeliverResponse(message *common.Message) {
 
 func (s *Server) CleanupRequest(domain string, uuid string) {
 	connection, exists := s.connManager.GetConnection(domain)
-
 	if exists {
-		connection.Requests.Cleanup(uuid)
+		connection.CleanupRequest(uuid)
 	}
 }
 

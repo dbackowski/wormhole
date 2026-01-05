@@ -86,9 +86,9 @@ func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Co
 }
 
 func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *common.Message, ctx context.Context) (chan *common.Message, context.CancelFunc, error) {
-	responseChan, cancelCleanup := connection.Requests.Register(ctx, requestMsg.UUID)
-	if err := connection.Conn.WriteJSON(requestMsg); err != nil {
-		connection.Requests.Cleanup(requestMsg.UUID)
+	responseChan, cancelCleanup := connection.RegisterRequest(ctx, requestMsg.UUID)
+	if err := connection.SendMessage(requestMsg); err != nil {
+		connection.CleanupRequest(requestMsg.UUID)
 		return nil, cancelCleanup, err
 	}
 

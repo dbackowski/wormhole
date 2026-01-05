@@ -1,16 +1,18 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
+	"github.com/dbackowski/wormhole/common"
 	"github.com/gorilla/websocket"
 )
 
 type Connection struct {
 	Domain   string
-	Conn     *websocket.Conn
-	Requests *PendingRequests
+	conn     *websocket.Conn
+	requests *PendingRequests
 }
 
 type ConnectionManager struct {
@@ -35,8 +37,8 @@ func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) 
 
 	cm.clients[domain] = &Connection{
 		Domain:   domain,
-		Conn:     conn,
-		Requests: NewPendingRequests(),
+		conn:     conn,
+		requests: NewPendingRequests(),
 	}
 
 	return nil
@@ -61,7 +63,7 @@ func (cm *ConnectionManager) CloseAll() {
 	defer cm.mu.Unlock()
 
 	for domain, connection := range cm.clients {
-		connection.Conn.Close()
+		connection.Close()
 		delete(cm.clients, domain)
 	}
 }
@@ -70,4 +72,24 @@ func (cm *ConnectionManager) Count() int {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	return len(cm.clients)
+}
+
+func (c *Connection) RegisterRequest(ctx context.Context, uuid string) (chan *common.Message, context.CancelFunc) {
+	return c.requests.Register(ctx, uuid)
+}
+
+func (c *Connection) SendMessage(msg *common.Message) error {
+	return c.conn.WriteJSON(msg)
+}
+
+func (c *Connection) CleanupRequest(uuid string) {
+	c.requests.Cleanup(uuid)
+}
+
+func (c *Connection) DeliverResponse(msg *common.Message) error {
+	return c.requests.Deliver(msg)
+}
+
+func (c *Connection) Close() error {
+	return c.conn.Close()
 }
