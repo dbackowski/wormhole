@@ -7,16 +7,16 @@ import (
 type MessageHandler func(msg *Message)
 
 type MessageDispatcher struct {
-	handlers map[string]MessageHandler
+	handlers map[MessageType]MessageHandler
 }
 
 func NewMessageDispatcher() *MessageDispatcher {
 	return &MessageDispatcher{
-		handlers: make(map[string]MessageHandler),
+		handlers: make(map[MessageType]MessageHandler),
 	}
 }
 
-func (md *MessageDispatcher) Register(messageType string, handler MessageHandler) {
+func (md *MessageDispatcher) Register(messageType MessageType, handler MessageHandler) {
 	md.handlers[messageType] = handler
 }
 

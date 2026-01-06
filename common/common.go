@@ -17,8 +17,17 @@ const (
 	ServerShutdownTimeout    = 10 * time.Second
 )
 
+type MessageType string
+
+const (
+	MessageTypeHTTPRequest      MessageType = "http_request"
+	MessageTypeHTTPResponse     MessageType = "http_response"
+	MessageTypeDomainTaken      MessageType = "domain_taken"
+	MessageTypeDomainRegistered MessageType = "domain_registered"
+)
+
 type Message struct {
-	Type    string              `json:"type"`
+	Type    MessageType         `json:"type"`
 	Domain  string              `json:"domain,omitempty"`
 	UUID    string              `json:"uuid"`
 	Method  string              `json:"method,omitempty"`
@@ -27,13 +36,6 @@ type Message struct {
 	Body    []byte              `json:"body,omitempty"`
 	Status  int                 `json:"status,omitempty"`
 }
-
-const (
-	MessageTypeHTTPRequest      = "http_request"
-	MessageTypeHTTPResponse     = "http_response"
-	MessageTypeDomainTaken      = "domain_taken"
-	MessageTypeDomainRegistered = "domain_registered"
-)
 
 func CopyHTTPHeaders(src http.Header, dest http.Header) {
 	for key, values := range src {
