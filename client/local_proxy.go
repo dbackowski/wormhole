@@ -70,7 +70,7 @@ func (c *Client) sendErrorResponse(message common.Message, status int, errorMess
 	}
 }
 
-func (c *Client) handleServerHTTPRequest(message common.Message, localURL string) {
+func (c *Client) proxyRequestToLocal(message common.Message, localURL string) {
 	res, err := c.makeLocalRequest(message, localURL)
 
 	statusCode := http.StatusBadGateway

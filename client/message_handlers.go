@@ -26,7 +26,7 @@ func (c *Client) handleHTTPRequest(msg *common.Message) {
 		return
 	}
 
-	c.handleServerHTTPRequest(*msg, localURL)
+	c.proxyRequestToLocal(*msg, localURL)
 }
 
 func (c *Client) setupMessageHandlers() {
