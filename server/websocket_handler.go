@@ -66,9 +66,9 @@ func (s *Server) registerClient(conn *websocket.Conn, domain string) error {
 
 	if err != nil {
 		if writeErr := conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken}); writeErr != nil {
-			return fmt.Errorf("domain %s already taken, failed to notify client: %w", domain, writeErr)
+			return fmt.Errorf("domain %s is already taken, failed to notify client: %w", domain, writeErr)
 		}
-		return fmt.Errorf("domain %s already taken", domain)
+		return fmt.Errorf("domain %s is already taken", domain)
 	}
 
 	if err = conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
