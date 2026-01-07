@@ -3,9 +3,6 @@ package client
 import (
 	"fmt"
 	"net/http"
-	"net/url"
-	"path"
-	"sync"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
@@ -21,32 +18,14 @@ type RequestLog struct {
 }
 
 type Client struct {
-	Domain        string
-	Local         string
-	Tunnel        string
-	Conn          *websocket.Conn
-	HTTPClient    *http.Client
-	dispatcher    *common.MessageDispatcher
-	requestLogs   []RequestLog
-	logsMutex     sync.RWMutex
-	Logger        *common.Logger
-	requestLogger *common.RequestLogger
-}
-
-func createHTTPClient() *http.Client {
-	return &http.Client{
-		Timeout: common.RequestTimeout,
-		Transport: &http.Transport{
-			// Disable connection pooling to prevent stale connections
-			// when tunnel connections are frequently created/destroyed
-			DisableKeepAlives: true,
-		},
-		// Don't follow redirects automatically - we need to pass them
-		// back to the original client so they see the redirect
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	domain     string
+	tunnelURL  string
+	Conn       *websocket.Conn
+	proxy      *LocalProxy
+	history    *RequestHistory
+	display    Display
+	Logger     *common.Logger
+	dispatcher *common.MessageDispatcher
 }
 
 func buildTunnelURL(serverConfig *ServerConfig, domain string) string {
@@ -80,14 +59,13 @@ func NewClient(cfg *Config) (*Client, error) {
 	logger := common.NewLogger(common.LevelError, "text")
 
 	client := &Client{
-		Domain:        cfg.Domain,
-		Local:         cfg.Local,
-		Conn:          conn,
-		Tunnel:        buildTunnelURL(serverConfig, cfg.Domain),
-		HTTPClient:    createHTTPClient(),
-		requestLogs:   make([]RequestLog, 0),
-		Logger:        logger,
-		requestLogger: common.NewRequestLogger(logger),
+		domain:    cfg.Domain,
+		tunnelURL: buildTunnelURL(serverConfig, cfg.Domain),
+		Conn:      conn,
+		proxy:     NewLocalProxy(cfg.Local, common.RequestTimeout),
+		history:   NewRequestHistory(common.ClientRequestHistorySize),
+		display:   NewTerminalDisplay(common.ClientRequestHistorySize),
+		Logger:    logger,
 	}
 
 	client.setupMessageHandlers()
@@ -101,62 +79,58 @@ func (c *Client) HandleConnection() {
 	for {
 		err := c.Conn.ReadJSON(&message)
 		if err != nil {
-			c.Logger.Error("Read error", "error", err)
-			return
+			c.Logger.Error("Failed to read message", "error", err)
 		}
 
-		err = c.dispatcher.Dispatch(&message)
-		if err != nil {
+		if err := c.dispatcher.Dispatch(&message); err != nil {
 			c.Logger.Error("Failed to dispatch message", "error", err)
 		}
 	}
+}
+
+func (c *Client) sendResponse(msg *common.Message, proxyResp *ProxyResponse, proxyErr error) error {
+	responseMsg := common.Message{
+		Type:   common.MessageTypeHTTPResponse,
+		Domain: c.domain,
+		UUID:   msg.UUID,
+		Method: msg.Method,
+		URL:    msg.URL,
+	}
+
+	if proxyErr != nil {
+		responseMsg.Status = http.StatusBadGateway
+		responseMsg.Body = []byte(http.StatusText(http.StatusBadGateway))
+	} else {
+		responseMsg.Status = proxyResp.StatusCode
+		responseMsg.Body = proxyResp.Body
+		responseMsg.Headers = proxyResp.Headers
+	}
+
+	if err := c.Conn.WriteJSON(responseMsg); err != nil {
+		return fmt.Errorf("failed to send response: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Client) RefreshTerminalOutput() {
+	common.ClearTerminal()
+	recentLogs := c.history.GetRecent(common.ClientRequestHistorySize)
+	c.display.ShowConnectionInfo(c.tunnelURL)
+	c.display.ShowRequestHistory(recentLogs)
 }
 
 func closeWebsocket(c *websocket.Conn) error {
 	return c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 }
 
-func (c *Client) printSummary() {
-	c.logsMutex.RLock()
-	defer c.logsMutex.RUnlock()
-
-	common.ClearTerminal()
-	fmt.Println("Connected to server.")
-	fmt.Printf("Your tunnel is available at: %s\n", c.Tunnel)
-	fmt.Printf("Waiting for incoming HTTP requests...\n\n")
-	fmt.Printf("------------------- last %d requests -------------------\n\n", common.ClientRequestHistorySize)
-
-	start := 0
-
-	if len(c.requestLogs) > common.ClientRequestHistorySize {
-		start = len(c.requestLogs) - common.ClientRequestHistorySize
+func buildProxyRequest(msg *common.Message) ProxyRequest {
+	return ProxyRequest{
+		Method:  msg.Method,
+		URL:     msg.URL,
+		Headers: msg.Headers,
+		Body:    msg.Body,
 	}
-
-	for _, rl := range c.requestLogs[start:] {
-		fmt.Printf("%s %s %s -> %d\n", common.FormatTime(rl.Timestamp), rl.Method, rl.URL, rl.StatusCode)
-	}
-}
-
-func (c *Client) logResponse(message common.Message, localURL string, statusCode int) {
-	c.logsMutex.Lock()
-	defer c.logsMutex.Unlock()
-
-	c.requestLogs = append(c.requestLogs, RequestLog{
-		Timestamp:  time.Now(),
-		Method:     message.Method,
-		URL:        localURL,
-		StatusCode: statusCode,
-	})
-}
-
-func (c *Client) buildLocalURL(requestPath string) (string, error) {
-	baseURL, err := url.Parse(c.Local)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse local URL: %w", err)
-	}
-
-	baseURL.Path = path.Join(baseURL.Path, requestPath)
-	return baseURL.String(), nil
 }
 
 func buildWebSocketURL(s *ServerConfig, domain string) string {
@@ -165,6 +139,5 @@ func buildWebSocketURL(s *ServerConfig, domain string) string {
 
 func ConnectToServer(websocketURL string) (*websocket.Conn, error) {
 	conn, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
-
 	return conn, err
 }

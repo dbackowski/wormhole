@@ -3,12 +3,13 @@ package client
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/dbackowski/wormhole/common"
 )
 
 func (c *Client) handleDomainRegistered(msg *common.Message) {
-	c.printSummary()
+	c.RefreshTerminalOutput()
 }
 
 func (c *Client) handleDomainTaken(msg *common.Message) {
@@ -20,13 +21,28 @@ func (c *Client) handleDomainTaken(msg *common.Message) {
 }
 
 func (c *Client) handleHTTPRequest(msg *common.Message) {
-	localURL, err := c.buildLocalURL(msg.URL)
-	if err != nil {
-		c.sendErrorResponse(*msg, http.StatusBadRequest, "Invalid request URL")
+	proxyResp, err := c.proxy.Forward(buildProxyRequest(msg))
+
+	statusCode := http.StatusBadGateway
+
+	if proxyResp != nil {
+		statusCode = proxyResp.StatusCode
+	}
+
+	c.history.Add(RequestLog{
+		Timestamp:  time.Now(),
+		Method:     msg.Method,
+		URL:        msg.URL,
+		StatusCode: statusCode,
+	})
+
+	if sendErr := c.sendResponse(msg, proxyResp, err); sendErr != nil {
+		c.Logger.Error("Failed to send response", "error", sendErr)
+		c.RefreshTerminalOutput()
 		return
 	}
 
-	c.proxyRequestToLocal(*msg, localURL)
+	c.RefreshTerminalOutput()
 }
 
 func (c *Client) setupMessageHandlers() {

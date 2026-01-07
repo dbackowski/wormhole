@@ -5,86 +5,74 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"path/filepath"
+	"time"
 
 	"github.com/dbackowski/wormhole/common"
 )
 
-func (c *Client) buildResponseMessage(message common.Message, status int, body []byte, headers http.Header) common.Message {
-	return common.Message{
-		Type:    common.MessageTypeHTTPResponse,
-		Domain:  c.Domain,
-		UUID:    message.UUID,
-		Method:  message.Method,
-		URL:     message.URL,
-		Status:  status,
-		Body:    body,
-		Headers: headers,
+type ProxyRequest struct {
+	Method  string
+	URL     string
+	Headers map[string][]string
+	Body    []byte
+}
+
+type ProxyResponse struct {
+	StatusCode int
+	Headers    map[string][]string
+	Body       []byte
+}
+
+type LocalProxy struct {
+	httpClient *http.Client
+	baseURL    string
+}
+
+func NewLocalProxy(baseURL string, timeout time.Duration) *LocalProxy {
+	return &LocalProxy{
+		baseURL: baseURL,
+		httpClient: &http.Client{
+			Timeout: timeout,
+			Transport: &http.Transport{
+				DisableKeepAlives: true,
+			},
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 
-func (c *Client) makeLocalRequest(message common.Message, localURL string) (*http.Response, error) {
-	req, err := http.NewRequest(message.Method, localURL, bytes.NewReader(message.Body))
+func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
+	httpReq, err := http.NewRequest(req.Method, lp.buildURL(req.URL), bytes.NewReader(req.Body))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to build request: %w", err)
 	}
 
-	if hosts, ok := message.Headers["Host"]; ok && len(hosts) > 0 {
-		req.Host = hosts[0]
-	}
+	common.CopyHTTPHeaders(req.Headers, httpReq.Header)
 
-	common.CopyHTTPHeaders(message.Headers, req.Header)
-	return c.HTTPClient.Do(req)
-}
-
-func (c *Client) forwardResponse(message common.Message, res *http.Response) error {
-	resBody, err := io.ReadAll(res.Body)
-
+	httpResp, err := lp.httpClient.Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("could not read response body: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
+	defer httpResp.Body.Close()
 
-	responseMsg := c.buildResponseMessage(message, res.StatusCode, resBody, res.Header)
-	return c.Conn.WriteJSON(responseMsg)
-}
-
-func (c *Client) respondToServer(message common.Message, res *http.Response, err error) error {
+	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		c.sendErrorResponse(message, http.StatusGatewayTimeout, http.StatusText(http.StatusGatewayTimeout))
-		return fmt.Errorf("local request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	if err = c.forwardResponse(message, res); err != nil {
-		return fmt.Errorf("failed to forward response to server: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	return nil
+	return &ProxyResponse{
+		StatusCode: httpResp.StatusCode,
+		Headers:    httpResp.Header,
+		Body:       body,
+	}, nil
 }
 
-func (c *Client) sendErrorResponse(message common.Message, status int, errorMessage string) {
-	responseMsg := c.buildResponseMessage(message, status, []byte(errorMessage), nil)
-	err := c.Conn.WriteJSON(responseMsg)
-
-	if err != nil {
-		c.Logger.Error("Failed to send error response", "error", err)
-	}
-}
-
-func (c *Client) proxyRequestToLocal(message common.Message, localURL string) {
-	res, err := c.makeLocalRequest(message, localURL)
-
-	statusCode := http.StatusBadGateway
-
-	if err == nil {
-		statusCode = res.StatusCode
-	}
-
-	if err := c.respondToServer(message, res, err); err != nil {
-		c.requestLogger.LogRequestError("respond to server", err)
-		c.logResponse(message, localURL, http.StatusBadGateway)
-	} else {
-		c.logResponse(message, localURL, statusCode)
-	}
-
-	c.printSummary()
+func (lp *LocalProxy) buildURL(path string) string {
+	u, _ := url.Parse(lp.baseURL)
+	u.Path = filepath.Join(u.Path, path)
+	return u.String()
 }
