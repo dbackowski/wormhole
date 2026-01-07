@@ -12,7 +12,7 @@ type Server struct {
 	connManager   *ConnectionManager
 	dispatcher    *common.MessageDispatcher
 	Logger        *common.Logger
-	requestLogger *RequestLogger
+	requestLogger *common.RequestLogger
 	httpServer    *http.Server
 	mux           *http.ServeMux
 	debug         bool
@@ -35,7 +35,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		mux:           http.NewServeMux(),
 		debug:         cfg.Debug,
 		Logger:        logger,
-		requestLogger: NewRequestLogger(logger),
+		requestLogger: common.NewRequestLogger(logger),
 	}
 
 	server.setupMessageHandlers()

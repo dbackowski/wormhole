@@ -1,12 +1,10 @@
-package server
-
-import "github.com/dbackowski/wormhole/common"
+package common
 
 type RequestLogger struct {
-	logger *common.Logger
+	logger *Logger
 }
 
-func NewRequestLogger(logger *common.Logger) *RequestLogger {
+func NewRequestLogger(logger *Logger) *RequestLogger {
 	return &RequestLogger{logger: logger}
 }
 
@@ -42,27 +40,40 @@ func (rl *RequestLogger) LogHTTPResponse(domain, uuid string, status int, body [
 	}
 }
 
-func (rl *RequestLogger) LogClientRegistered(domain, remoteAddr string) {
+func (rl *RequestLogger) LogRequestError(operation string, err error) {
+	rl.logger.Error("Request operation failed",
+		"operation", operation,
+		"error", err,
+	)
+}
+
+func (rl *RequestLogger) LogConnectionError(msg string, err error, fields ...interface{}) {
+	args := []interface{}{"error", err}
+	args = append(args, fields...)
+	rl.logger.Error(msg, args...)
+}
+
+func (rl *RequestLogger) LogLocalRequest(method, url string, statusCode int) {
+	rl.logger.Info("Local request processed",
+		"method", method,
+		"url", url,
+		"status", statusCode,
+	)
+}
+
+func (rl *RequestLogger) LogClientConnected(domain, remoteAddr string) {
 	rl.logger.Info("Client connected",
 		"domain", domain,
 		"remote_addr", remoteAddr,
 	)
 }
 
-func (rl *RequestLogger) LogClientDisconnected(domain, remoteAddr string, reason string) {
+func (rl *RequestLogger) LogClientDisconnected(domain, remoteAddr, reason string) {
 	rl.logger.Info("Client disconnected",
 		"domain", domain,
 		"remote_addr", remoteAddr,
 		"reason", reason,
 	)
-}
-
-func (rl *RequestLogger) LogConnectionError(msg string, err error, context map[string]interface{}) {
-	args := []interface{}{"error", err}
-	for k, v := range context {
-		args = append(args, k, v)
-	}
-	rl.logger.Error(msg, args...)
 }
 
 func (rl *RequestLogger) LogDispatchError(uuid string, err error) {

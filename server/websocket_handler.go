@@ -33,7 +33,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.requestLogger.LogClientRegistered(domain, r.RemoteAddr)
+	s.requestLogger.LogClientConnected(domain, r.RemoteAddr)
 	s.handleWebSocketConnection(domain, conn)
 }
 

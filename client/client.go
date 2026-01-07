@@ -30,7 +30,7 @@ type Client struct {
 	requestLogs   []RequestLog
 	logsMutex     sync.RWMutex
 	Logger        *common.Logger
-	requestLogger *RequestLogger
+	requestLogger *common.RequestLogger
 }
 
 func createHTTPClient() *http.Client {
@@ -87,7 +87,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		HTTPClient:    createHTTPClient(),
 		requestLogs:   make([]RequestLog, 0),
 		Logger:        logger,
-		requestLogger: NewRequestLogger(logger),
+		requestLogger: common.NewRequestLogger(logger),
 	}
 
 	client.setupMessageHandlers()
