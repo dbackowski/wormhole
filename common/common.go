@@ -40,6 +40,9 @@ type Message struct {
 
 func CopyHTTPHeaders(src http.Header, dest http.Header) {
 	for key, values := range src {
+		if http.CanonicalHeaderKey(key) == "Host" {
+			continue
+		}
 		for _, value := range values {
 			dest.Add(key, value)
 		}
