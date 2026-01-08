@@ -58,11 +58,13 @@ func NewClient(cfg *Config) (*Client, error) {
 
 	logger := common.NewLogger(common.LevelError, "text")
 
+	tunnelURL := buildTunnelURL(serverConfig, cfg.Domain)
+
 	client := &Client{
 		domain:    cfg.Domain,
-		tunnelURL: buildTunnelURL(serverConfig, cfg.Domain),
+		tunnelURL: tunnelURL,
 		Conn:      conn,
-		proxy:     NewLocalProxy(cfg.Local, common.RequestTimeout),
+		proxy:     NewLocalProxy(cfg.Local, tunnelURL, common.RequestTimeout),
 		history:   NewRequestHistory(common.ClientRequestHistorySize),
 		display:   NewTerminalDisplay(common.ClientRequestHistorySize),
 		Logger:    logger,
@@ -80,10 +82,12 @@ func (c *Client) HandleConnection() {
 		err := c.Conn.ReadJSON(&message)
 		if err != nil {
 			c.Logger.Error("Failed to read message", "error", err)
+			return
 		}
 
 		if err := c.dispatcher.Dispatch(&message); err != nil {
 			c.Logger.Error("Failed to dispatch message", "error", err)
+			return
 		}
 	}
 }
@@ -115,7 +119,7 @@ func (c *Client) sendResponse(msg *common.Message, proxyResp *ProxyResponse, pro
 
 func (c *Client) RefreshTerminalOutput() {
 	common.ClearTerminal()
-	recentLogs := c.history.GetRecent(common.ClientRequestHistorySize)
+	recentLogs := c.history.GetRecent(common.ClientTerminalMaxLogs)
 	c.display.ShowConnectionInfo(c.tunnelURL)
 	c.display.ShowRequestHistory(recentLogs)
 }

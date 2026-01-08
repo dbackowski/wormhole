@@ -28,11 +28,13 @@ type ProxyResponse struct {
 type LocalProxy struct {
 	httpClient *http.Client
 	baseURL    string
+	tunnelURL  string
 }
 
-func NewLocalProxy(baseURL string, timeout time.Duration) *LocalProxy {
+func NewLocalProxy(baseURL, tunnelURL string, timeout time.Duration) *LocalProxy {
 	return &LocalProxy{
-		baseURL: baseURL,
+		baseURL:   baseURL,
+		tunnelURL: tunnelURL,
 		httpClient: &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{
@@ -53,6 +55,10 @@ func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
 
 	common.CopyHTTPHeaders(req.Headers, httpReq.Header)
 
+	// Rewrite Origin, Referer, and Host headers to match the local service
+	// This prevents CSRF/Origin validation errors in the proxied application
+	lp.rewriteHeaders(httpReq.Header)
+
 	httpResp, err := lp.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -63,6 +69,9 @@ func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
+
+	// Rewrite response headers to use tunnel URL instead of local URL
+	lp.rewriteResponseHeaders(httpResp.Header)
 
 	return &ProxyResponse{
 		StatusCode: httpResp.StatusCode,
@@ -75,4 +84,47 @@ func (lp *LocalProxy) buildURL(path string) string {
 	u, _ := url.Parse(lp.baseURL)
 	u.Path = filepath.Join(u.Path, path)
 	return u.String()
+}
+
+func (lp *LocalProxy) rewriteHeaders(headers http.Header) {
+	baseURL, err := url.Parse(lp.baseURL)
+	if err != nil {
+		return
+	}
+
+	if headers.Get("Origin") != "" {
+		headers.Set("Origin", fmt.Sprintf("%s://%s", baseURL.Scheme, baseURL.Host))
+	}
+
+	if referer := headers.Get("Referer"); referer != "" {
+		if refererURL, err := url.Parse(referer); err == nil {
+			refererURL.Scheme = baseURL.Scheme
+			refererURL.Host = baseURL.Host
+			headers.Set("Referer", refererURL.String())
+		}
+	}
+
+	headers.Set("Host", baseURL.Host)
+}
+
+func (lp *LocalProxy) rewriteResponseHeaders(headers http.Header) {
+	baseURL, err := url.Parse(lp.baseURL)
+	if err != nil {
+		return
+	}
+
+	tunnelURL, err := url.Parse(lp.tunnelURL)
+	if err != nil {
+		return
+	}
+
+	if location := headers.Get("Location"); location != "" {
+		if locationURL, err := url.Parse(location); err == nil {
+			if locationURL.Host == baseURL.Host || locationURL.Host == "" {
+				locationURL.Scheme = tunnelURL.Scheme
+				locationURL.Host = tunnelURL.Host
+				headers.Set("Location", locationURL.String())
+			}
+		}
+	}
 }

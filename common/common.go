@@ -14,6 +14,7 @@ const (
 	RequestTimeout           = 10 * time.Second
 	RequestTimeoutBuffer     = RequestTimeout + 5*time.Second
 	ClientRequestHistorySize = 25
+	ClientTerminalMaxLogs    = 25
 	ServerShutdownTimeout    = 10 * time.Second
 )
 

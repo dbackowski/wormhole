@@ -20,6 +20,9 @@ func (rh *RequestHistory) Add(log RequestLog) {
 	defer rh.mutex.Unlock()
 
 	rh.logs = append(rh.logs, log)
+	if len(rh.logs) > rh.maxSize {
+		rh.logs = rh.logs[len(rh.logs)-rh.maxSize:]
+	}
 }
 
 func (rh *RequestHistory) GetRecent(n int) []RequestLog {
