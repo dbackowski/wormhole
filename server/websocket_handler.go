@@ -18,7 +18,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, domain, err := s.upgradeAndExtractDomain(w, r)
 
 	if err != nil {
-		s.requestLogger.LogConnectionError("Websocker upgrade failed", err, map[string]interface{}{
+		s.requestLogger.LogConnectionError("WebSocket upgrade failed", err, map[string]interface{}{
 			"remote_addr": r.RemoteAddr,
 		})
 		return
