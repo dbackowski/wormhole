@@ -48,7 +48,11 @@ func NewLocalProxy(baseURL, tunnelURL string, timeout time.Duration) *LocalProxy
 }
 
 func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
-	httpReq, err := http.NewRequest(req.Method, lp.buildURL(req.URL), bytes.NewReader(req.Body))
+	url, err := lp.buildURL(req.URL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build URL: %w", err)
+	}
+	httpReq, err := http.NewRequest(req.Method, url, bytes.NewReader(req.Body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to build request: %w", err)
 	}
@@ -74,8 +78,11 @@ func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
 	}, nil
 }
 
-func (lp *LocalProxy) buildURL(path string) string {
-	u, _ := url.Parse(lp.baseURL)
+func (lp *LocalProxy) buildURL(path string) (string, error) {
+	u, err := url.Parse(lp.baseURL)
+	if err != nil {
+		return "", err
+	}
 	u.Path = filepath.Join(u.Path, path)
-	return u.String()
+	return u.String(), nil
 }
