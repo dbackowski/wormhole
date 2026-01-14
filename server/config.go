@@ -24,8 +24,8 @@ func ParseFlags() *Config {
 }
 
 func (c *Config) Validate() error {
-	if c.Port < 1 || c.Port > 65535 {
-		return fmt.Errorf("invalid port: %d (must be 1-65535)", c.Port)
+	if c.Port < common.MinValidPort || c.Port > common.MaxValidPort {
+		return fmt.Errorf("invalid port: %d (must be %d-%d)", c.Port, common.MinValidPort, common.MaxValidPort)
 	}
 
 	return nil

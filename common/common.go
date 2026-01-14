@@ -8,6 +8,8 @@ import (
 )
 
 const (
+	MinValidPort             = 1
+	MaxValidPort             = 65535
 	DefaultServerPort        = 8080
 	DefaultClientServerURL   = "https://wormhole.tools"
 	TimeFormat               = "2006-01-02 15:04:05"
