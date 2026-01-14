@@ -8,25 +8,34 @@ import (
 	"github.com/dbackowski/wormhole/common"
 )
 
-func (c *Client) handleDomainRegistered(msg *common.Message) {
+func (c *Client) handleDomainRegistered(msg *common.Message) error {
 	c.RefreshTerminalOutput()
+	return nil
 }
 
-func (c *Client) handleDomainTaken(msg *common.Message) {
+func (c *Client) handleDomainTaken(msg *common.Message) error {
 	fmt.Println("Domain is already taken. Please choose another one.")
-	err := closeWebsocket(c.Conn)
-	if err != nil {
-		c.Logger.Error("Failed to close websocket", "error", err)
+
+	if err := closeWebsocket(c.Conn); err != nil {
+		return fmt.Errorf("failed to close websocket after domain taken: %w", err)
 	}
+
+	return nil
 }
 
-func (c *Client) handleHTTPRequest(msg *common.Message) {
+func (c *Client) handleHTTPRequest(msg *common.Message) error {
 	proxyResp, err := c.proxy.Forward(buildProxyRequest(msg))
 
-	statusCode := http.StatusBadGateway
+	var statusCode int
 
-	if proxyResp != nil {
+	if err != nil {
+		statusCode = http.StatusBadGateway
+	} else {
 		statusCode = proxyResp.StatusCode
+	}
+
+	if err := c.sendResponse(msg, proxyResp, err); err != nil {
+		return fmt.Errorf("failed to send response for %s: %w", msg.UUID, err)
 	}
 
 	c.history.Add(RequestLog{
@@ -36,13 +45,8 @@ func (c *Client) handleHTTPRequest(msg *common.Message) {
 		StatusCode: statusCode,
 	})
 
-	if sendErr := c.sendResponse(msg, proxyResp, err); sendErr != nil {
-		c.Logger.Error("Failed to send response", "error", sendErr)
-		c.RefreshTerminalOutput()
-		return
-	}
-
 	c.RefreshTerminalOutput()
+	return nil
 }
 
 func (c *Client) setupMessageHandlers() {

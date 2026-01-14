@@ -4,7 +4,7 @@ import (
 	"fmt"
 )
 
-type MessageHandler func(msg *Message)
+type MessageHandler func(msg *Message) error
 
 type MessageDispatcher struct {
 	handlers map[MessageType]MessageHandler
@@ -26,6 +26,9 @@ func (md *MessageDispatcher) Dispatch(msg *Message) error {
 		return fmt.Errorf("unknown message type: %s", msg.Type)
 	}
 
-	handler(msg)
+	if err := handler(msg); err != nil {
+		return fmt.Errorf("handler for %s failed: %w", msg.Type, err)
+	}
+
 	return nil
 }

@@ -86,7 +86,10 @@ func (c *Client) HandleConnection() {
 		}
 
 		if err := c.dispatcher.Dispatch(&message); err != nil {
-			c.Logger.Error("Failed to dispatch message", "error", err)
+			c.Logger.Error("Message handling failed",
+				"type", message.Type,
+				"uuid", message.UUID,
+				"error", err)
 			return
 		}
 	}

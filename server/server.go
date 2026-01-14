@@ -70,13 +70,18 @@ func (s *Server) setupMessageHandlers() {
 	s.dispatcher.Register(common.MessageTypeHTTPResponse, s.handleHTTPResponse)
 }
 
-func (s *Server) DeliverResponse(message *common.Message) {
+func (s *Server) DeliverResponse(message *common.Message) error {
 	connection, exists := s.connManager.GetConnection(message.Domain)
-	if exists {
-		if err := connection.DeliverResponse(message); err != nil {
-			s.Logger.Error("Failed to deliver response", "error", err)
-		}
+
+	if !exists {
+		return fmt.Errorf("no active connection for domain: %s", message.Domain)
 	}
+
+	if err := connection.DeliverResponse(message); err != nil {
+		return fmt.Errorf("failed to deliver HTTP response for %s: %w", message.UUID, err)
+	}
+
+	return nil
 }
 
 func (s *Server) CleanupRequest(domain string, uuid string) {
@@ -86,9 +91,12 @@ func (s *Server) CleanupRequest(domain string, uuid string) {
 	}
 }
 
-func (s *Server) handleHTTPResponse(msg *common.Message) {
+func (s *Server) handleHTTPResponse(msg *common.Message) error {
 	s.requestLogger.LogHTTPResponse(msg.Domain, msg.UUID, msg.Status, msg.Body)
-	s.DeliverResponse(msg)
+	if err := s.DeliverResponse(msg); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Server) Start() error {
