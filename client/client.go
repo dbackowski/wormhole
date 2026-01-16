@@ -28,12 +28,15 @@ type Client struct {
 	dispatcher *common.MessageDispatcher
 }
 
-func buildTunnelURL(serverConfig *ServerConfig, domain string) string {
-	return fmt.Sprintf("%s://%s.%s", serverConfig.HTTPScheme, domain, serverConfig.Host)
+func buildURL(scheme, domain, host, path string) string {
+	if path == "" {
+		return fmt.Sprintf("%s://%s.%s", scheme, domain, host)
+	}
+	return fmt.Sprintf("%s://%s.%s%s", scheme, domain, host, path)
 }
 
 func establishConnection(serverConfig *ServerConfig, domain string) (*websocket.Conn, error) {
-	wsURL := buildWebSocketURL(serverConfig, domain)
+	wsURL := buildURL(serverConfig.WSScheme, domain, serverConfig.Host, "/ws")
 	conn, err := ConnectToServer(wsURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to %s: %w", wsURL, err)
@@ -58,7 +61,7 @@ func NewClient(cfg *Config) (*Client, error) {
 
 	logger := common.NewLogger(common.LevelError, "text")
 
-	tunnelURL := buildTunnelURL(serverConfig, cfg.Domain)
+	tunnelURL := buildURL(serverConfig.HTTPScheme, cfg.Domain, serverConfig.Host, "")
 
 	client := &Client{
 		domain:    cfg.Domain,
@@ -138,10 +141,6 @@ func buildProxyRequest(msg *common.Message) ProxyRequest {
 		Headers: msg.Headers,
 		Body:    msg.Body,
 	}
-}
-
-func buildWebSocketURL(s *ServerConfig, domain string) string {
-	return fmt.Sprintf("%s://%s.%s/ws", s.WSScheme, domain, s.Host)
 }
 
 func ConnectToServer(websocketURL string) (*websocket.Conn, error) {
