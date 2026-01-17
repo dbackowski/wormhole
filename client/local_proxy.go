@@ -48,6 +48,10 @@ func NewLocalProxy(baseURL, tunnelURL string, timeout time.Duration) *LocalProxy
 }
 
 func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
+	hostHeader, ok := req.Headers["Host"]
+	if !ok || len(hostHeader) == 0 {
+		return nil, fmt.Errorf("missing required Host header")
+	}
 	url, err := lp.buildURL(req.URL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build URL: %w", err)
@@ -57,7 +61,7 @@ func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
 		return nil, fmt.Errorf("failed to build request: %w", err)
 	}
 
-	httpReq.Host = req.Headers["Host"][0]
+	httpReq.Host = hostHeader[0]
 	common.CopyHTTPHeaders(req.Headers, httpReq.Header)
 
 	httpResp, err := lp.httpClient.Do(httpReq)
