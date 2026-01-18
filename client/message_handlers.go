@@ -8,7 +8,7 @@ import (
 	"github.com/dbackowski/wormhole/common"
 )
 
-func (c *Client) handleDomainRegistered(msg *common.Message) error {
+func (c *Client) handleDomainRegistered(_ *common.Message) error {
 	c.RefreshTerminalOutput()
 	return nil
 }

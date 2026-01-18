@@ -17,13 +17,13 @@ type Connection struct {
 }
 
 type ConnectionManager struct {
-	mu      sync.RWMutex
-	clients map[string]*Connection
+	mu          sync.RWMutex
+	connections map[string]*Connection
 }
 
 func NewConnectionManager() *ConnectionManager {
 	return &ConnectionManager{
-		clients: make(map[string]*Connection),
+		connections: make(map[string]*Connection),
 	}
 }
 
@@ -31,12 +31,12 @@ func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) 
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	_, exists := cm.clients[domain]
+	_, exists := cm.connections[domain]
 	if exists {
 		return fmt.Errorf("domain %s is already taken", domain)
 	}
 
-	cm.clients[domain] = &Connection{
+	cm.connections[domain] = &Connection{
 		Domain:   domain,
 		conn:     conn,
 		requests: NewPendingRequests(),
@@ -48,7 +48,7 @@ func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) 
 func (cm *ConnectionManager) GetConnection(domain string) (*Connection, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	connection, exists := cm.clients[domain]
+	connection, exists := cm.connections[domain]
 
 	return connection, exists
 }
@@ -56,23 +56,23 @@ func (cm *ConnectionManager) GetConnection(domain string) (*Connection, bool) {
 func (cm *ConnectionManager) RemoveConnection(domain string) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	delete(cm.clients, domain)
+	delete(cm.connections, domain)
 }
 
 func (cm *ConnectionManager) CloseAll() {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	for domain, connection := range cm.clients {
+	for domain, connection := range cm.connections {
 		connection.Close()
-		delete(cm.clients, domain)
+		delete(cm.connections, domain)
 	}
 }
 
 func (cm *ConnectionManager) Count() int {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	return len(cm.clients)
+	return len(cm.connections)
 }
 
 func (c *Connection) RegisterRequest(ctx context.Context, uuid string) (chan *common.Message, context.CancelFunc) {
