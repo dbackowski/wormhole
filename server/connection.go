@@ -45,12 +45,16 @@ func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) 
 	return nil
 }
 
-func (cm *ConnectionManager) GetConnection(domain string) (*Connection, bool) {
+func (cm *ConnectionManager) GetConnection(domain string) (*Connection, error) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	connection, exists := cm.connections[domain]
 
-	return connection, exists
+	if !exists {
+		return nil, fmt.Errorf("connection for domain %s not found", domain)
+	}
+
+	return connection, nil
 }
 
 func (cm *ConnectionManager) RemoveConnection(domain string) {

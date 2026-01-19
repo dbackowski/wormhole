@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/dbackowski/wormhole/common"
 )
@@ -71,10 +72,10 @@ func (s *Server) setupMessageHandlers() {
 }
 
 func (s *Server) DeliverResponse(message *common.Message) error {
-	connection, exists := s.connManager.GetConnection(message.Domain)
+	connection, err := s.connManager.GetConnection(message.Domain)
 
-	if !exists {
-		return fmt.Errorf("no active connection for domain: %s", message.Domain)
+	if err != nil {
+		return err
 	}
 
 	if err := connection.DeliverResponse(message); err != nil {
@@ -85,8 +86,9 @@ func (s *Server) DeliverResponse(message *common.Message) error {
 }
 
 func (s *Server) CleanupRequest(domain string, uuid string) {
-	connection, exists := s.connManager.GetConnection(domain)
-	if exists {
+	connection, err := s.connManager.GetConnection(domain)
+
+	if err == nil {
 		connection.CleanupRequest(uuid)
 	}
 }
@@ -97,6 +99,15 @@ func (s *Server) handleHTTPResponse(msg *common.Message) error {
 		return err
 	}
 	return nil
+}
+
+func (s *Server) extractDomain(host string) (string, error) {
+	parts := strings.Split(host, ".")
+
+	if len(parts) == 0 || parts[0] == "" {
+		return "", fmt.Errorf("invalid host: %s", host)
+	}
+	return parts[0], nil
 }
 
 func (s *Server) Start() error {

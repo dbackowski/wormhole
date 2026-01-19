@@ -11,10 +11,17 @@ import (
 )
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	connection, domain, err := s.getConnectionForDomain(r)
+	domain, err := s.extractDomain(r.Host)
 
 	if err != nil {
 		s.sendHTTPError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	connection, err := s.connManager.GetConnection(domain)
+
+	if err != nil {
+		s.sendHTTPError(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 
