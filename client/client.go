@@ -28,15 +28,8 @@ type Client struct {
 	dispatcher *common.MessageDispatcher
 }
 
-func buildURL(scheme, domain, host, path string) string {
-	if path == "" {
-		return fmt.Sprintf("%s://%s.%s", scheme, domain, host)
-	}
-	return fmt.Sprintf("%s://%s.%s%s", scheme, domain, host, path)
-}
-
 func establishConnection(serverConfig *ServerConfig, domain string) (*websocket.Conn, error) {
-	wsURL := buildURL(serverConfig.WSScheme, domain, serverConfig.Host, "/ws")
+	wsURL := common.BuildSubdomainURL(serverConfig.WSScheme, domain, serverConfig.Host, "/ws")
 	conn, err := ConnectToServer(wsURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to %s: %w", wsURL, err)
@@ -61,7 +54,7 @@ func NewClient(cfg *Config) (*Client, error) {
 
 	logger := common.NewLogger(common.LevelError, "text")
 
-	tunnelURL := buildURL(serverConfig.HTTPScheme, cfg.Domain, serverConfig.Host, "")
+	tunnelURL := common.BuildSubdomainURL(serverConfig.HTTPScheme, cfg.Domain, serverConfig.Host, "")
 
 	client := &Client{
 		domain:    cfg.Domain,

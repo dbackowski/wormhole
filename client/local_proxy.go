@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"path/filepath"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
@@ -52,7 +50,7 @@ func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
 	if !ok || len(hostHeader) == 0 {
 		return nil, fmt.Errorf("missing required Host header")
 	}
-	url, err := lp.buildURL(req.URL)
+	url, err := common.JoinURLPath(lp.baseURL, req.URL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build URL: %w", err)
 	}
@@ -80,13 +78,4 @@ func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
 		Headers:    httpResp.Header,
 		Body:       body,
 	}, nil
-}
-
-func (lp *LocalProxy) buildURL(path string) (string, error) {
-	u, err := url.Parse(lp.baseURL)
-	if err != nil {
-		return "", err
-	}
-	u.Path = filepath.Join(u.Path, path)
-	return u.String(), nil
 }
