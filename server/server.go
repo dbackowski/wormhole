@@ -104,7 +104,7 @@ func (s *Server) handleHTTPResponse(msg *common.Message) error {
 func (s *Server) extractDomain(host string) (string, error) {
 	parts := strings.Split(host, ".")
 
-	if len(parts) == 0 || parts[0] == "" {
+	if parts[0] == "" {
 		return "", fmt.Errorf("invalid host: %s", host)
 	}
 	return parts[0], nil
