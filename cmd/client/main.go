@@ -18,5 +18,13 @@ func main() {
 	}
 
 	defer c.Conn.Close()
+
+	webUI := client.NewWebUI(c, 4040)
+	go func() {
+		if err := webUI.Start(); err != nil {
+			log.Fatal("Web UI error", err)
+		}
+	}()
+
 	c.HandleConnection()
 }
