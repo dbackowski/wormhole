@@ -22,7 +22,7 @@ func NewTerminalDisplay(maxLogs int) *TerminalDisplay {
 func (td *TerminalDisplay) ShowConnectionInfo(tunnelURL string) {
 	fmt.Println("Connected to server.")
 	fmt.Printf("Your tunnel is available at: %s\n", tunnelURL)
-	fmt.Printf("Web UI is available at: http://localhost:4040\n")
+	fmt.Printf("Web UI is available at: http://localhost:%d\n", common.DefaultWebUIPort)
 	fmt.Printf("Waiting for incoming HTTP requests...\n\n")
 }
 
