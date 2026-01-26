@@ -11,10 +11,15 @@ import (
 )
 
 type RequestLog struct {
-	Timestamp  time.Time
-	Method     string
-	URL        string
-	StatusCode int
+	UUID            string
+	Timestamp       time.Time
+	Method          string
+	URL             string
+	StatusCode      int
+	RequestHeaders  map[string][]string
+	RequestBody     []byte
+	ResponseHeaders map[string][]string
+	ResponseBody    []byte
 }
 
 type Client struct {

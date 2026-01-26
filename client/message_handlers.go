@@ -27,11 +27,16 @@ func (c *Client) handleHTTPRequest(msg *common.Message) error {
 	proxyResp, err := c.proxy.Forward(buildProxyRequest(msg))
 
 	var statusCode int
+	var responseHeaders map[string][]string
+	var responseBody []byte
 
 	if err != nil {
 		statusCode = http.StatusBadGateway
+		responseBody = []byte(http.StatusText(http.StatusBadGateway))
 	} else {
 		statusCode = proxyResp.StatusCode
+		responseHeaders = proxyResp.Headers
+		responseBody = proxyResp.Body
 	}
 
 	if err := c.sendResponse(msg, proxyResp, err); err != nil {
@@ -39,10 +44,15 @@ func (c *Client) handleHTTPRequest(msg *common.Message) error {
 	}
 
 	c.history.Add(RequestLog{
-		Timestamp:  time.Now(),
-		Method:     msg.Method,
-		URL:        msg.URL,
-		StatusCode: statusCode,
+		UUID:            msg.UUID,
+		Timestamp:       time.Now(),
+		Method:          msg.Method,
+		URL:             msg.URL,
+		StatusCode:      statusCode,
+		RequestHeaders:  msg.Headers,
+		RequestBody:     msg.Body,
+		ResponseHeaders: responseHeaders,
+		ResponseBody:    responseBody,
 	})
 
 	c.RefreshTerminalOutput()
