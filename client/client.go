@@ -31,6 +31,7 @@ type Client struct {
 	display    Display
 	Logger     *common.Logger
 	dispatcher *common.MessageDispatcher
+	WebUIPort  int
 }
 
 func establishConnection(serverConfig *ServerConfig, domain string) (*websocket.Conn, error) {
@@ -43,7 +44,7 @@ func establishConnection(serverConfig *ServerConfig, domain string) (*websocket.
 }
 
 func NewClient(cfg *Config) (*Client, error) {
-	if err := validateClientConfig(cfg.Domain, cfg.Local); err != nil {
+	if err := validateClientConfig(cfg.Domain, cfg.Local, cfg.WebUIPort); err != nil {
 		return nil, fmt.Errorf("invalid client config: %w", err)
 	}
 
@@ -69,6 +70,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		history:   NewRequestHistory(common.ClientRequestHistorySize),
 		display:   NewTerminalDisplay(common.ClientRequestHistorySize),
 		Logger:    logger,
+		WebUIPort: cfg.WebUIPort,
 	}
 
 	client.setupMessageHandlers()
@@ -124,7 +126,7 @@ func (c *Client) sendResponse(msg *common.Message, proxyResp *ProxyResponse, pro
 func (c *Client) RefreshTerminalOutput() {
 	common.ClearTerminal()
 	recentLogs := c.history.GetRecent(common.ClientTerminalMaxLogs)
-	c.display.ShowConnectionInfo(c.tunnelURL)
+	c.display.ShowConnectionInfo(c.tunnelURL, c.WebUIPort)
 	c.display.ShowRequestHistory(recentLogs)
 }
 

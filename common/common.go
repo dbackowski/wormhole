@@ -72,3 +72,10 @@ func ClearTerminal() {
 func FormatTime(t time.Time) string {
 	return t.Format(TimeFormat)
 }
+
+func ValidatePort(port int) error {
+	if port < MinValidPort || port > MaxValidPort {
+		return fmt.Errorf("invalid port: %d (must be %d-%d)", port, MinValidPort, MaxValidPort)
+	}
+	return nil
+}

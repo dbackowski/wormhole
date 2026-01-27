@@ -13,6 +13,7 @@ type Config struct {
 	ServerURL string
 	Domain    string
 	Local     string
+	WebUIPort int
 }
 
 type ServerConfig struct {
@@ -61,7 +62,7 @@ func parseURL(rawURL string) (url.URL, error) {
 	return *parsed, nil
 }
 
-func validateClientConfig(domain, local string) error {
+func validateClientConfig(domain, local string, port int) error {
 	if domain == "" {
 		return fmt.Errorf("domain is required. Use -domain flag")
 	}
@@ -76,6 +77,12 @@ func validateClientConfig(domain, local string) error {
 		return fmt.Errorf("invalid local URL: %w", err)
 	}
 
+	err = common.ValidatePort(port)
+
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -83,6 +90,7 @@ func ParseFlags() *Config {
 	server := flag.String("server", common.DefaultClientServerURL, "Server URL")
 	domain := flag.String("domain", "", "Domain to register (e.g., myapp)")
 	local := flag.String("local", "", "Local service URL to expose")
+	webUIPort := flag.Int("webui-port", common.DefaultWebUIPort, "Port for the Web UI")
 
 	flag.Parse()
 
@@ -90,5 +98,6 @@ func ParseFlags() *Config {
 		ServerURL: *server,
 		Domain:    *domain,
 		Local:     *local,
+		WebUIPort: *webUIPort,
 	}
 }

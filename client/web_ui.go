@@ -19,6 +19,7 @@ func NewWebUI(client *Client, port int) *WebUI {
 	mux.HandleFunc("/api/status", ui.handleStatus)
 	mux.HandleFunc("/api/requests", ui.handleRequests)
 
+	fmt.Printf(":%d", port)
 	ui.server = &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,

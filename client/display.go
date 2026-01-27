@@ -7,7 +7,7 @@ import (
 )
 
 type Display interface {
-	ShowConnectionInfo(tunnelURL string)
+	ShowConnectionInfo(tunnelURL string, webUIPort int)
 	ShowRequestHistory(logs []RequestLog)
 }
 
@@ -19,10 +19,10 @@ func NewTerminalDisplay(maxLogs int) *TerminalDisplay {
 	return &TerminalDisplay{maxLogs: maxLogs}
 }
 
-func (td *TerminalDisplay) ShowConnectionInfo(tunnelURL string) {
+func (td *TerminalDisplay) ShowConnectionInfo(tunnelURL string, webUIPort int) {
 	fmt.Println("Connected to server.")
 	fmt.Printf("Your tunnel is available at: %s\n", tunnelURL)
-	fmt.Printf("Web UI is available at: http://localhost:%d\n", common.DefaultWebUIPort)
+	fmt.Printf("Web UI is available at: http://localhost:%d\n", webUIPort)
 	fmt.Printf("Waiting for incoming HTTP requests...\n\n")
 }
 

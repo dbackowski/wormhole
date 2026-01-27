@@ -2,7 +2,6 @@ package server
 
 import (
 	"flag"
-	"fmt"
 
 	"github.com/dbackowski/wormhole/common"
 )
@@ -24,9 +23,5 @@ func ParseFlags() *Config {
 }
 
 func (c *Config) Validate() error {
-	if c.Port < common.MinValidPort || c.Port > common.MaxValidPort {
-		return fmt.Errorf("invalid port: %d (must be %d-%d)", c.Port, common.MinValidPort, common.MaxValidPort)
-	}
-
-	return nil
+	return common.ValidatePort(c.Port)
 }
