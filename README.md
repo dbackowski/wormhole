@@ -28,10 +28,37 @@ Your local server is now available at: `http://myapp.localhost:8080`
 
 ## Installation
 
+### Download Pre-built Binaries
+
+Download the latest release for your platform from the [Releases](https://github.com/dbackowski/wormhole/releases) page.
+
+**Linux:**
 ```bash
-git clone <repository-url>
+tar -xzf wormhole-client-linux-amd64.tar.gz
+chmod +x wormhole
+./wormhole -domain=myapp -local=http://localhost:3000
+```
+
+**macOS:**
+
+The binaries are not signed with an Apple Developer certificate. After downloading, you need to remove the quarantine attribute:
+
+```bash
+tar -xzf wormhole-client-darwin-arm64.tar.gz
+xattr -d com.apple.quarantine wormhole
+chmod +x wormhole
+./wormhole -domain=myapp -local=http://localhost:3000
+```
+
+Alternatively, you can right-click the binary in Finder, select "Open", and confirm in the dialog.
+
+### Build from Source
+
+```bash
+git clone https://github.com/dbackowski/wormhole.git
 cd wormhole
 go mod download
+make build
 ```
 
 ## Usage

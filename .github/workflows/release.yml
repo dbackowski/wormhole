@@ -1,0 +1,107 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+        component: [server, client]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags="-s -w" -o wormhole cmd/${{ matrix.component }}/main.go
+
+      - name: Create archive
+        run: |
+          tar -czvf wormhole-${{ matrix.component }}-linux-${{ matrix.arch }}.tar.gz wormhole
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wormhole-${{ matrix.component }}-linux-${{ matrix.arch }}
+          path: wormhole-${{ matrix.component }}-linux-${{ matrix.arch }}.tar.gz
+
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+        component: [server, client]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags="-s -w" -o wormhole cmd/${{ matrix.component }}/main.go
+
+      - name: Create archive
+        run: |
+          # Map architecture names for release
+          ARCH_NAME=${{ matrix.arch }}
+          if [ "$ARCH_NAME" = "amd64" ]; then
+            ARCH_NAME="x86_64"
+          elif [ "$ARCH_NAME" = "arm64" ]; then
+            ARCH_NAME="arm64"
+          fi
+
+          tar -czvf wormhole-${{ matrix.component }}-darwin-${ARCH_NAME}.tar.gz wormhole
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wormhole-${{ matrix.component }}-darwin-${{ matrix.arch }}
+          path: wormhole-*-darwin-*.tar.gz
+
+  release:
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find artifacts -name '*.tar.gz' -exec mv {} release/ \;
+          ls -la release/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
