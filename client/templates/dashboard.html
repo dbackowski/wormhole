@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Wormhole Dashboard</title>
+    <style>{{CSS}}</style>
+</head>
+<body>
+    <div class="container">
+        <h1>Wormhole</h1>
+        <div class="tunnel-url">
+            <a id="tunnelUrl" href="#" target="_blank"></a>
+        </div>
+        <h2>Requests</h2>
+        <table>
+            <thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th></tr></thead>
+            <tbody id="requests"></tbody>
+        </table>
+        <div id="detailsPanel" class="details-panel">
+            <div class="details-header">
+                <h3 id="detailsTitle">Request Details</h3>
+                <button class="details-close" onclick="closeDetails()">&times;</button>
+            </div>
+            <div class="details-content">
+                <div class="details-section">
+                    <h4>Request Headers</h4>
+                    <div id="requestHeaders" class="headers"></div>
+                </div>
+                <div class="details-section">
+                    <h4>Response Headers</h4>
+                    <div id="responseHeaders" class="headers"></div>
+                </div>
+                <div class="details-section body-section">
+                    <h4>Request Body</h4>
+                    <pre id="requestBody"></pre>
+                </div>
+                <div class="details-section body-section">
+                    <h4>Response Body</h4>
+                    <pre id="responseBody"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>{{JS}}</script>
+</body>
+</html>
