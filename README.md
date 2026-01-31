@@ -85,6 +85,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 
 **Optional flags:**
 - `-server`: Server URL (default: https://wormhole.tools)
+- `-webui-port`: Port for the Web UI dashboard (default: 4040)
 
 ## Features
 
@@ -93,6 +94,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 ✅ **Header Preservation** - Complete HTTP headers are maintained  
 ✅ **Multiple Clients** - Support for multiple simultaneous tunnels  
 ✅ **Automatic Cleanup** - Domains are released when clients disconnect  
+✅ **Web UI Dashboard** - Monitor tunneled requests in a browser at `http://localhost:4040` 
 
 ## Example Use Cases
 
@@ -100,6 +102,19 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 - **API Testing**: Test webhook endpoints from external services
 - **Mobile Development**: Test your local API with mobile apps
 - **Client Demos**: Show work-in-progress to clients without deployment
+
+## Web UI
+
+When the client is running, a dashboard is available at `http://localhost:4040` where you can:
+
+- See the active tunnel URL
+- View recent requests with method, path, status code, and timestamp
+- Inspect request/response headers and bodies
+
+To use a different port:
+```bash
+go run cmd/client/main.go -domain=myapp -local=http://localhost:3000 -webui-port=5050
+```
 
 ## How it works
 
