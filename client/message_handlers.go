@@ -2,7 +2,6 @@ package client
 
 import (
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
@@ -25,21 +24,9 @@ func (c *Client) handleDomainTaken(msg *common.Message) error {
 
 func (c *Client) handleHTTPRequest(msg *common.Message) error {
 	proxyResp, err := c.proxy.Forward(buildProxyRequest(msg))
+	resolved := resolveProxyResponse(proxyResp, err)
 
-	var statusCode int
-	var responseHeaders map[string][]string
-	var responseBody []byte
-
-	if err != nil {
-		statusCode = http.StatusBadGateway
-		responseBody = []byte(http.StatusText(http.StatusBadGateway))
-	} else {
-		statusCode = proxyResp.StatusCode
-		responseHeaders = proxyResp.Headers
-		responseBody = proxyResp.Body
-	}
-
-	if err := c.sendResponse(msg, proxyResp, err); err != nil {
+	if err := c.sendResponse(msg, resolved); err != nil {
 		return fmt.Errorf("failed to send response for %s: %w", msg.UUID, err)
 	}
 
@@ -48,11 +35,11 @@ func (c *Client) handleHTTPRequest(msg *common.Message) error {
 		Timestamp:       time.Now(),
 		Method:          msg.Method,
 		URL:             msg.URL,
-		StatusCode:      statusCode,
+		StatusCode:      resolved.StatusCode,
 		RequestHeaders:  msg.Headers,
 		RequestBody:     msg.Body,
-		ResponseHeaders: responseHeaders,
-		ResponseBody:    responseBody,
+		ResponseHeaders: resolved.Headers,
+		ResponseBody:    resolved.Body,
 	})
 
 	c.RefreshTerminalOutput()
