@@ -1,7 +1,6 @@
 package common
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -50,19 +49,6 @@ func CopyHTTPHeaders(src http.Header, dest http.Header) {
 			dest.Add(key, value)
 		}
 	}
-}
-
-func PrettyPrintMessage(msg Message) {
-	clone := msg
-	clone.Body = nil
-	jsonMessage, err := json.MarshalIndent(clone, "", "  ")
-
-	if err != nil {
-		fmt.Printf("Failed to marshal message: %v\n", err)
-		return
-	}
-
-	fmt.Println(string(jsonMessage))
 }
 
 func ClearTerminal() {
