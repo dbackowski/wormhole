@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/dbackowski/wormhole/common"
 )
 
 //go:embed templates/dashboard.html templates/dashboard.css templates/dashboard.js
@@ -17,9 +19,14 @@ type WebUI struct {
 	dashboardHTML string
 }
 
-func NewWebUI(client *Client, port int) *WebUI {
+func NewWebUI(client *Client, port int) (*WebUI, error) {
 	ui := &WebUI{client: client}
-	ui.dashboardHTML = ui.buildDashboardHTML()
+
+	dashboardHTML, err := ui.buildDashboardHTML()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build dashboard: %w", err)
+	}
+	ui.dashboardHTML = dashboardHTML
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", ui.handleDashboard)
@@ -31,19 +38,30 @@ func NewWebUI(client *Client, port int) *WebUI {
 		Handler: mux,
 	}
 
-	return ui
+	return ui, nil
 }
 
-func (ui *WebUI) buildDashboardHTML() string {
-	html, _ := templateFS.ReadFile("templates/dashboard.html")
-	css, _ := templateFS.ReadFile("templates/dashboard.css")
-	js, _ := templateFS.ReadFile("templates/dashboard.js")
+func (ui *WebUI) buildDashboardHTML() (string, error) {
+	html, err := templateFS.ReadFile("templates/dashboard.html")
+	if err != nil {
+		return "", fmt.Errorf("failed to read dashboard.html: %w", err)
+	}
+
+	css, err := templateFS.ReadFile("templates/dashboard.css")
+	if err != nil {
+		return "", fmt.Errorf("failed to read dashboard.css: %w", err)
+	}
+
+	js, err := templateFS.ReadFile("templates/dashboard.js")
+	if err != nil {
+		return "", fmt.Errorf("failed to read dashboard.js: %w", err)
+	}
 
 	result := string(html)
 	result = strings.Replace(result, "{{CSS}}", string(css), 1)
 	result = strings.Replace(result, "{{JS}}", string(js), 1)
 
-	return result
+	return result, nil
 }
 
 func (ui *WebUI) Start() error {
@@ -62,7 +80,7 @@ func (ui *WebUI) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 func (ui *WebUI) handleRequests(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	logs := ui.client.history.GetRecent(50)
+	logs := ui.client.history.GetRecent(common.ClientRequestHistorySize)
 	if err := json.NewEncoder(w).Encode(logs); err != nil {
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 	}

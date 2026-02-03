@@ -19,7 +19,11 @@ func main() {
 
 	defer c.Conn.Close()
 
-	webUI := client.NewWebUI(c, clientCfg.WebUIPort)
+	webUI, err := client.NewWebUI(c, clientCfg.WebUIPort)
+	if err != nil {
+		log.Fatal("Error creating web UI", err)
+	}
+
 	go func() {
 		if err := webUI.Start(); err != nil {
 			log.Fatal("Web UI error", err)
