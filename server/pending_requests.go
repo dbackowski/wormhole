@@ -28,10 +28,9 @@ func (pr *PendingRequests) Register(ctx context.Context, uuid string) (chan *com
 	ch := make(chan *common.Message, 1)
 	pr.pending[uuid] = ch
 
-	go func() {
-		<-timeoutCtx.Done()
+	context.AfterFunc(timeoutCtx, func() {
 		pr.Cleanup(uuid)
-	}()
+	})
 
 	return ch, cancel
 }
