@@ -1,0 +1,356 @@
+package client
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/dbackowski/wormhole/common"
+
+	"github.com/gorilla/websocket"
+)
+
+type mockDisplay struct {
+	showConnectionInfoCalled bool
+	showRequestHistoryCalled bool
+	lastLogs                 []RequestLog
+}
+
+func (m *mockDisplay) ShowConnectionInfo(tunnelURL string, webUIPort int) {
+	m.showConnectionInfoCalled = true
+}
+
+func (m *mockDisplay) ShowRequestHistory(logs []RequestLog) {
+	m.showRequestHistoryCalled = true
+	m.lastLogs = logs
+}
+
+func setupTestWebsocket(t *testing.T) (*websocket.Conn, *httptest.Server, *websocket.Conn) {
+	t.Helper()
+
+	var serverConn *websocket.Conn
+	upgrader := websocket.Upgrader{}
+	ready := make(chan struct{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		serverConn, err = upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Fatalf("failed to upgrade: %v", err)
+		}
+		close(ready)
+		// Keep connection open until test ends
+		select {}
+	}))
+
+	wsURL := "ws" + server.URL[len("http"):]
+	clientConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		server.Close()
+		t.Fatalf("failed to dial: %v", err)
+	}
+
+	<-ready
+	return clientConn, server, serverConn
+}
+
+func newTestClient(t *testing.T, proxyServerURL string) (*Client, *mockDisplay, *httptest.Server, *websocket.Conn) {
+	t.Helper()
+
+	clientConn, wsServer, serverConn := setupTestWebsocket(t)
+	display := &mockDisplay{}
+
+	client := &Client{
+		domain:    "test",
+		tunnelURL: "https://test.example.com",
+		Conn:      clientConn,
+		proxy:     NewLocalProxy(proxyServerURL, "https://test.example.com", 5*time.Second),
+		history:   NewRequestHistory(100),
+		display:   display,
+		WebUIPort: 4040,
+	}
+
+	return client, display, wsServer, serverConn
+}
+
+func TestHandleDomainRegistered(t *testing.T) {
+	client, display, wsServer, _ := newTestClient(t, "http://localhost:1")
+	defer wsServer.Close()
+	defer client.Conn.Close()
+
+	err := client.handleDomainRegistered(&common.Message{
+		Type: common.MessageTypeDomainRegistered,
+	})
+
+	if err != nil {
+		t.Fatalf("handleDomainRegistered() error = %v, want nil", err)
+	}
+	if !display.showConnectionInfoCalled {
+		t.Error("expected ShowConnectionInfo to be called")
+	}
+	if !display.showRequestHistoryCalled {
+		t.Error("expected ShowRequestHistory to be called")
+	}
+}
+
+func TestHandleDomainTaken(t *testing.T) {
+	clientConn, wsServer, serverConn := setupTestWebsocket(t)
+	defer wsServer.Close()
+	defer serverConn.Close()
+
+	client := &Client{
+		Conn: clientConn,
+	}
+
+	err := client.handleDomainTaken(&common.Message{
+		Type: common.MessageTypeDomainTaken,
+	})
+
+	if err != nil {
+		t.Fatalf("handleDomainTaken() error = %v, want nil", err)
+	}
+
+	// Verify close message was sent by reading from the server side
+	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, _, readErr := serverConn.ReadMessage()
+	if readErr == nil {
+		t.Error("expected error reading from closed connection, got nil")
+	}
+	closeErr, ok := readErr.(*websocket.CloseError)
+	if !ok {
+		t.Fatalf("expected *websocket.CloseError, got %T: %v", readErr, readErr)
+	}
+	if closeErr.Code != websocket.CloseNormalClosure {
+		t.Errorf("close code = %d, want %d", closeErr.Code, websocket.CloseNormalClosure)
+	}
+}
+
+func TestHandleHTTPRequest(t *testing.T) {
+	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Response", "test-value")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("proxy response"))
+	}))
+	defer proxyServer.Close()
+
+	client, display, wsServer, serverConn := newTestClient(t, proxyServer.URL)
+	defer wsServer.Close()
+	defer client.Conn.Close()
+	defer serverConn.Close()
+
+	msg := &common.Message{
+		Type:   common.MessageTypeHTTPRequest,
+		UUID:   "test-uuid-123",
+		Method: "GET",
+		URL:    "/api/test",
+		Headers: map[string][]string{
+			"Host": {"test.example.com"},
+		},
+	}
+
+	err := client.handleHTTPRequest(msg)
+	if err != nil {
+		t.Fatalf("handleHTTPRequest() error = %v, want nil", err)
+	}
+
+	// Verify response was sent over websocket
+	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var responseMsg common.Message
+	if err := serverConn.ReadJSON(&responseMsg); err != nil {
+		t.Fatalf("failed to read response message: %v", err)
+	}
+	if responseMsg.Type != common.MessageTypeHTTPResponse {
+		t.Errorf("response Type = %q, want %q", responseMsg.Type, common.MessageTypeHTTPResponse)
+	}
+	if responseMsg.UUID != "test-uuid-123" {
+		t.Errorf("response UUID = %q, want %q", responseMsg.UUID, "test-uuid-123")
+	}
+	if responseMsg.Status != http.StatusOK {
+		t.Errorf("response Status = %d, want %d", responseMsg.Status, http.StatusOK)
+	}
+	if string(responseMsg.Body) != "proxy response" {
+		t.Errorf("response Body = %q, want %q", string(responseMsg.Body), "proxy response")
+	}
+	if responseMsg.Domain != "test" {
+		t.Errorf("response Domain = %q, want %q", responseMsg.Domain, "test")
+	}
+
+	// Verify request was logged in history
+	logs := client.history.GetRecent(10)
+	if len(logs) != 1 {
+		t.Fatalf("history length = %d, want 1", len(logs))
+	}
+	log := logs[0]
+	if log.UUID != "test-uuid-123" {
+		t.Errorf("log UUID = %q, want %q", log.UUID, "test-uuid-123")
+	}
+	if log.Method != "GET" {
+		t.Errorf("log Method = %q, want %q", log.Method, "GET")
+	}
+	if log.URL != "/api/test" {
+		t.Errorf("log URL = %q, want %q", log.URL, "/api/test")
+	}
+	if log.StatusCode != http.StatusOK {
+		t.Errorf("log StatusCode = %d, want %d", log.StatusCode, http.StatusOK)
+	}
+
+	// Verify display was refreshed
+	if !display.showConnectionInfoCalled {
+		t.Error("expected ShowConnectionInfo to be called")
+	}
+	if !display.showRequestHistoryCalled {
+		t.Error("expected ShowRequestHistory to be called")
+	}
+}
+
+func TestHandleHTTPRequestProxyError(t *testing.T) {
+	// Use an unreachable proxy to force a proxy error
+	client, _, wsServer, serverConn := newTestClient(t, "http://127.0.0.1:1")
+	defer wsServer.Close()
+	defer client.Conn.Close()
+	defer serverConn.Close()
+
+	msg := &common.Message{
+		Type:   common.MessageTypeHTTPRequest,
+		UUID:   "error-uuid",
+		Method: "GET",
+		URL:    "/fail",
+		Headers: map[string][]string{
+			"Host": {"test.example.com"},
+		},
+	}
+
+	err := client.handleHTTPRequest(msg)
+	if err != nil {
+		t.Fatalf("handleHTTPRequest() error = %v, want nil (proxy errors return 502)", err)
+	}
+
+	// Verify 502 response was sent
+	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var responseMsg common.Message
+	if err := serverConn.ReadJSON(&responseMsg); err != nil {
+		t.Fatalf("failed to read response: %v", err)
+	}
+	if responseMsg.Status != http.StatusBadGateway {
+		t.Errorf("response Status = %d, want %d", responseMsg.Status, http.StatusBadGateway)
+	}
+	if string(responseMsg.Body) != http.StatusText(http.StatusBadGateway) {
+		t.Errorf("response Body = %q, want %q", string(responseMsg.Body), http.StatusText(http.StatusBadGateway))
+	}
+
+	// Verify error response was still logged
+	logs := client.history.GetRecent(10)
+	if len(logs) != 1 {
+		t.Fatalf("history length = %d, want 1", len(logs))
+	}
+	if logs[0].StatusCode != http.StatusBadGateway {
+		t.Errorf("log StatusCode = %d, want %d", logs[0].StatusCode, http.StatusBadGateway)
+	}
+}
+
+func TestHandleHTTPRequestPreservesRequestDetails(t *testing.T) {
+	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte("created"))
+	}))
+	defer proxyServer.Close()
+
+	client, _, wsServer, serverConn := newTestClient(t, proxyServer.URL)
+	defer wsServer.Close()
+	defer client.Conn.Close()
+	defer serverConn.Close()
+
+	reqHeaders := map[string][]string{
+		"Host":         {"test.example.com"},
+		"Content-Type": {"application/json"},
+	}
+	reqBody := []byte(`{"name":"test"}`)
+
+	msg := &common.Message{
+		Type:    common.MessageTypeHTTPRequest,
+		UUID:    "preserve-uuid",
+		Method:  "POST",
+		URL:     "/api/items",
+		Headers: reqHeaders,
+		Body:    reqBody,
+	}
+
+	err := client.handleHTTPRequest(msg)
+	if err != nil {
+		t.Fatalf("handleHTTPRequest() error = %v, want nil", err)
+	}
+
+	// Drain websocket response
+	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var responseMsg common.Message
+	serverConn.ReadJSON(&responseMsg)
+
+	// Verify request details are preserved in history
+	logs := client.history.GetRecent(10)
+	if len(logs) != 1 {
+		t.Fatalf("history length = %d, want 1", len(logs))
+	}
+	log := logs[0]
+	if log.Method != "POST" {
+		t.Errorf("log Method = %q, want %q", log.Method, "POST")
+	}
+	if string(log.RequestBody) != `{"name":"test"}` {
+		t.Errorf("log RequestBody = %q, want %q", string(log.RequestBody), `{"name":"test"}`)
+	}
+	if log.RequestHeaders["Host"][0] != "test.example.com" {
+		t.Errorf("log RequestHeaders Host = %q, want %q", log.RequestHeaders["Host"][0], "test.example.com")
+	}
+}
+
+func TestSetupMessageHandlers(t *testing.T) {
+	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer proxyServer.Close()
+
+	client, _, wsServer, serverConn := newTestClient(t, proxyServer.URL)
+	defer wsServer.Close()
+	defer client.Conn.Close()
+	defer serverConn.Close()
+
+	client.setupMessageHandlers()
+
+	if client.dispatcher == nil {
+		t.Fatal("dispatcher is nil after setupMessageHandlers")
+	}
+
+	// Verify all expected message types are registered by dispatching them
+	t.Run("domain_registered is registered", func(t *testing.T) {
+		err := client.dispatcher.Dispatch(&common.Message{Type: common.MessageTypeDomainRegistered})
+		if err != nil {
+			t.Errorf("dispatch domain_registered failed: %v", err)
+		}
+	})
+
+	t.Run("http_request is registered", func(t *testing.T) {
+		err := client.dispatcher.Dispatch(&common.Message{
+			Type:    common.MessageTypeHTTPRequest,
+			UUID:    "setup-test",
+			Method:  "GET",
+			URL:     "/test",
+			Headers: map[string][]string{"Host": {"test.example.com"}},
+		})
+		if err != nil {
+			t.Errorf("dispatch http_request failed: %v", err)
+		}
+		// Drain websocket response
+		serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		var resp common.Message
+		serverConn.ReadJSON(&resp)
+	})
+
+	// Verify unknown type returns error
+	err := client.dispatcher.Dispatch(&common.Message{Type: "unknown_type"})
+	if err == nil {
+		t.Error("expected error for unknown message type, got nil")
+	}
+	if !contains(err.Error(), "unknown message type") {
+		t.Errorf("error = %q, want containing %q", err.Error(), "unknown message type")
+	}
+}
