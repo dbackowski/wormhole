@@ -111,7 +111,6 @@ func TestHandleDomainTaken(t *testing.T) {
 		t.Fatalf("handleDomainTaken() error = %v, want nil", err)
 	}
 
-	// Verify close message was sent by reading from the server side
 	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, _, readErr := serverConn.ReadMessage()
 	if readErr == nil {
@@ -154,7 +153,6 @@ func TestHandleHTTPRequest(t *testing.T) {
 		t.Fatalf("handleHTTPRequest() error = %v, want nil", err)
 	}
 
-	// Verify response was sent over websocket
 	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	var responseMsg common.Message
 	if err := serverConn.ReadJSON(&responseMsg); err != nil {
@@ -176,7 +174,6 @@ func TestHandleHTTPRequest(t *testing.T) {
 		t.Errorf("response Domain = %q, want %q", responseMsg.Domain, "test")
 	}
 
-	// Verify request was logged in history
 	logs := client.history.GetRecent(10)
 	if len(logs) != 1 {
 		t.Fatalf("history length = %d, want 1", len(logs))
@@ -195,7 +192,6 @@ func TestHandleHTTPRequest(t *testing.T) {
 		t.Errorf("log StatusCode = %d, want %d", log.StatusCode, http.StatusOK)
 	}
 
-	// Verify display was refreshed
 	if !display.showConnectionInfoCalled {
 		t.Error("expected ShowConnectionInfo to be called")
 	}
@@ -205,7 +201,6 @@ func TestHandleHTTPRequest(t *testing.T) {
 }
 
 func TestHandleHTTPRequestProxyError(t *testing.T) {
-	// Use an unreachable proxy to force a proxy error
 	client, _, wsServer, serverConn := newTestClient(t, "http://127.0.0.1:1")
 	defer wsServer.Close()
 	defer client.Conn.Close()
@@ -226,7 +221,6 @@ func TestHandleHTTPRequestProxyError(t *testing.T) {
 		t.Fatalf("handleHTTPRequest() error = %v, want nil (proxy errors return 502)", err)
 	}
 
-	// Verify 502 response was sent
 	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	var responseMsg common.Message
 	if err := serverConn.ReadJSON(&responseMsg); err != nil {
@@ -239,7 +233,6 @@ func TestHandleHTTPRequestProxyError(t *testing.T) {
 		t.Errorf("response Body = %q, want %q", string(responseMsg.Body), http.StatusText(http.StatusBadGateway))
 	}
 
-	// Verify error response was still logged
 	logs := client.history.GetRecent(10)
 	if len(logs) != 1 {
 		t.Fatalf("history length = %d, want 1", len(logs))
@@ -281,12 +274,10 @@ func TestHandleHTTPRequestPreservesRequestDetails(t *testing.T) {
 		t.Fatalf("handleHTTPRequest() error = %v, want nil", err)
 	}
 
-	// Drain websocket response
 	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	var responseMsg common.Message
 	serverConn.ReadJSON(&responseMsg)
 
-	// Verify request details are preserved in history
 	logs := client.history.GetRecent(10)
 	if len(logs) != 1 {
 		t.Fatalf("history length = %d, want 1", len(logs))
@@ -320,7 +311,6 @@ func TestSetupMessageHandlers(t *testing.T) {
 		t.Fatal("dispatcher is nil after setupMessageHandlers")
 	}
 
-	// Verify all expected message types are registered by dispatching them
 	t.Run("domain_registered is registered", func(t *testing.T) {
 		err := client.dispatcher.Dispatch(&common.Message{Type: common.MessageTypeDomainRegistered})
 		if err != nil {
@@ -339,13 +329,11 @@ func TestSetupMessageHandlers(t *testing.T) {
 		if err != nil {
 			t.Errorf("dispatch http_request failed: %v", err)
 		}
-		// Drain websocket response
 		serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		var resp common.Message
 		serverConn.ReadJSON(&resp)
 	})
 
-	// Verify unknown type returns error
 	err := client.dispatcher.Dispatch(&common.Message{Type: "unknown_type"})
 	if err == nil {
 		t.Error("expected error for unknown message type, got nil")
