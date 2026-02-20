@@ -85,9 +85,8 @@ func NewClient(cfg *Config) (*Client, error) {
 }
 
 func (c *Client) HandleConnection() {
-	var message common.Message
-
 	for {
+		var message common.Message
 		err := c.Conn.ReadJSON(&message)
 		if err != nil {
 			c.Logger.Error("Failed to read message", "error", err)
@@ -99,9 +98,19 @@ func (c *Client) HandleConnection() {
 				"type", message.Type,
 				"uuid", message.UUID,
 				"error", err)
-			return
+			continue
 		}
 	}
+}
+
+func (c *Client) Shutdown() error {
+	c.Logger.Info("Shutting down client")
+
+	if err := closeWebsocket(c.Conn); err != nil {
+		c.Logger.Error("Failed to send close frame", "error", err)
+	}
+
+	return c.Conn.Close()
 }
 
 func resolveProxyResponse(proxyResp *ProxyResponse, proxyErr error) ResolvedResponse {

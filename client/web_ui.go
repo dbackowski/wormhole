@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -66,6 +67,10 @@ func (ui *WebUI) buildDashboardHTML() (string, error) {
 
 func (ui *WebUI) Start() error {
 	return ui.server.ListenAndServe()
+}
+
+func (ui *WebUI) Shutdown(ctx context.Context) error {
+	return ui.server.Shutdown(ctx)
 }
 
 func (ui *WebUI) handleStatus(w http.ResponseWriter, r *http.Request) {

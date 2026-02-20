@@ -18,6 +18,7 @@ const (
 	ClientRequestHistorySize = 50
 	ClientTerminalMaxLogs    = 25
 	ServerShutdownTimeout    = 10 * time.Second
+	ClientShutdownTimeout    = 5 * time.Second
 )
 
 type MessageType string

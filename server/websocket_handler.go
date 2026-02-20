@@ -80,6 +80,13 @@ func (s *Server) registerClient(conn *websocket.Conn, domain string) error {
 	return nil
 }
 
+func disconnectReason(err error) string {
+	if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+		return "normal closure"
+	}
+	return "connection error: " + err.Error()
+}
+
 func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) {
 	defer conn.Close()
 
@@ -89,7 +96,7 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 		err := conn.ReadJSON(&message)
 
 		if err != nil {
-			s.requestLogger.LogClientDisconnected(domain, "", "normal closure")
+			s.requestLogger.LogClientDisconnected(domain, "", disconnectReason(err))
 			s.connManager.RemoveConnection(domain)
 			return
 		}
