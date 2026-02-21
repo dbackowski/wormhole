@@ -14,25 +14,25 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	domain, err := s.extractDomain(r.Host)
 
 	if err != nil {
-		s.sendHTTPError(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	connection, err := s.connManager.GetConnection(domain)
 
 	if err != nil {
-		s.sendHTTPError(w, err.Error(), http.StatusBadGateway)
+		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 
 	requestMsg, err := s.buildRequestMessage(r)
 
 	if err != nil {
-		s.sendHTTPError(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	s.forwardAndWaitForResponse(w, connection, requestMsg, domain, r.Context())
+	s.forwardAndWaitForResponse(r.Context(), w, connection, requestMsg, domain)
 }
 
 func isWebSocketUpgradeRequest(headers http.Header) bool {
@@ -54,15 +54,15 @@ func prepareRequestHeaders(r *http.Request) map[string][]string {
 }
 
 func (s *Server) buildRequestMessage(r *http.Request) (*common.Message, error) {
+	if isWebSocketUpgradeRequest(r.Header) {
+		return nil, fmt.Errorf("WebSocket upgrade not supported")
+	}
+
 	defer r.Body.Close()
 	reqBody, err := io.ReadAll(r.Body)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	if isWebSocketUpgradeRequest(r.Header) {
-		return nil, fmt.Errorf("WebSocket upgrade not supported")
 	}
 
 	return &common.Message{
@@ -75,24 +75,20 @@ func (s *Server) buildRequestMessage(r *http.Request) (*common.Message, error) {
 	}, nil
 }
 
-func (s *Server) sendHTTPError(w http.ResponseWriter, message string, statusCode int) {
-	http.Error(w, message, statusCode)
-}
-
-func (s *Server) forwardAndWaitForResponse(w http.ResponseWriter, connection *Connection, requestMsg *common.Message, domain string, ctx context.Context) {
+func (s *Server) forwardAndWaitForResponse(ctx context.Context, w http.ResponseWriter, connection *Connection, requestMsg *common.Message, domain string) {
 	s.logForwardingRequest(requestMsg, domain)
 
-	responseChan, cancelCleanup, err := s.registerAndForwardRequest(connection, requestMsg, ctx)
+	responseChan, cancelCleanup, err := s.registerAndForwardRequest(ctx, connection, requestMsg)
 	if err != nil {
-		s.sendHTTPError(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer s.CleanupRequest(domain, requestMsg.UUID)
 	defer cancelCleanup()
-	s.handleResponse(w, responseChan, ctx)
+	s.handleResponse(ctx, w, responseChan)
 }
 
-func (s *Server) registerAndForwardRequest(connection *Connection, requestMsg *common.Message, ctx context.Context) (chan *common.Message, context.CancelFunc, error) {
+func (s *Server) registerAndForwardRequest(ctx context.Context, connection *Connection, requestMsg *common.Message) (chan *common.Message, context.CancelFunc, error) {
 	responseChan, cancelCleanup := connection.RegisterRequest(ctx, requestMsg.UUID)
 	if err := connection.SendMessage(requestMsg); err != nil {
 		connection.CleanupRequest(requestMsg.UUID)
@@ -113,7 +109,7 @@ func (s *Server) writeTimeoutResponse(w http.ResponseWriter) {
 	w.Write([]byte("Request timeout"))
 }
 
-func (s *Server) handleResponse(w http.ResponseWriter, responseChan chan *common.Message, ctx context.Context) {
+func (s *Server) handleResponse(ctx context.Context, w http.ResponseWriter, responseChan chan *common.Message) {
 	select {
 	case responseMsg, ok := <-responseChan:
 		if !ok || responseMsg == nil {

@@ -54,29 +54,18 @@ func (s *Server) upgradeAndExtractDomain(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) registerClient(conn *websocket.Conn, domain string) error {
-	registered := false
-
-	defer func() {
-		if !registered {
-			conn.Close()
-		}
-	}()
-
-	err := s.connManager.AddConnection(domain, conn)
-
-	if err != nil {
-		if writeErr := conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken}); writeErr != nil {
-			return fmt.Errorf("domain %s is already taken, failed to notify client: %w", domain, writeErr)
-		}
+	if err := s.connManager.AddConnection(domain, conn); err != nil {
+		conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
+		conn.Close()
 		return fmt.Errorf("domain %s is already taken", domain)
 	}
 
-	if err = conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
+	if err := conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
 		s.connManager.RemoveConnection(domain)
+		conn.Close()
 		return fmt.Errorf("failed to send registration confirmation: %w", err)
 	}
 
-	registered = true
 	return nil
 }
 

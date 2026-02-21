@@ -20,13 +20,12 @@ func NewPendingRequests() *PendingRequests {
 }
 
 func (pr *PendingRequests) Register(ctx context.Context, uuid string) (chan *common.Message, context.CancelFunc) {
-	pr.mu.Lock()
-	defer pr.mu.Unlock()
-
 	timeoutCtx, cancel := context.WithTimeout(ctx, common.RequestTimeoutBuffer)
 
 	ch := make(chan *common.Message, 1)
+	pr.mu.Lock()
 	pr.pending[uuid] = ch
+	pr.mu.Unlock()
 
 	context.AfterFunc(timeoutCtx, func() {
 		pr.Cleanup(uuid)

@@ -67,10 +67,10 @@ func (cm *ConnectionManager) CloseAll() {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	for domain, connection := range cm.connections {
+	for _, connection := range cm.connections {
 		connection.Close()
-		delete(cm.connections, domain)
 	}
+	clear(cm.connections)
 }
 
 func (cm *ConnectionManager) Count() int {

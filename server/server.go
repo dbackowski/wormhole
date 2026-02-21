@@ -88,17 +88,17 @@ func (s *Server) DeliverResponse(message *common.Message) error {
 func (s *Server) CleanupRequest(domain string, uuid string) {
 	connection, err := s.connManager.GetConnection(domain)
 
-	if err == nil {
-		connection.CleanupRequest(uuid)
+	if err != nil {
+		s.Logger.Debug("CleanupRequest: connection not found", "domain", domain, "uuid", uuid)
+		return
 	}
+
+	connection.CleanupRequest(uuid)
 }
 
 func (s *Server) handleHTTPResponse(msg *common.Message) error {
 	s.requestLogger.LogHTTPResponse(msg.Domain, msg.UUID, msg.Status, msg.Body)
-	if err := s.DeliverResponse(msg); err != nil {
-		return err
-	}
-	return nil
+	return s.DeliverResponse(msg)
 }
 
 func (s *Server) extractDomain(host string) (string, error) {
