@@ -34,12 +34,6 @@ type Client struct {
 	WebUIPort  int
 }
 
-type ResolvedResponse struct {
-	StatusCode int
-	Headers    map[string][]string
-	Body       []byte
-}
-
 func establishConnection(serverConfig *ServerConfig, domain string) (*websocket.Conn, error) {
 	wsURL := common.BuildSubdomainURL(serverConfig.WSScheme, domain, serverConfig.Host, "/ws")
 	conn, err := ConnectToServer(wsURL)
@@ -113,21 +107,17 @@ func (c *Client) Shutdown() error {
 	return c.Conn.Close()
 }
 
-func resolveProxyResponse(proxyResp *ProxyResponse, proxyErr error) ResolvedResponse {
+func resolveProxyResponse(proxyResp *ProxyResponse, proxyErr error) ProxyResponse {
 	if proxyErr != nil {
-		return ResolvedResponse{
+		return ProxyResponse{
 			StatusCode: http.StatusBadGateway,
 			Body:       []byte(http.StatusText(http.StatusBadGateway)),
 		}
 	}
-	return ResolvedResponse{
-		StatusCode: proxyResp.StatusCode,
-		Headers:    proxyResp.Headers,
-		Body:       proxyResp.Body,
-	}
+	return *proxyResp
 }
 
-func (c *Client) sendResponse(msg *common.Message, resolved ResolvedResponse) error {
+func (c *Client) sendResponse(msg *common.Message, resolved ProxyResponse) error {
 	responseMsg := common.Message{
 		Type:    common.MessageTypeHTTPResponse,
 		Domain:  c.domain,

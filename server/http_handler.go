@@ -101,12 +101,16 @@ func (s *Server) registerAndForwardRequest(ctx context.Context, connection *Conn
 func (s *Server) writeSuccessResponse(w http.ResponseWriter, responseMsg *common.Message) {
 	common.CopyHTTPHeaders(responseMsg.Headers, w.Header())
 	w.WriteHeader(responseMsg.Status)
-	w.Write(responseMsg.Body)
+	if _, err := w.Write(responseMsg.Body); err != nil {
+		s.Logger.Debug("failed to write response body", "error", err)
+	}
 }
 
 func (s *Server) writeTimeoutResponse(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusRequestTimeout)
-	w.Write([]byte("Request timeout"))
+	if _, err := w.Write([]byte("Request timeout")); err != nil {
+		s.Logger.Debug("failed to write timeout response body", "error", err)
+	}
 }
 
 func (s *Server) handleResponse(ctx context.Context, w http.ResponseWriter, responseChan chan *common.Message) {

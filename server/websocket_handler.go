@@ -34,7 +34,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.requestLogger.LogClientConnected(domain, r.RemoteAddr)
-	s.handleWebSocketConnection(domain, conn)
+	s.handleWebSocketConnection(domain, r.RemoteAddr, conn)
 }
 
 func (s *Server) upgradeAndExtractDomain(w http.ResponseWriter, r *http.Request) (*websocket.Conn, string, error) {
@@ -76,7 +76,7 @@ func disconnectReason(err error) string {
 	return "connection error: " + err.Error()
 }
 
-func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) {
+func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, conn *websocket.Conn) {
 	defer conn.Close()
 
 	for {
@@ -85,7 +85,7 @@ func (s *Server) handleWebSocketConnection(domain string, conn *websocket.Conn) 
 		err := conn.ReadJSON(&message)
 
 		if err != nil {
-			s.requestLogger.LogClientDisconnected(domain, "", disconnectReason(err))
+			s.requestLogger.LogClientDisconnected(domain, remoteAddr, disconnectReason(err))
 			s.connManager.RemoveConnection(domain)
 			return
 		}
