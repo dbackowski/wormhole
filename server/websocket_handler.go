@@ -57,7 +57,7 @@ func (s *Server) registerClient(conn *websocket.Conn, domain string) error {
 	if err := s.connManager.AddConnection(domain, conn); err != nil {
 		conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
 		conn.Close()
-		return fmt.Errorf("domain %s is already taken", domain)
+		return fmt.Errorf("registering domain: %w", err)
 	}
 
 	if err := conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/dbackowski/wormhole/common"
 	"github.com/google/uuid"
@@ -36,8 +37,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func isWebSocketUpgradeRequest(headers http.Header) bool {
-	return headers.Get("Connection") == "Upgrade" &&
-		headers.Get("Upgrade") == "websocket"
+	return strings.EqualFold(headers.Get("Connection"), "upgrade") &&
+		strings.EqualFold(headers.Get("Upgrade"), "websocket")
 }
 
 func prepareRequestHeaders(r *http.Request) map[string][]string {
@@ -83,8 +84,8 @@ func (s *Server) forwardAndWaitForResponse(ctx context.Context, w http.ResponseW
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer s.CleanupRequest(domain, requestMsg.UUID)
 	defer cancelCleanup()
+	defer s.cleanupRequest(domain, requestMsg.UUID)
 	s.handleResponse(ctx, w, responseChan)
 }
 

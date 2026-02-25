@@ -12,7 +12,7 @@ func (c *Client) handleDomainRegistered(_ *common.Message) error {
 	return nil
 }
 
-func (c *Client) handleDomainTaken(msg *common.Message) error {
+func (c *Client) handleDomainTaken(_ *common.Message) error {
 	fmt.Println("Domain is already taken. Please choose another one.")
 
 	if err := closeWebsocket(c.Conn); err != nil {

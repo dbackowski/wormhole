@@ -9,7 +9,7 @@ import (
 )
 
 type Connection struct {
-	Domain   string
+	domain   string
 	conn     *websocket.Conn
 	requests *PendingRequests
 	mu       sync.Mutex

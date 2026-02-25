@@ -16,7 +16,6 @@ type Server struct {
 	requestLogger *common.RequestLogger
 	httpServer    *http.Server
 	mux           *http.ServeMux
-	debug         bool
 }
 
 func NewServer(cfg *Config) (*Server, error) {
@@ -34,7 +33,6 @@ func NewServer(cfg *Config) (*Server, error) {
 	server := Server{
 		connManager:   NewConnectionManager(),
 		mux:           http.NewServeMux(),
-		debug:         cfg.Debug,
 		Logger:        logger,
 		requestLogger: common.NewRequestLogger(logger),
 	}
@@ -71,7 +69,7 @@ func (s *Server) setupMessageHandlers() {
 	s.dispatcher.Register(common.MessageTypeHTTPResponse, s.handleHTTPResponse)
 }
 
-func (s *Server) DeliverResponse(message *common.Message) error {
+func (s *Server) deliverResponse(message *common.Message) error {
 	connection, err := s.connManager.GetConnection(message.Domain)
 
 	if err != nil {
@@ -85,7 +83,7 @@ func (s *Server) DeliverResponse(message *common.Message) error {
 	return nil
 }
 
-func (s *Server) CleanupRequest(domain string, uuid string) {
+func (s *Server) cleanupRequest(domain string, uuid string) {
 	connection, err := s.connManager.GetConnection(domain)
 
 	if err != nil {
@@ -98,7 +96,7 @@ func (s *Server) CleanupRequest(domain string, uuid string) {
 
 func (s *Server) handleHTTPResponse(msg *common.Message) error {
 	s.requestLogger.LogHTTPResponse(msg.Domain, msg.UUID, msg.Status, msg.Body)
-	return s.DeliverResponse(msg)
+	return s.deliverResponse(msg)
 }
 
 func (s *Server) extractDomain(host string) (string, error) {

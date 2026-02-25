@@ -34,15 +34,6 @@ type Client struct {
 	WebUIPort  int
 }
 
-func establishConnection(serverConfig *ServerConfig, domain string) (*websocket.Conn, error) {
-	wsURL := common.BuildSubdomainURL(serverConfig.WSScheme, domain, serverConfig.Host, "/ws")
-	conn, err := ConnectToServer(wsURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to %s: %w", wsURL, err)
-	}
-	return conn, nil
-}
-
 func NewClient(cfg *Config) (*Client, error) {
 	if err := validateClientConfig(cfg.Domain, cfg.Local, cfg.WebUIPort); err != nil {
 		return nil, fmt.Errorf("invalid client config: %w", err)
@@ -53,9 +44,10 @@ func NewClient(cfg *Config) (*Client, error) {
 		return nil, fmt.Errorf("invalid server URL: %w", err)
 	}
 
-	conn, err := establishConnection(serverConfig, cfg.Domain)
+	wsURL := common.BuildSubdomainURL(serverConfig.WSScheme, cfg.Domain, serverConfig.Host, "/ws")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to connect to %s: %w", wsURL, err)
 	}
 
 	logger := common.NewLogger(common.LevelError, "text")
@@ -154,9 +146,4 @@ func buildProxyRequest(msg *common.Message) ProxyRequest {
 		Headers: msg.Headers,
 		Body:    msg.Body,
 	}
-}
-
-func ConnectToServer(websocketURL string) (*websocket.Conn, error) {
-	conn, _, err := websocket.DefaultDialer.Dial(websocketURL, nil)
-	return conn, err
 }
