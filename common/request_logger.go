@@ -8,36 +8,25 @@ func NewRequestLogger(logger *Logger) *RequestLogger {
 	return &RequestLogger{logger: logger}
 }
 
-func (rl *RequestLogger) LogHTTPRequest(domain, uuid, method, url string, headers map[string][]string, body []byte) {
-	rl.logger.Info("HTTP request forwarded",
-		"domain", domain,
-		"uuid", uuid,
-		"method", method,
-		"url", url,
-	)
-
+func (rl *RequestLogger) logWithDebugDetail(infoMsg string, infoArgs []any, debugMsg string, debugArgs []any) {
+	rl.logger.Info(infoMsg, infoArgs...)
 	if rl.logger.IsDebug() {
-		rl.logger.Debug("HTTP request details",
-			"uuid", uuid,
-			"headers", headers,
-			"body", body,
-		)
+		rl.logger.Debug(debugMsg, debugArgs...)
 	}
 }
 
-func (rl *RequestLogger) LogHTTPResponse(domain, uuid string, status int, body []byte) {
-	rl.logger.Info("HTTP response received",
-		"domain", domain,
-		"uuid", uuid,
-		"status", status,
+func (rl *RequestLogger) LogHTTPRequest(domain, uuid, method, url string, headers map[string][]string, body []byte) {
+	rl.logWithDebugDetail(
+		"HTTP request forwarded", []any{"domain", domain, "uuid", uuid, "method", method, "url", url},
+		"HTTP request details", []any{"uuid", uuid, "headers", headers, "body", body},
 	)
+}
 
-	if rl.logger.IsDebug() {
-		rl.logger.Debug("HTTP response details",
-			"uuid", uuid,
-			"body", body,
-		)
-	}
+func (rl *RequestLogger) LogHTTPResponse(domain, uuid string, status int, body []byte) {
+	rl.logWithDebugDetail(
+		"HTTP response received", []any{"domain", domain, "uuid", uuid, "status", status},
+		"HTTP response details", []any{"uuid", uuid, "body", body},
+	)
 }
 
 func (rl *RequestLogger) LogRequestError(operation string, err error) {
@@ -47,8 +36,8 @@ func (rl *RequestLogger) LogRequestError(operation string, err error) {
 	)
 }
 
-func (rl *RequestLogger) LogConnectionError(msg string, err error, fields ...interface{}) {
-	args := []interface{}{"error", err}
+func (rl *RequestLogger) LogConnectionError(msg string, err error, fields ...any) {
+	args := []any{"error", err}
 	args = append(args, fields...)
 	rl.logger.Error(msg, args...)
 }
