@@ -82,8 +82,8 @@ func TestGetConnection_Exists(t *testing.T) {
 	if conn == nil {
 		t.Error("expected non-nil Connection")
 	}
-	if conn.domain != "example.com" {
-		t.Errorf("Domain = %q, want %q", conn.domain, "example.com")
+	if conn == nil {
+		t.Error("expected non-nil Connection after AddConnection")
 	}
 }
 
@@ -171,7 +171,6 @@ func newTestConnection(t *testing.T) (*Connection, func()) {
 	t.Helper()
 	ws, cleanup := newTestWSPair(t)
 	return &Connection{
-		domain:   "test.com",
 		conn:     ws,
 		requests: NewPendingRequests(),
 	}, cleanup

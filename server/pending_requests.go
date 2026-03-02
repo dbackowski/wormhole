@@ -35,8 +35,8 @@ func (pr *PendingRequests) Register(ctx context.Context, uuid string) (chan *com
 }
 
 func (pr *PendingRequests) Deliver(message *common.Message) error {
-	pr.mu.Lock()
-	defer pr.mu.Unlock()
+	pr.mu.RLock()
+	defer pr.mu.RUnlock()
 	ch, exists := pr.pending[message.UUID]
 
 	if !exists {

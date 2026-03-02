@@ -28,7 +28,6 @@ func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) 
 	}
 
 	cm.connections[domain] = &Connection{
-		domain:   domain,
 		conn:     conn,
 		requests: NewPendingRequests(),
 	}

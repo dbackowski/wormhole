@@ -77,7 +77,7 @@ func (s *Server) buildRequestMessage(r *http.Request) (*common.Message, error) {
 }
 
 func (s *Server) forwardAndWaitForResponse(ctx context.Context, w http.ResponseWriter, connection *Connection, requestMsg *common.Message, domain string) {
-	s.logForwardingRequest(requestMsg, domain)
+	s.requestLogger.LogHTTPRequest(domain, requestMsg.UUID, requestMsg.Method, requestMsg.URL, requestMsg.Headers, requestMsg.Body)
 
 	responseChan, cancelCleanup, err := s.registerAndForwardRequest(ctx, connection, requestMsg)
 	if err != nil {
@@ -127,13 +127,3 @@ func (s *Server) handleResponse(ctx context.Context, w http.ResponseWriter, resp
 	}
 }
 
-func (s *Server) logForwardingRequest(requestMsg *common.Message, domain string) {
-	s.requestLogger.LogHTTPRequest(
-		domain,
-		requestMsg.UUID,
-		requestMsg.Method,
-		requestMsg.URL,
-		requestMsg.Headers,
-		requestMsg.Body,
-	)
-}
