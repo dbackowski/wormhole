@@ -34,7 +34,8 @@ func (rh *RequestHistory) GetRecent(n int) []RequestLog {
 		start = len(rh.logs) - n
 	}
 
-	result := make([]RequestLog, len(rh.logs[start:]))
-	copy(result, rh.logs[start:])
+	slice := rh.logs[start:]
+	result := make([]RequestLog, len(slice))
+	copy(result, slice)
 	return result
 }
