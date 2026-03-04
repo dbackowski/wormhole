@@ -41,52 +41,58 @@ func TestNewConnectionManager(t *testing.T) {
 	}
 }
 
-func TestAddConnection_Success(t *testing.T) {
-	cm := NewConnectionManager()
-	err := cm.AddConnection("example.com", nil)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
+func TestAddConnection(t *testing.T) {
+	tests := []struct {
+		name      string
+		domains   []string
+		wantErr   bool
+		wantCount int
+	}{
+		{"success", []string{"example.com"}, false, 1},
+		{"duplicate domain", []string{"example.com", "example.com"}, true, 1},
+		{"different domains", []string{"a.com", "b.com"}, false, 2},
 	}
-	if cm.Count() != 1 {
-		t.Errorf("Count() = %d, want 1", cm.Count())
-	}
-}
-
-func TestAddConnection_DuplicateDomain(t *testing.T) {
-	cm := NewConnectionManager()
-	cm.AddConnection("example.com", nil) //nolint:errcheck
-	err := cm.AddConnection("example.com", nil)
-	if err == nil {
-		t.Error("expected error for duplicate domain, got nil")
-	}
-}
-
-func TestAddConnection_DifferentDomains(t *testing.T) {
-	cm := NewConnectionManager()
-	cm.AddConnection("a.com", nil) //nolint:errcheck
-	cm.AddConnection("b.com", nil) //nolint:errcheck
-	if cm.Count() != 2 {
-		t.Errorf("Count() = %d, want 2", cm.Count())
-	}
-}
-
-func TestGetConnection_Exists(t *testing.T) {
-	cm := NewConnectionManager()
-	cm.AddConnection("example.com", nil) //nolint:errcheck
-	conn, err := cm.GetConnection("example.com")
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	if conn == nil {
-		t.Error("expected non-nil Connection")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cm := NewConnectionManager()
+			var err error
+			for _, d := range tc.domains {
+				err = cm.AddConnection(d, nil)
+			}
+			if (err != nil) != tc.wantErr {
+				t.Errorf("AddConnection() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if cm.Count() != tc.wantCount {
+				t.Errorf("Count() = %d, want %d", cm.Count(), tc.wantCount)
+			}
+		})
 	}
 }
 
-func TestGetConnection_NotFound(t *testing.T) {
-	cm := NewConnectionManager()
-	_, err := cm.GetConnection("missing.com")
-	if err == nil {
-		t.Error("expected error for missing domain, got nil")
+func TestGetConnection(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   []string
+		domain  string
+		wantErr bool
+	}{
+		{"exists", []string{"example.com"}, "example.com", false},
+		{"not found", nil, "missing.com", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cm := NewConnectionManager()
+			for _, d := range tc.setup {
+				cm.AddConnection(d, nil) //nolint:errcheck
+			}
+			conn, err := cm.GetConnection(tc.domain)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("GetConnection() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !tc.wantErr && conn == nil {
+				t.Error("expected non-nil Connection")
+			}
+		})
 	}
 }
 
