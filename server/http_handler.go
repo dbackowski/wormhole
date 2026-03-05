@@ -26,7 +26,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestMsg, err := s.buildRequestMessage(r)
+	requestMsg, err := s.buildRequestMessage(w, r)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -54,13 +54,13 @@ func prepareRequestHeaders(r *http.Request) map[string][]string {
 	return headers
 }
 
-func (s *Server) buildRequestMessage(r *http.Request) (*common.Message, error) {
+func (s *Server) buildRequestMessage(w http.ResponseWriter, r *http.Request) (*common.Message, error) {
 	if isWebSocketUpgradeRequest(r.Header) {
 		return nil, fmt.Errorf("WebSocket upgrade not supported")
 	}
 
 	defer r.Body.Close()
-	reqBody, err := io.ReadAll(r.Body)
+	reqBody, err := io.ReadAll(http.MaxBytesReader(w, r.Body, common.MaxRequestBodySize))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to read request body: %w", err)
@@ -99,19 +99,20 @@ func (s *Server) registerAndForwardRequest(ctx context.Context, connection *Conn
 	return responseChan, cancelCleanup, nil
 }
 
-func (s *Server) writeSuccessResponse(w http.ResponseWriter, responseMsg *common.Message) {
-	common.CopyHTTPHeaders(responseMsg.Headers, w.Header())
-	w.WriteHeader(responseMsg.Status)
-	if _, err := w.Write(responseMsg.Body); err != nil {
+func (s *Server) writeResponse(w http.ResponseWriter, status int, body []byte) {
+	w.WriteHeader(status)
+	if _, err := w.Write(body); err != nil {
 		s.Logger.Debug("failed to write response body", "error", err)
 	}
 }
 
+func (s *Server) writeSuccessResponse(w http.ResponseWriter, responseMsg *common.Message) {
+	common.CopyHTTPHeaders(responseMsg.Headers, w.Header())
+	s.writeResponse(w, responseMsg.Status, responseMsg.Body)
+}
+
 func (s *Server) writeTimeoutResponse(w http.ResponseWriter) {
-	w.WriteHeader(http.StatusRequestTimeout)
-	if _, err := w.Write([]byte("Request timeout")); err != nil {
-		s.Logger.Debug("failed to write timeout response body", "error", err)
-	}
+	s.writeResponse(w, http.StatusRequestTimeout, []byte("Request timeout"))
 }
 
 func (s *Server) handleResponse(ctx context.Context, w http.ResponseWriter, responseChan chan *common.Message) {

@@ -8,43 +8,48 @@ import (
 	"github.com/dbackowski/wormhole/common"
 )
 
+type pendingRequest struct {
+	ch   chan *common.Message
+	once sync.Once
+}
+
 type PendingRequests struct {
-	pending map[string]chan *common.Message
+	pending map[string]*pendingRequest
 	mu      sync.RWMutex
 }
 
 func NewPendingRequests() *PendingRequests {
 	return &PendingRequests{
-		pending: make(map[string]chan *common.Message),
+		pending: make(map[string]*pendingRequest),
 	}
 }
 
 func (pr *PendingRequests) Register(ctx context.Context, uuid string) (chan *common.Message, context.CancelFunc) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, common.RequestTimeoutBuffer)
 
-	ch := make(chan *common.Message, 1)
+	req := &pendingRequest{ch: make(chan *common.Message, 1)}
 	pr.mu.Lock()
-	pr.pending[uuid] = ch
+	pr.pending[uuid] = req
 	pr.mu.Unlock()
 
 	context.AfterFunc(timeoutCtx, func() {
 		pr.Cleanup(uuid)
 	})
 
-	return ch, cancel
+	return req.ch, cancel
 }
 
 func (pr *PendingRequests) Deliver(message *common.Message) error {
 	pr.mu.RLock()
 	defer pr.mu.RUnlock()
-	ch, exists := pr.pending[message.UUID]
+	req, exists := pr.pending[message.UUID]
 
 	if !exists {
 		return fmt.Errorf("no pending request for UUID %s", message.UUID)
 	}
 
 	select {
-	case ch <- message:
+	case req.ch <- message:
 	default:
 		return fmt.Errorf("failed to deliver message %s, channel closed or not ready", message.UUID)
 	}
@@ -56,8 +61,8 @@ func (pr *PendingRequests) Cleanup(uuid string) {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 
-	if ch, exists := pr.pending[uuid]; exists {
-		close(ch)
+	if req, exists := pr.pending[uuid]; exists {
 		delete(pr.pending, uuid)
+		req.once.Do(func() { close(req.ch) })
 	}
 }

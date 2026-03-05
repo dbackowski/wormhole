@@ -20,6 +20,7 @@ const (
 	ClientTerminalMaxLogs    = 25
 	ServerShutdownTimeout    = 10 * time.Second
 	ClientShutdownTimeout    = 5 * time.Second
+	MaxRequestBodySize       = 10 << 20 // 10 MB
 )
 
 type MessageType string
