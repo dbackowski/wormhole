@@ -54,13 +54,6 @@ func CopyHTTPHeaders(src http.Header, dest http.Header) {
 	}
 }
 
-func ClearTerminal() {
-	fmt.Printf("\x1bc")
-}
-
-func FormatTime(t time.Time) string {
-	return t.Format(TimeFormat)
-}
 
 func ValidatePort(port int) error {
 	if port < MinValidPort || port > MaxValidPort {

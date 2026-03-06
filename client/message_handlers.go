@@ -23,7 +23,7 @@ func (c *Client) handleDomainTaken(_ *common.Message) error {
 }
 
 func (c *Client) handleHTTPRequest(msg *common.Message) error {
-	proxyResp, err := c.proxy.Forward(buildProxyRequest(msg))
+	proxyResp, err := c.proxy.Forward(NewProxyRequest(msg))
 	resolved := resolveProxyResponse(proxyResp, err)
 
 	if err := c.sendResponse(msg, resolved); err != nil {

@@ -1,11 +1,8 @@
 package common
 
 import (
-	"bytes"
 	"net/http"
-	"os"
 	"testing"
-	"time"
 )
 
 func TestValidatePort(t *testing.T) {
@@ -32,17 +29,6 @@ func TestValidatePort(t *testing.T) {
 	}
 }
 
-func TestFormatTime(t *testing.T) {
-	testTime := time.Date(2024, 6, 15, 14, 30, 45, 0, time.UTC)
-
-	got := FormatTime(testTime)
-	want := "2024-06-15 14:30:45"
-
-	if got != want {
-		t.Errorf("FormatTime() = %q, want %q", got, want)
-	}
-}
-
 func TestCopyHTTPHeaders(t *testing.T) {
 	src := http.Header{
 		"Content-Type": []string{"application/json"},
@@ -66,21 +52,3 @@ func TestCopyHTTPHeaders(t *testing.T) {
 	}
 }
 
-func TestClearTerminal(t *testing.T) {
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	ClearTerminal()
-
-	w.Close()
-	os.Stdout = old
-
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-
-	want := "\x1bc"
-	if got := buf.String(); got != want {
-		t.Errorf("ClearTerminal() wrote %q, want %q", got, want)
-	}
-}

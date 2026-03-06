@@ -85,7 +85,6 @@ func (s *Server) forwardAndWaitForResponse(ctx context.Context, w http.ResponseW
 		return
 	}
 	defer cancelCleanup()
-	defer s.cleanupRequest(domain, requestMsg.UUID)
 	s.handleResponse(ctx, w, responseChan)
 }
 

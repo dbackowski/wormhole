@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	common.ClearTerminal()
+	fmt.Printf("\x1bc")
 
 	cfg := server.ParseFlags()
 	srv, err := server.NewServer(cfg)

@@ -82,16 +82,6 @@ func (s *Server) deliverResponse(message *common.Message) error {
 	return nil
 }
 
-func (s *Server) cleanupRequest(domain string, uuid string) {
-	connection, err := s.connManager.GetConnection(domain)
-
-	if err != nil {
-		s.Logger.Debug("CleanupRequest: connection not found", "domain", domain, "uuid", uuid)
-		return
-	}
-
-	connection.CleanupRequest(uuid)
-}
 
 func (s *Server) handleHTTPResponse(msg *common.Message) error {
 	s.requestLogger.LogHTTPResponse(msg.Domain, msg.UUID, msg.Status, msg.Body)

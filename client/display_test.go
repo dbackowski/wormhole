@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbackowski/wormhole/common"
 )
 
 func captureStdout(t *testing.T, fn func()) string {
@@ -78,7 +77,7 @@ func TestShowRequestHistory(t *testing.T) {
 			},
 			expected: []string{
 				"last 5 requests",
-				fmt.Sprintf("%s GET /api/users -> 200", common.FormatTime(ts)),
+				fmt.Sprintf("%s GET /api/users -> 200", FormatTime(ts)),
 			},
 		},
 		{
@@ -125,4 +124,34 @@ func TestShowRequestHistory(t *testing.T) {
 
 func TestTerminalDisplayImplementsDisplayInterface(t *testing.T) {
 	var _ Display = (*TerminalDisplay)(nil)
+}
+
+func TestFormatTime(t *testing.T) {
+	testTime := time.Date(2024, 6, 15, 14, 30, 45, 0, time.UTC)
+
+	got := FormatTime(testTime)
+	want := "2024-06-15 14:30:45"
+
+	if got != want {
+		t.Errorf("FormatTime() = %q, want %q", got, want)
+	}
+}
+
+func TestClearTerminal(t *testing.T) {
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	ClearTerminal()
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+
+	want := "\x1bc"
+	if got := buf.String(); got != want {
+		t.Errorf("ClearTerminal() wrote %q, want %q", got, want)
+	}
 }

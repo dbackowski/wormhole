@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	common.ClearTerminal()
+	client.ClearTerminal()
 
 	clientCfg := client.ParseFlags()
 	c, err := client.NewClient(clientCfg)

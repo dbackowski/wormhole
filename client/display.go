@@ -2,9 +2,18 @@ package client
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/dbackowski/wormhole/common"
 )
+
+func ClearTerminal() {
+	fmt.Printf("\x1bc")
+}
+
+func FormatTime(t time.Time) string {
+	return t.Format(common.TimeFormat)
+}
 
 type Display interface {
 	ShowConnectionInfo(tunnelURL string, webUIPort int)
@@ -30,6 +39,6 @@ func (td *TerminalDisplay) ShowRequestHistory(logs []RequestLog) {
 	fmt.Printf("------------------- last %d requests -------------------\n\n", td.maxLogs)
 	for _, rl := range logs {
 		fmt.Printf("%s %s %s -> %d\n",
-			common.FormatTime(rl.Timestamp), rl.Method, rl.URL, rl.StatusCode)
+			FormatTime(rl.Timestamp), rl.Method, rl.URL, rl.StatusCode)
 	}
 }

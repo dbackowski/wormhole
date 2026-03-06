@@ -129,7 +129,7 @@ func (c *Client) sendResponse(msg *common.Message, resolved ProxyResponse) error
 }
 
 func (c *Client) RefreshTerminalOutput() {
-	common.ClearTerminal()
+	ClearTerminal()
 	recentLogs := c.history.GetRecent(common.ClientTerminalMaxLogs)
 	c.display.ShowConnectionInfo(c.tunnelURL, c.WebUIPort)
 	c.display.ShowRequestHistory(recentLogs)
@@ -137,13 +137,4 @@ func (c *Client) RefreshTerminalOutput() {
 
 func closeWebsocket(c *websocket.Conn) error {
 	return c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-}
-
-func buildProxyRequest(msg *common.Message) ProxyRequest {
-	return ProxyRequest{
-		Method:  msg.Method,
-		URL:     msg.URL,
-		Headers: msg.Headers,
-		Body:    msg.Body,
-	}
 }

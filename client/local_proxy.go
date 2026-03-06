@@ -17,6 +17,15 @@ type ProxyRequest struct {
 	Body    []byte
 }
 
+func NewProxyRequest(msg *common.Message) ProxyRequest {
+	return ProxyRequest{
+		Method:  msg.Method,
+		URL:     msg.URL,
+		Headers: msg.Headers,
+		Body:    msg.Body,
+	}
+}
+
 type ProxyResponse struct {
 	StatusCode int
 	Headers    map[string][]string
