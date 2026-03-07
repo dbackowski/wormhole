@@ -36,13 +36,16 @@ func (pr *PendingRequests) Register(ctx context.Context, uuid string) (chan *com
 		pr.Cleanup(uuid)
 	})
 
-	return req.ch, cancel
+	return req.ch, func() {
+		cancel()
+		pr.Cleanup(uuid)
+	}
 }
 
 func (pr *PendingRequests) Deliver(message *common.Message) error {
 	pr.mu.RLock()
-	defer pr.mu.RUnlock()
 	req, exists := pr.pending[message.UUID]
+	pr.mu.RUnlock()
 
 	if !exists {
 		return fmt.Errorf("no pending request for UUID %s", message.UUID)
