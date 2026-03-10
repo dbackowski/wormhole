@@ -1,5 +1,7 @@
 # Wormhole 🕳️
 
+[![Tests](https://github.com/dbackowski/wormhole/actions/workflows/test.yml/badge.svg)](https://github.com/dbackowski/wormhole/actions/workflows/test.yml)
+
 A simple HTTP tunneling tool that exposes your local development server to the internet through custom subdomains.
 
 ## What it does
