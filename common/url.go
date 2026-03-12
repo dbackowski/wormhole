@@ -10,7 +10,14 @@ func JoinURLPath(baseURL, urlPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	u.Path = path.Join(u.Path, urlPath)
+	p, err := url.Parse(urlPath)
+	if err != nil {
+		return "", err
+	}
+	u.Path = path.Join(u.Path, p.Path)
+	if p.RawQuery != "" {
+		u.RawQuery = p.RawQuery
+	}
 	return u.String(), nil
 }
 

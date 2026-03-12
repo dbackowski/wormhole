@@ -19,6 +19,8 @@ func TestJoinURLPath(t *testing.T) {
 		{"empty path", "https://example.com", "", "https://example.com", false},
 		{"base with port", "https://example.com:8080", "api", "https://example.com:8080/api", false},
 		{"base with query", "https://example.com?foo=bar", "api", "https://example.com/api?foo=bar", false},
+		{"path with query string", "https://example.com", "/boards/2/cards/new?list=todo", "https://example.com/boards/2/cards/new?list=todo", false},
+		{"path with multiple query params", "http://localhost:3000", "/search?q=hello&page=2", "http://localhost:3000/search?q=hello&page=2", false},
 		{"invalid base URL", "://invalid", "api", "", true},
 	}
 
