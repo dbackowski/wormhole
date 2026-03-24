@@ -42,25 +42,32 @@ func NewWebUI(client *Client, port int) (*WebUI, error) {
 	return ui, nil
 }
 
+func readTemplate(name string) (string, error) {
+	data, err := templateFS.ReadFile("templates/" + name)
+	if err != nil {
+		return "", fmt.Errorf("failed to read %s: %w", name, err)
+	}
+	return string(data), nil
+}
+
 func (ui *WebUI) buildDashboardHTML() (string, error) {
-	html, err := templateFS.ReadFile("templates/dashboard.html")
+	html, err := readTemplate("dashboard.html")
 	if err != nil {
-		return "", fmt.Errorf("failed to read dashboard.html: %w", err)
+		return "", err
 	}
 
-	css, err := templateFS.ReadFile("templates/dashboard.css")
+	css, err := readTemplate("dashboard.css")
 	if err != nil {
-		return "", fmt.Errorf("failed to read dashboard.css: %w", err)
+		return "", err
 	}
 
-	js, err := templateFS.ReadFile("templates/dashboard.js")
+	js, err := readTemplate("dashboard.js")
 	if err != nil {
-		return "", fmt.Errorf("failed to read dashboard.js: %w", err)
+		return "", err
 	}
 
-	result := string(html)
-	result = strings.Replace(result, "{{CSS}}", string(css), 1)
-	result = strings.Replace(result, "{{JS}}", string(js), 1)
+	result := strings.Replace(html, "{{CSS}}", css, 1)
+	result = strings.Replace(result, "{{JS}}", js, 1)
 
 	return result, nil
 }
@@ -73,22 +80,22 @@ func (ui *WebUI) Shutdown(ctx context.Context) error {
 	return ui.server.Shutdown(ctx)
 }
 
-func (ui *WebUI) handleStatus(w http.ResponseWriter, r *http.Request) {
+func writeJSON(w http.ResponseWriter, data any) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]string{
-		"tunnelURL": ui.client.tunnelURL,
-		"domain":    ui.client.domain,
-	}); err != nil {
+	if err := json.NewEncoder(w).Encode(data); err != nil {
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 	}
 }
 
+func (ui *WebUI) handleStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]string{
+		"tunnelURL": ui.client.tunnelURL,
+		"domain":    ui.client.domain,
+	})
+}
+
 func (ui *WebUI) handleRequests(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	logs := ui.client.history.GetRecent(common.ClientRequestHistorySize)
-	if err := json.NewEncoder(w).Encode(logs); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
-	}
+	writeJSON(w, ui.client.history.GetRecent(common.ClientRequestHistorySize))
 }
 
 func (ui *WebUI) handleDashboard(w http.ResponseWriter, r *http.Request) {

@@ -1,8 +1,18 @@
 package common
 
 import (
+	"net/url"
 	"testing"
 )
+
+func mustParseURL(t *testing.T, rawURL string) url.URL {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("failed to parse URL %q: %v", rawURL, err)
+	}
+	return *u
+}
 
 func TestJoinURLPath(t *testing.T) {
 	tests := []struct {
@@ -21,12 +31,11 @@ func TestJoinURLPath(t *testing.T) {
 		{"base with query", "https://example.com?foo=bar", "api", "https://example.com/api?foo=bar", false},
 		{"path with query string", "https://example.com", "/boards/2/cards/new?list=todo", "https://example.com/boards/2/cards/new?list=todo", false},
 		{"path with multiple query params", "http://localhost:3000", "/search?q=hello&page=2", "http://localhost:3000/search?q=hello&page=2", false},
-		{"invalid base URL", "://invalid", "api", "", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := JoinURLPath(tt.baseURL, tt.urlPath)
+			got, err := JoinURLPath(mustParseURL(t, tt.baseURL), tt.urlPath)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("JoinURLPath() error = %v, wantErr %v", err, tt.wantErr)
 				return

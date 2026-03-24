@@ -3,15 +3,25 @@ package client
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 )
 
-func TestNewLocalProxy(t *testing.T) {
-	lp := NewLocalProxy("http://localhost:3000", "https://tunnel.example.com", 5*time.Second)
+func mustParseURL(t *testing.T, rawURL string) url.URL {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("failed to parse URL %q: %v", rawURL, err)
+	}
+	return *u
+}
 
-	if lp.baseURL != "http://localhost:3000" {
-		t.Errorf("baseURL = %q, want %q", lp.baseURL, "http://localhost:3000")
+func TestNewLocalProxy(t *testing.T) {
+	lp := NewLocalProxy(mustParseURL(t, "http://localhost:3000"), "https://tunnel.example.com", 5*time.Second)
+
+	if lp.baseURL.String() != "http://localhost:3000" {
+		t.Errorf("baseURL = %q, want %q", lp.baseURL.String(), "http://localhost:3000")
 	}
 	if lp.tunnelURL != "https://tunnel.example.com" {
 		t.Errorf("tunnelURL = %q, want %q", lp.tunnelURL, "https://tunnel.example.com")
@@ -187,7 +197,7 @@ func TestForward(t *testing.T) {
 			server := httptest.NewServer(tt.handler)
 			defer server.Close()
 
-			lp := NewLocalProxy(server.URL, "https://tunnel.example.com", 5*time.Second)
+			lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
 			resp, err := lp.Forward(tt.request)
 
 			if (err != nil) != tt.wantErr {
@@ -217,7 +227,7 @@ func TestForwardRedirectNotFollowed(t *testing.T) {
 	}))
 	defer redirectServer.Close()
 
-	lp := NewLocalProxy(redirectServer.URL, "https://tunnel.example.com", 5*time.Second)
+	lp := NewLocalProxy(mustParseURL(t, redirectServer.URL), "https://tunnel.example.com", 5*time.Second)
 	resp, err := lp.Forward(ProxyRequest{
 		Method:  "GET",
 		URL:     "/original",
@@ -236,7 +246,7 @@ func TestForwardRedirectNotFollowed(t *testing.T) {
 }
 
 func TestForwardRequestToUnreachableServer(t *testing.T) {
-	lp := NewLocalProxy("http://127.0.0.1:1", "https://tunnel.example.com", 1*time.Second)
+	lp := NewLocalProxy(mustParseURL(t, "http://127.0.0.1:1"), "https://tunnel.example.com", 1*time.Second)
 	_, err := lp.Forward(ProxyRequest{
 		Method:  "GET",
 		URL:     "/path",
@@ -251,22 +261,6 @@ func TestForwardRequestToUnreachableServer(t *testing.T) {
 	}
 }
 
-func TestForwardInvalidBaseURL(t *testing.T) {
-	lp := NewLocalProxy("://invalid-url", "https://tunnel.example.com", 5*time.Second)
-	_, err := lp.Forward(ProxyRequest{
-		Method:  "GET",
-		URL:     "/path",
-		Headers: map[string][]string{"Host": {"example.com"}},
-	})
-
-	if err == nil {
-		t.Fatal("Forward() expected error for invalid base URL, got nil")
-	}
-	if !contains(err.Error(), "failed to build URL") {
-		t.Errorf("error = %q, want containing %q", err.Error(), "failed to build URL")
-	}
-}
-
 func TestForwardResponseHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Custom-Header", "custom-value")
@@ -276,7 +270,7 @@ func TestForwardResponseHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	lp := NewLocalProxy(server.URL, "https://tunnel.example.com", 5*time.Second)
+	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
 	resp, err := lp.Forward(ProxyRequest{
 		Method:  "GET",
 		URL:     "/",
@@ -303,7 +297,7 @@ func TestForwardURLPath(t *testing.T) {
 	}))
 	defer server.Close()
 
-	lp := NewLocalProxy(server.URL, "https://tunnel.example.com", 5*time.Second)
+	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
 	_, err := lp.Forward(ProxyRequest{
 		Method:  "GET",
 		URL:     "/api/v1/users",

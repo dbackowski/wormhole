@@ -75,20 +75,13 @@ func disconnectReason(err error) string {
 func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, conn *websocket.Conn) {
 	defer conn.Close()
 
-	for {
-		var message common.Message
-
-		err := conn.ReadJSON(&message)
-
-		if err != nil {
+	common.RunMessageLoop(conn, s.dispatcher,
+		func(err error) {
 			s.requestLogger.LogClientDisconnected(domain, remoteAddr, disconnectReason(err))
 			s.connManager.RemoveConnection(domain)
-			return
-		}
-
-		err = s.dispatcher.Dispatch(&message)
-		if err != nil {
-			s.Logger.Error("Message dispatch failed", "uuid", message.UUID, "error", err)
-		}
-	}
+		},
+		func(msg *common.Message, err error) {
+			s.Logger.Error("Message dispatch failed", "uuid", msg.UUID, "error", err)
+		},
+	)
 }

@@ -5,20 +5,16 @@ import (
 	"path"
 )
 
-func JoinURLPath(baseURL, urlPath string) (string, error) {
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return "", err
-	}
+func JoinURLPath(baseURL url.URL, urlPath string) (string, error) {
 	p, err := url.Parse(urlPath)
 	if err != nil {
 		return "", err
 	}
-	u.Path = path.Join(u.Path, p.Path)
+	baseURL.Path = path.Join(baseURL.Path, p.Path)
 	if p.RawQuery != "" {
-		u.RawQuery = p.RawQuery
+		baseURL.RawQuery = p.RawQuery
 	}
-	return u.String(), nil
+	return baseURL.String(), nil
 }
 
 func BuildSubdomainURL(scheme, subdomain, host, urlPath string) string {

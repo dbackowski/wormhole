@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
@@ -34,11 +35,11 @@ type ProxyResponse struct {
 
 type LocalProxy struct {
 	httpClient *http.Client
-	baseURL    string
+	baseURL    url.URL
 	tunnelURL  string
 }
 
-func NewLocalProxy(baseURL, tunnelURL string, timeout time.Duration) *LocalProxy {
+func NewLocalProxy(baseURL url.URL, tunnelURL string, timeout time.Duration) *LocalProxy {
 	return &LocalProxy{
 		baseURL:   baseURL,
 		tunnelURL: tunnelURL,

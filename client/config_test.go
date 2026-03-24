@@ -161,7 +161,7 @@ func TestValidateClientConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateClientConfig(tt.domain, tt.local, tt.port)
+			_, err := validateClientConfig(tt.domain, tt.local, tt.port)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateClientConfig(%q, %q, %d) error = %v, wantErr %v", tt.domain, tt.local, tt.port, err, tt.wantErr)
 			}

@@ -35,7 +35,8 @@ type Client struct {
 }
 
 func NewClient(cfg *Config) (*Client, error) {
-	if err := validateClientConfig(cfg.Domain, cfg.Local, cfg.WebUIPort); err != nil {
+	localURL, err := validateClientConfig(cfg.Domain, cfg.Local, cfg.WebUIPort)
+	if err != nil {
 		return nil, fmt.Errorf("invalid client config: %w", err)
 	}
 
@@ -58,7 +59,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		domain:    cfg.Domain,
 		tunnelURL: tunnelURL,
 		Conn:      conn,
-		proxy:     NewLocalProxy(cfg.Local, tunnelURL, common.RequestTimeout),
+		proxy:     NewLocalProxy(localURL, tunnelURL, common.RequestTimeout),
 		history:   NewRequestHistory(common.ClientRequestHistorySize),
 		display:   NewTerminalDisplay(common.ClientRequestHistorySize),
 		Logger:    logger,
@@ -71,22 +72,17 @@ func NewClient(cfg *Config) (*Client, error) {
 }
 
 func (c *Client) HandleConnection() {
-	for {
-		var message common.Message
-		err := c.Conn.ReadJSON(&message)
-		if err != nil {
+	common.RunMessageLoop(c.Conn, c.dispatcher,
+		func(err error) {
 			c.Logger.Error("Failed to read message", "error", err)
-			return
-		}
-
-		if err := c.dispatcher.Dispatch(&message); err != nil {
+		},
+		func(msg *common.Message, err error) {
 			c.Logger.Error("Message handling failed",
-				"type", message.Type,
-				"uuid", message.UUID,
+				"type", msg.Type,
+				"uuid", msg.UUID,
 				"error", err)
-			continue
-		}
-	}
+		},
+	)
 }
 
 func (c *Client) Shutdown() error {

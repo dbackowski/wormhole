@@ -62,28 +62,25 @@ func parseURL(rawURL string) (url.URL, error) {
 	return *parsed, nil
 }
 
-func validateClientConfig(domain, local string, port int) error {
+func validateClientConfig(domain, local string, port int) (url.URL, error) {
 	if domain == "" {
-		return fmt.Errorf("domain is required. Use -domain flag")
+		return url.URL{}, fmt.Errorf("domain is required. Use -domain flag")
 	}
 
 	if local == "" {
-		return fmt.Errorf("local is required. Use -local flag")
+		return url.URL{}, fmt.Errorf("local is required. Use -local flag")
 	}
 
-	_, err := parseURL(local)
-
+	parsed, err := parseURL(local)
 	if err != nil {
-		return fmt.Errorf("invalid local URL: %w", err)
+		return url.URL{}, fmt.Errorf("invalid local URL: %w", err)
 	}
 
-	err = common.ValidatePort(port)
-
-	if err != nil {
-		return err
+	if err := common.ValidatePort(port); err != nil {
+		return url.URL{}, fmt.Errorf("invalid web UI port: %w", err)
 	}
 
-	return nil
+	return parsed, nil
 }
 
 func ParseFlags() *Config {
