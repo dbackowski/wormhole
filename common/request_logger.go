@@ -10,9 +10,7 @@ func NewRequestLogger(logger *Logger) *RequestLogger {
 
 func (rl *RequestLogger) logWithDebugDetail(infoMsg string, infoArgs []any, debugMsg string, debugArgs []any) {
 	rl.logger.Info(infoMsg, infoArgs...)
-	if rl.logger.IsDebug() {
-		rl.logger.Debug(debugMsg, debugArgs...)
-	}
+	rl.logger.Debug(debugMsg, debugArgs...)
 }
 
 func (rl *RequestLogger) LogHTTPRequest(domain, uuid, method, url string, headers map[string][]string, body []byte) {
@@ -26,27 +24,6 @@ func (rl *RequestLogger) LogHTTPResponse(domain, uuid string, status int, body [
 	rl.logWithDebugDetail(
 		"HTTP response received", []any{"domain", domain, "uuid", uuid, "status", status},
 		"HTTP response details", []any{"uuid", uuid, "body", body},
-	)
-}
-
-func (rl *RequestLogger) LogRequestError(operation string, err error) {
-	rl.logger.Error("Request operation failed",
-		"operation", operation,
-		"error", err,
-	)
-}
-
-func (rl *RequestLogger) LogConnectionError(msg string, err error, fields ...any) {
-	args := []any{"error", err}
-	args = append(args, fields...)
-	rl.logger.Error(msg, args...)
-}
-
-func (rl *RequestLogger) LogLocalRequest(method, url string, statusCode int) {
-	rl.logger.Info("Local request processed",
-		"method", method,
-		"url", url,
-		"status", statusCode,
 	)
 }
 
@@ -65,9 +42,3 @@ func (rl *RequestLogger) LogClientDisconnected(domain, remoteAddr, reason string
 	)
 }
 
-func (rl *RequestLogger) LogDispatchError(uuid string, err error) {
-	rl.logger.Error("Message dispatch failed",
-		"uuid", uuid,
-		"error", err,
-	)
-}

@@ -2,7 +2,6 @@ package common
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"sync"
 	"testing"
@@ -235,109 +234,6 @@ func TestRequestLogger_LogHTTPResponse(t *testing.T) {
 	})
 }
 
-func TestRequestLogger_LogRequestError(t *testing.T) {
-	logger, handler := newTestLogger(slog.LevelInfo)
-	rl := NewRequestLogger(logger)
-
-	testErr := errors.New("connection refused")
-	rl.LogRequestError("connect", testErr)
-
-	records := handler.getRecords()
-	if len(records) != 1 {
-		t.Fatalf("expected 1 log record, got %d", len(records))
-	}
-
-	rec := records[0]
-	if rec.Level != slog.LevelError {
-		t.Errorf("expected level ERROR, got %v", rec.Level)
-	}
-	if rec.Message != "Request operation failed" {
-		t.Errorf("expected message 'Request operation failed', got %q", rec.Message)
-	}
-	if rec.Attrs["operation"] != "connect" {
-		t.Errorf("expected operation 'connect', got %v", rec.Attrs["operation"])
-	}
-	if rec.Attrs["error"] != testErr {
-		t.Errorf("expected error %v, got %v", testErr, rec.Attrs["error"])
-	}
-}
-
-func TestRequestLogger_LogConnectionError(t *testing.T) {
-	t.Run("logs error with basic fields", func(t *testing.T) {
-		logger, handler := newTestLogger(slog.LevelInfo)
-		rl := NewRequestLogger(logger)
-
-		testErr := errors.New("network unreachable")
-		rl.LogConnectionError("Connection failed", testErr)
-
-		records := handler.getRecords()
-		if len(records) != 1 {
-			t.Fatalf("expected 1 log record, got %d", len(records))
-		}
-
-		rec := records[0]
-		if rec.Level != slog.LevelError {
-			t.Errorf("expected level ERROR, got %v", rec.Level)
-		}
-		if rec.Message != "Connection failed" {
-			t.Errorf("expected message 'Connection failed', got %q", rec.Message)
-		}
-		if rec.Attrs["error"] != testErr {
-			t.Errorf("expected error %v, got %v", testErr, rec.Attrs["error"])
-		}
-	})
-
-	t.Run("logs error with additional fields", func(t *testing.T) {
-		logger, handler := newTestLogger(slog.LevelInfo)
-		rl := NewRequestLogger(logger)
-
-		testErr := errors.New("handshake failed")
-		rl.LogConnectionError("WebSocket error", testErr, "remote_addr", "192.168.1.1", "attempt", 3)
-
-		records := handler.getRecords()
-		if len(records) != 1 {
-			t.Fatalf("expected 1 log record, got %d", len(records))
-		}
-
-		rec := records[0]
-		if rec.Attrs["remote_addr"] != "192.168.1.1" {
-			t.Errorf("expected remote_addr '192.168.1.1', got %v", rec.Attrs["remote_addr"])
-		}
-		if rec.Attrs["attempt"] != int64(3) {
-			t.Errorf("expected attempt 3, got %v", rec.Attrs["attempt"])
-		}
-	})
-}
-
-func TestRequestLogger_LogLocalRequest(t *testing.T) {
-	logger, handler := newTestLogger(slog.LevelInfo)
-	rl := NewRequestLogger(logger)
-
-	rl.LogLocalRequest("GET", "/health", 200)
-
-	records := handler.getRecords()
-	if len(records) != 1 {
-		t.Fatalf("expected 1 log record, got %d", len(records))
-	}
-
-	rec := records[0]
-	if rec.Level != slog.LevelInfo {
-		t.Errorf("expected level INFO, got %v", rec.Level)
-	}
-	if rec.Message != "Local request processed" {
-		t.Errorf("expected message 'Local request processed', got %q", rec.Message)
-	}
-	if rec.Attrs["method"] != "GET" {
-		t.Errorf("expected method 'GET', got %v", rec.Attrs["method"])
-	}
-	if rec.Attrs["url"] != "/health" {
-		t.Errorf("expected url '/health', got %v", rec.Attrs["url"])
-	}
-	if rec.Attrs["status"] != int64(200) {
-		t.Errorf("expected status 200, got %v", rec.Attrs["status"])
-	}
-}
-
 func TestRequestLogger_LogClientConnected(t *testing.T) {
 	logger, handler := newTestLogger(slog.LevelInfo)
 	rl := NewRequestLogger(logger)
@@ -393,29 +289,3 @@ func TestRequestLogger_LogClientDisconnected(t *testing.T) {
 	}
 }
 
-func TestRequestLogger_LogDispatchError(t *testing.T) {
-	logger, handler := newTestLogger(slog.LevelInfo)
-	rl := NewRequestLogger(logger)
-
-	testErr := errors.New("dispatch timeout")
-	rl.LogDispatchError("msg-uuid-123", testErr)
-
-	records := handler.getRecords()
-	if len(records) != 1 {
-		t.Fatalf("expected 1 log record, got %d", len(records))
-	}
-
-	rec := records[0]
-	if rec.Level != slog.LevelError {
-		t.Errorf("expected level ERROR, got %v", rec.Level)
-	}
-	if rec.Message != "Message dispatch failed" {
-		t.Errorf("expected message 'Message dispatch failed', got %q", rec.Message)
-	}
-	if rec.Attrs["uuid"] != "msg-uuid-123" {
-		t.Errorf("expected uuid 'msg-uuid-123', got %v", rec.Attrs["uuid"])
-	}
-	if rec.Attrs["error"] != testErr {
-		t.Errorf("expected error %v, got %v", testErr, rec.Attrs["error"])
-	}
-}

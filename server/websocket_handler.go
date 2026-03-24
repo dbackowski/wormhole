@@ -18,14 +18,14 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, domain, err := s.upgradeAndExtractDomain(w, r)
 
 	if err != nil {
-		s.requestLogger.LogConnectionError("WebSocket upgrade failed", err, "remote_addr", r.RemoteAddr)
+		s.Logger.Error("WebSocket upgrade failed", "error", err, "remote_addr", r.RemoteAddr)
 		return
 	}
 
 	err = s.registerClient(conn, domain)
 
 	if err != nil {
-		s.requestLogger.LogConnectionError("Client registration failed", err, "domain", domain)
+		s.Logger.Error("Client registration failed", "error", err, "domain", domain)
 		return
 	}
 
@@ -88,7 +88,7 @@ func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, con
 
 		err = s.dispatcher.Dispatch(&message)
 		if err != nil {
-			s.requestLogger.LogDispatchError(message.UUID, err)
+			s.Logger.Error("Message dispatch failed", "uuid", message.UUID, "error", err)
 		}
 	}
 }
