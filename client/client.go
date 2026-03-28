@@ -61,7 +61,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		Conn:      conn,
 		proxy:     NewLocalProxy(localURL, tunnelURL, common.RequestTimeout),
 		history:   NewRequestHistory(common.ClientRequestHistorySize),
-		display:   NewTerminalDisplay(common.ClientRequestHistorySize),
+		display:   NewTerminalDisplay(common.ClientTerminalMaxLogs),
 		Logger:    logger,
 		WebUIPort: cfg.WebUIPort,
 	}

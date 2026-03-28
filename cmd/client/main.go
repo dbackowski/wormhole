@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	client.ClearTerminal()
+	client.EnterAltScreen()
 
 	clientCfg := client.ParseFlags()
 	c, err := client.NewClient(clientCfg)
@@ -29,8 +29,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	quitCh := make(chan struct{})
+	go client.WaitForQuit(quitCh)
 
 	go func() {
 		if err := webUI.Start(); err != nil && err != http.ErrServerClosed {
@@ -40,7 +43,10 @@ func main() {
 
 	go c.HandleConnection()
 
-	<-stop
+	select {
+	case <-sigCh:
+	case <-quitCh:
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), common.ClientShutdownTimeout)
 	defer cancel()
@@ -52,4 +58,6 @@ func main() {
 	if err := c.Shutdown(); err != nil {
 		c.Logger.Error("Client shutdown error", "error", err)
 	}
+
+	client.ExitAltScreen()
 }

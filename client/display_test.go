@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
 )
 
 func captureStdout(t *testing.T, fn func()) string {
@@ -47,10 +46,9 @@ func TestShowConnectionInfo(t *testing.T) {
 	})
 
 	expectedLines := []string{
-		"Connected to server.",
-		"Your tunnel is available at: https://myapp.example.com",
-		"Web UI is available at: http://localhost:4040",
-		"Waiting for incoming HTTP requests...",
+		"Wormhole",
+		"Tunnel:  https://myapp.example.com",
+		"Web UI:  http://localhost:4040",
 	}
 
 	for _, line := range expectedLines {
@@ -77,7 +75,10 @@ func TestShowRequestHistory(t *testing.T) {
 			},
 			expected: []string{
 				"last 5 requests",
-				fmt.Sprintf("%s GET /api/users -> 200", FormatTime(ts)),
+				FormatTime(ts),
+				"GET",
+				"/api/users",
+				"200",
 			},
 		},
 		{
@@ -90,9 +91,14 @@ func TestShowRequestHistory(t *testing.T) {
 			},
 			expected: []string{
 				"last 10 requests",
-				"GET / -> 200",
-				"POST /api/data -> 201",
-				"DELETE /api/items/1 -> 404",
+				"GET",
+				"POST",
+				"DELETE",
+				"/api/data",
+				"/api/items/1",
+				"200",
+				"201",
+				"404",
 			},
 		},
 		{
@@ -150,8 +156,52 @@ func TestClearTerminal(t *testing.T) {
 	var buf bytes.Buffer
 	buf.ReadFrom(r)
 
-	want := "\x1bc"
+	want := cursorHome + clearScreen
 	if got := buf.String(); got != want {
 		t.Errorf("ClearTerminal() wrote %q, want %q", got, want)
+	}
+}
+
+func TestColorStatus(t *testing.T) {
+	tests := []struct {
+		status    int
+		wantColor string
+	}{
+		{200, ansiGreen},
+		{201, ansiGreen},
+		{301, ansiCyan},
+		{400, ansiYellow},
+		{404, ansiYellow},
+		{500, ansiRed},
+		{503, ansiRed},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("status_%d", tt.status), func(t *testing.T) {
+			got := colorStatus(tt.status)
+			code := fmt.Sprintf("%d", tt.status)
+			want := tt.wantColor + code + ansiReset
+			if got != want {
+				t.Errorf("colorStatus(%d) = %q, want %q", tt.status, got, want)
+			}
+		})
+	}
+}
+
+func TestEnterExitAltScreen(t *testing.T) {
+	enterOutput := captureStdout(t, func() {
+		EnterAltScreen()
+	})
+	wantEnter := altScreenOn + clearScreen + cursorHome + hideCursor
+	if enterOutput != wantEnter {
+		t.Errorf("EnterAltScreen() wrote %q, want %q", enterOutput, wantEnter)
+	}
+
+	exitOutput := captureStdout(t, func() {
+		ExitAltScreen()
+	})
+	wantExit := showCursor + altScreenOff
+	if exitOutput != wantExit {
+		t.Errorf("ExitAltScreen() wrote %q, want %q", exitOutput, wantExit)
 	}
 }
