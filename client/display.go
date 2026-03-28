@@ -33,7 +33,7 @@ func EnterAltScreen() {
 	fmt.Print(altScreenOn + clearScreen + cursorHome + hideCursor)
 
 	fd := int(os.Stdin.Fd())
-	oldState, err := unix.IoctlGetTermios(fd, unix.TIOCGETA)
+	oldState, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
 	if err != nil {
 		return
 	}
@@ -45,12 +45,12 @@ func EnterAltScreen() {
 	newState.Cc[unix.VMIN] = 1
 	newState.Cc[unix.VTIME] = 0
 
-	if err := unix.IoctlSetTermios(fd, unix.TIOCSETA, &newState); err != nil {
+	if err := unix.IoctlSetTermios(fd, ioctlSetTermios, &newState); err != nil {
 		return
 	}
 
 	restoreTerminal = func() {
-		unix.IoctlSetTermios(fd, unix.TIOCSETA, &saved)
+		unix.IoctlSetTermios(fd, ioctlSetTermios, &saved)
 	}
 }
 
