@@ -124,7 +124,7 @@ func TestParseFlags(t *testing.T) {
 			flag.CommandLine = flag.NewFlagSet(tt.args[0], flag.ContinueOnError)
 			os.Args = tt.args
 
-			cfg := ParseFlags()
+			cfg := ParseFlags("test")
 
 			if cfg.ServerURL != tt.wantServerURL {
 				t.Errorf("ServerURL = %q, want %q", cfg.ServerURL, tt.wantServerURL)

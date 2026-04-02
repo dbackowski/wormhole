@@ -11,10 +11,12 @@ import (
 	"github.com/dbackowski/wormhole/server"
 )
 
+var version = "dev"
+
 func main() {
 	fmt.Printf("\x1bc")
 
-	cfg := server.ParseFlags()
+	cfg := server.ParseFlags(version)
 	srv, err := server.NewServer(cfg)
 
 	if err != nil {

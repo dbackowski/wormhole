@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"net/url"
+	"os"
 	"slices"
 
 	"github.com/dbackowski/wormhole/common"
@@ -83,13 +84,19 @@ func validateClientConfig(domain, local string, port int) (url.URL, error) {
 	return parsed, nil
 }
 
-func ParseFlags() *Config {
+func ParseFlags(version string) *Config {
 	server := flag.String("server", common.DefaultClientServerURL, "Server URL")
 	domain := flag.String("domain", "", "Domain to register (e.g., myapp)")
 	local := flag.String("local", "", "Local service URL to expose")
 	webUIPort := flag.Int("webui-port", common.DefaultWebUIPort, "Port for the Web UI")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		os.Exit(0)
+	}
 
 	return &Config{
 		ServerURL: *server,

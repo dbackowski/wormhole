@@ -30,7 +30,7 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 0
         run: |
-          go build -ldflags="-s -w" -o wormhole cmd/${{ matrix.component }}/main.go
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o wormhole cmd/${{ matrix.component }}/main.go
 
       - name: Create archive
         run: |
@@ -63,7 +63,7 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 0
         run: |
-          go build -ldflags="-s -w" -o wormhole cmd/${{ matrix.component }}/main.go
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o wormhole cmd/${{ matrix.component }}/main.go
 
       - name: Create archive
         run: |

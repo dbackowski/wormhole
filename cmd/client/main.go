@@ -12,10 +12,11 @@ import (
 	"github.com/dbackowski/wormhole/common"
 )
 
-func main() {
-	client.EnterAltScreen()
+var version = "dev"
 
-	clientCfg := client.ParseFlags()
+func main() {
+	clientCfg := client.ParseFlags(version)
+	client.EnterAltScreen()
 	c, err := client.NewClient(clientCfg)
 
 	if err != nil {

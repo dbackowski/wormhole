@@ -19,7 +19,7 @@ func TestParseFlags_Defaults(t *testing.T) {
 
 	os.Args = []string{"cmd"}
 
-	cfg := ParseFlags()
+	cfg := ParseFlags("test")
 
 	if cfg.Port != common.DefaultServerPort {
 		t.Errorf("Port = %d, want %d", cfg.Port, common.DefaultServerPort)
@@ -36,7 +36,7 @@ func TestParseFlags_CustomPort(t *testing.T) {
 
 	os.Args = []string{"cmd", "-port", "9090"}
 
-	cfg := ParseFlags()
+	cfg := ParseFlags("test")
 
 	if cfg.Port != 9090 {
 		t.Errorf("Port = %d, want 9090", cfg.Port)
@@ -50,7 +50,7 @@ func TestParseFlags_DebugEnabled(t *testing.T) {
 
 	os.Args = []string{"cmd", "-debug"}
 
-	cfg := ParseFlags()
+	cfg := ParseFlags("test")
 
 	if !cfg.Debug {
 		t.Error("Debug = false, want true")
@@ -64,7 +64,7 @@ func TestParseFlags_AllFlags(t *testing.T) {
 
 	os.Args = []string{"cmd", "-port", "1234", "-debug"}
 
-	cfg := ParseFlags()
+	cfg := ParseFlags("test")
 
 	if cfg.Port != 1234 {
 		t.Errorf("Port = %d, want 1234", cfg.Port)
