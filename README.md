@@ -93,12 +93,12 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 
 ## Features
 
-✅ **Custom Subdomains** - Choose your own subdomain name 
-✅ **Real-time Tunneling** - Instant request forwarding via WebSockets 
-✅ **Header Preservation** - Complete HTTP headers are maintained 
-✅ **Multiple Clients** - Support for multiple simultaneous tunnels 
-✅ **Automatic Cleanup** - Domains are released when clients disconnect 
-✅ **Web UI Dashboard** - Monitor tunneled requests in a browser at `http://localhost:4040` 
+✅ **Custom Subdomains** - Choose your own subdomain name  
+✅ **Real-time Tunneling** - Instant request forwarding via WebSockets  
+✅ **Header Preservation** - Complete HTTP headers are maintained  
+✅ **Multiple Clients** - Support for multiple simultaneous tunnels  
+✅ **Automatic Cleanup** - Domains are released when clients disconnect  
+✅ **Web UI Dashboard** - Monitor tunneled requests in a browser at `http://localhost:4040`  
 
 ## Example Use Cases
 
