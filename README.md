@@ -6,7 +6,7 @@ A simple HTTP tunneling tool that exposes your local development server to the i
 
 ## What it does
 
-Wormhole creates a secure tunnel between your local development server and the internet, allowing you to:
+Wormhole creates a tunnel between your local development server and the internet, allowing you to:
 
 - Share your local web application with others instantly
 - Test webhooks and APIs that require public URLs
@@ -75,6 +75,7 @@ go run cmd/server/main.go -port=8080
 
 **Optional flags:**
 - `-debug`: Enable debug mode
+- `-version`: Print version and exit
 
 ### Client Options
 ```bash
@@ -88,15 +89,16 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 **Optional flags:**
 - `-server`: Server URL (default: https://wormhole.tools)
 - `-webui-port`: Port for the Web UI dashboard (default: 4040)
+- `-version`: Print version and exit
 
 ## Features
 
-✅ **Custom Subdomains** - Choose your own subdomain name  
-✅ **Real-time Tunneling** - Instant request forwarding via WebSockets  
-✅ **Header Preservation** - Complete HTTP headers are maintained  
-✅ **Multiple Clients** - Support for multiple simultaneous tunnels  
-✅ **Automatic Cleanup** - Domains are released when clients disconnect  
-✅ **Web UI Dashboard** - Monitor tunneled requests in a browser at `http://localhost:4040` 
+✅ **Custom Subdomains** - Choose your own subdomain name
+✅ **Real-time Tunneling** - Instant request forwarding via WebSockets
+✅ **Header Preservation** - Complete HTTP headers are maintained
+✅ **Multiple Clients** - Support for multiple simultaneous tunnels
+✅ **Automatic Cleanup** - Domains are released when clients disconnect
+✅ **Web UI Dashboard** - Monitor tunneled requests in a browser at `http://localhost:4040`
 
 ## Example Use Cases
 
@@ -120,14 +122,63 @@ go run cmd/client/main.go -domain=myapp -local=http://localhost:3000 -webui-port
 
 ## How it works
 
+```mermaid
+graph TD
+    A[Browser] -->|HTTP Request| B[Wormhole Server<br>myapp.server:8080]
+    B -->|WebSocket| C[Wormhole Client]
+    C -->|HTTP| D[Local Dev Server<br>localhost:3000]
+    D -->|Response| C
+    C -->|WebSocket| B
+    B -->|HTTP Response| A
+```
+
 1. The server listens for client connections and HTTP requests
 2. Clients connect via WebSocket and claim a subdomain
-3. HTTP requests to `subdomain.server:port` are forwarded to the client
+3. HTTP requests to `subdomain.server:port` are forwarded to the client over WebSocket
 4. The client forwards requests to your local server and returns responses
+
+## Server Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/ws` | WebSocket endpoint for client connections |
+| `/health` | Health check, returns `OK` |
+| `/metrics` | Active connection count |
+| `/*` | All other requests are tunneled to the matching subdomain client |
+
+## Self-Hosting
+
+To run your own Wormhole server, you need:
+
+1. **Wildcard DNS** - Point `*.yourdomain.com` to your server so that subdomain-based routing works
+2. **TLS termination** - Wormhole does not handle TLS natively. Use a reverse proxy like Caddy or nginx to terminate TLS
+3. **Run the server:**
+   ```bash
+   ./wormhole-server -port=8080
+   ```
+
+### Docker
+
+```bash
+docker build -t wormhole .
+docker run -p 8080:8080 wormhole
+```
+
+### Fly.io
+
+The repository includes a `fly.toml` for deployment to Fly.io. Set your `FLY_API_TOKEN` as a GitHub secret for automatic deploys on push to main.
+
+## Limitations
+
+- **No authentication** - Any client can claim any available subdomain
+- **No WebSocket passthrough** - WebSocket upgrade requests to tunneled services are not supported
+- **No built-in TLS** - Requires a reverse proxy for HTTPS
+- **10 MB request body limit** - Requests larger than 10 MB are rejected
+- **10 second request timeout** - Requests that take longer than 10 seconds will time out
 
 ## Requirements
 
-- Go 1.22.3 or later
+- Go 1.25 or later
 - Available port for the server (default: 8080)
 - Local development server to tunnel
 
