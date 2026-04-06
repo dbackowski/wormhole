@@ -4,6 +4,8 @@
 
 A simple HTTP tunneling tool that exposes your local development server to the internet through custom subdomains.
 
+![Wormhole CLI](https://i.imgur.com/MDX2wX5.png)
+
 ## What it does
 
 Wormhole creates a tunnel between your local development server and the internet, allowing you to:
@@ -114,6 +116,10 @@ When the client is running, a dashboard is available at `http://localhost:4040` 
 - See the active tunnel URL
 - View recent requests with method, path, status code, and timestamp
 - Inspect request/response headers and bodies
+
+![Dashboard with request list](https://i.imgur.com/dKNxqI4.png)
+
+![Request/response inspector](https://i.imgur.com/s4dOBJ3.png)
 
 To use a different port:
 ```bash
