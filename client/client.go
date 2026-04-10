@@ -46,8 +46,18 @@ func NewClient(cfg *Config) (*Client, error) {
 	}
 
 	wsURL := common.BuildSubdomainURL(serverConfig.WSScheme, cfg.Domain, serverConfig.Host, "/ws")
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+
+	var dialHeaders http.Header
+	if cfg.AuthToken != "" {
+		dialHeaders = http.Header{}
+		dialHeaders.Set("Authorization", "Bearer "+cfg.AuthToken)
+	}
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, dialHeaders)
 	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
+			return nil, fmt.Errorf("authentication failed: invalid or missing auth token")
+		}
 		return nil, fmt.Errorf("failed to connect to %s: %w", wsURL, err)
 	}
 

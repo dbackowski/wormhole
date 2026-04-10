@@ -15,6 +15,11 @@ var upgrader = websocket.Upgrader{
 }
 
 func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateRequest(r) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	conn, domain, err := s.upgradeAndExtractDomain(w, r)
 
 	if err != nil {

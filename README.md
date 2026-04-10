@@ -72,10 +72,9 @@ make build
 go run cmd/server/main.go -port=8080
 ```
 
-**Required flags:**
-- `-port`: Port to run the server on (default: 8080)
-
 **Optional flags:**
+- `-port`: Port to run the server on (default: 8080)
+- `-auth-token`: Authentication token required for client connections
 - `-debug`: Enable debug mode
 - `-version`: Print version and exit
 
@@ -90,6 +89,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 
 **Optional flags:**
 - `-server`: Server URL (default: https://wormhole.tools)
+- `-auth-token`: Authentication token for server connection
 - `-webui-port`: Port for the Web UI dashboard (default: 4040)
 - `-version`: Print version and exit
 
@@ -101,6 +101,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 ✅ **Multiple Clients** - Support for multiple simultaneous tunnels  
 ✅ **Automatic Cleanup** - Domains are released when clients disconnect  
 ✅ **Web UI Dashboard** - Monitor tunneled requests in a browser at `http://localhost:4040`  
+✅ **Optional Authentication** - Secure your server with token-based auth  
 
 ## Example Use Cases
 
@@ -125,6 +126,32 @@ To use a different port:
 ```bash
 go run cmd/client/main.go -domain=myapp -local=http://localhost:3000 -webui-port=5050
 ```
+
+## Authentication
+
+You can secure your Wormhole server by requiring an authentication token for client connections.
+
+### Using flags
+
+**Server:**
+```bash
+./wormhole-server -port=8080 -auth-token=my-secret-token
+```
+
+**Client:**
+```bash
+./wormhole -domain=myapp -local=http://localhost:3000 -auth-token=my-secret-token
+```
+
+### Using a config file
+
+Both the server and client can read the token from `~/.wormhole/config`:
+
+```
+AUTH_TOKEN=my-secret-token
+```
+
+The `-auth-token` flag takes precedence over the config file. When a token is configured on the server, clients must provide the same token to connect — unauthenticated connections will be rejected with HTTP 401.
 
 ## How it works
 
@@ -176,7 +203,6 @@ The repository includes a `fly.toml` for deployment to Fly.io. Set your `FLY_API
 
 ## Limitations
 
-- **No authentication** - Any client can claim any available subdomain
 - **No WebSocket passthrough** - WebSocket upgrade requests to tunneled services are not supported
 - **No built-in TLS** - Requires a reverse proxy for HTTPS
 - **10 MB request body limit** - Requests larger than 10 MB are rejected

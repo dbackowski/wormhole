@@ -185,6 +185,83 @@ func TestServeWebSocket_MessageDispatch(t *testing.T) {
 	_ = acceptor // acceptor available if needed for further verification
 }
 
+func TestServeWebSocket_AuthRequired_NoToken(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret")
+	wsURL, cleanup := startWSServer(t, s)
+	defer cleanup()
+
+	// Try to connect without a token — should get HTTP 401, not a WebSocket upgrade
+	header := http.Header{}
+	header.Set("Host", "app.localhost")
+	_, resp, err := websocket.DefaultDialer.Dial(wsURL+"/ws", header)
+
+	if err == nil {
+		t.Fatal("expected dial error for missing auth token")
+	}
+	if resp != nil && resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+}
+
+func TestServeWebSocket_AuthRequired_WrongToken(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret")
+	wsURL, cleanup := startWSServer(t, s)
+	defer cleanup()
+
+	header := http.Header{}
+	header.Set("Host", "app.localhost")
+	header.Set("Authorization", "Bearer wrong")
+	_, resp, err := websocket.DefaultDialer.Dial(wsURL+"/ws", header)
+
+	if err == nil {
+		t.Fatal("expected dial error for wrong auth token")
+	}
+	if resp != nil && resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+}
+
+func TestServeWebSocket_AuthRequired_ValidToken(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret")
+	wsURL, cleanup := startWSServer(t, s)
+	defer cleanup()
+
+	header := http.Header{}
+	header.Set("Host", "app.localhost")
+	header.Set("Authorization", "Bearer secret")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL+"/ws", header)
+	if err != nil {
+		t.Fatalf("dial with valid token: %v", err)
+	}
+	defer conn.Close()
+
+	var msg common.Message
+	if err := conn.ReadJSON(&msg); err != nil {
+		t.Fatalf("failed to read registration message: %v", err)
+	}
+	if msg.Type != common.MessageTypeDomainRegistered {
+		t.Errorf("message type = %q, want %q", msg.Type, common.MessageTypeDomainRegistered)
+	}
+}
+
+func TestServeWebSocket_NoAuthConfigured(t *testing.T) {
+	s := newTestServer(t) // no auth token set
+	wsURL, cleanup := startWSServer(t, s)
+	defer cleanup()
+
+	// Should connect without any token
+	conn := dialWS(t, wsURL+"/ws", "noauth.localhost")
+	defer conn.Close()
+
+	var msg common.Message
+	if err := conn.ReadJSON(&msg); err != nil {
+		t.Fatalf("failed to read registration message: %v", err)
+	}
+	if msg.Type != common.MessageTypeDomainRegistered {
+		t.Errorf("message type = %q, want %q", msg.Type, common.MessageTypeDomainRegistered)
+	}
+}
+
 func TestDisconnectReason_NormalClosure(t *testing.T) {
 	err := &websocket.CloseError{Code: websocket.CloseNormalClosure}
 	reason := disconnectReason(err)

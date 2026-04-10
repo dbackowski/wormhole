@@ -15,6 +15,7 @@ type Config struct {
 	Domain    string
 	Local     string
 	WebUIPort int
+	AuthToken string
 }
 
 type ServerConfig struct {
@@ -89,6 +90,7 @@ func ParseFlags(version string) *Config {
 	domain := flag.String("domain", "", "Domain to register (e.g., myapp)")
 	local := flag.String("local", "", "Local service URL to expose")
 	webUIPort := flag.Int("webui-port", common.DefaultWebUIPort, "Port for the Web UI")
+	authToken := flag.String("auth-token", "", "Authentication token for server connection")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 
 	flag.Parse()
@@ -98,10 +100,22 @@ func ParseFlags(version string) *Config {
 		os.Exit(0)
 	}
 
-	return &Config{
+	cfg := &Config{
 		ServerURL: *server,
 		Domain:    *domain,
 		Local:     *local,
 		WebUIPort: *webUIPort,
+		AuthToken: *authToken,
 	}
+
+	if cfg.AuthToken == "" {
+		fileCfg, err := common.LoadConfigFile(common.DefaultConfigPath())
+		if err != nil {
+			fmt.Printf("Warning: failed to load config file: %v\n", err)
+		} else if fileCfg.AuthToken != "" {
+			cfg.AuthToken = fileCfg.AuthToken
+		}
+	}
+
+	return cfg
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,6 +17,7 @@ type Server struct {
 	requestLogger *common.RequestLogger
 	httpServer    *http.Server
 	mux           *http.ServeMux
+	authToken     string
 }
 
 func NewServer(cfg *Config) (*Server, error) {
@@ -35,6 +37,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		mux:           http.NewServeMux(),
 		Logger:        logger,
 		requestLogger: common.NewRequestLogger(logger),
+		authToken:     cfg.AuthToken,
 	}
 
 	server.setupMessageHandlers()
@@ -86,6 +89,19 @@ func (s *Server) deliverResponse(message *common.Message) error {
 func (s *Server) handleHTTPResponse(msg *common.Message) error {
 	s.requestLogger.LogHTTPResponse(msg.Domain, msg.UUID, msg.Status, msg.Body)
 	return s.deliverResponse(msg)
+}
+
+func (s *Server) authenticateRequest(r *http.Request) bool {
+	if s.authToken == "" {
+		return true
+	}
+
+	token := r.Header.Get("Authorization")
+	if len(token) > 7 && strings.EqualFold(token[:7], "bearer ") {
+		token = token[7:]
+	}
+
+	return subtle.ConstantTimeCompare([]byte(token), []byte(s.authToken)) == 1
 }
 
 func (s *Server) extractDomain(host string) (string, error) {

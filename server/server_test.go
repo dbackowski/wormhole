@@ -21,6 +21,15 @@ func newTestServer(t *testing.T) *Server {
 	return s
 }
 
+func newTestServerWithAuth(t *testing.T, token string) *Server {
+	t.Helper()
+	s, err := NewServer(&Config{Port: 9999, AuthToken: token})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	return s
+}
+
 func TestNewServer_InvalidConfig(t *testing.T) {
 	_, err := NewServer(&Config{Port: 0})
 	if err == nil {
@@ -188,6 +197,64 @@ func TestStart_PortAlreadyInUse(t *testing.T) {
 
 	if err := s.Start(); err == nil {
 		t.Error("expected error when port is already in use, got nil")
+	}
+}
+
+func TestAuthenticateRequest_NoTokenConfigured(t *testing.T) {
+	s := newTestServer(t)
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+
+	if !s.authenticateRequest(r) {
+		t.Error("expected auth to pass when no token configured")
+	}
+}
+
+func TestAuthenticateRequest_ValidBearerToken(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret123")
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Authorization", "Bearer secret123")
+
+	if !s.authenticateRequest(r) {
+		t.Error("expected auth to pass with valid token")
+	}
+}
+
+func TestAuthenticateRequest_CaseInsensitiveBearer(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret123")
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Authorization", "bearer secret123")
+
+	if !s.authenticateRequest(r) {
+		t.Error("expected auth to pass with lowercase bearer prefix")
+	}
+}
+
+func TestAuthenticateRequest_InvalidToken(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret123")
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Authorization", "Bearer wrongtoken")
+
+	if s.authenticateRequest(r) {
+		t.Error("expected auth to fail with wrong token")
+	}
+}
+
+func TestAuthenticateRequest_MissingHeader(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret123")
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+
+	if s.authenticateRequest(r) {
+		t.Error("expected auth to fail with missing header")
+	}
+}
+
+func TestAuthenticateRequest_RawTokenWithoutBearer(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret123")
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Authorization", "secret123")
+
+	if !s.authenticateRequest(r) {
+		t.Error("expected auth to pass with raw token (no Bearer prefix)")
 	}
 }
 
