@@ -43,21 +43,20 @@ func (pr *PendingRequests) Register(ctx context.Context, uuid string) (chan *com
 }
 
 func (pr *PendingRequests) Deliver(message *common.Message) error {
-	pr.mu.RLock()
-	req, exists := pr.pending[message.UUID]
-	pr.mu.RUnlock()
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
 
+	req, exists := pr.pending[message.UUID]
 	if !exists {
 		return fmt.Errorf("no pending request for UUID %s", message.UUID)
 	}
 
 	select {
 	case req.ch <- message:
+		return nil
 	default:
-		return fmt.Errorf("failed to deliver message %s, channel closed or not ready", message.UUID)
+		return fmt.Errorf("failed to deliver message %s, channel full", message.UUID)
 	}
-
-	return nil
 }
 
 func (pr *PendingRequests) Cleanup(uuid string) {
