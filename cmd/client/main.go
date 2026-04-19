@@ -16,7 +16,6 @@ var version = "dev"
 
 func main() {
 	clientCfg := client.ParseFlags(version)
-	client.EnterAltScreen()
 	c, err := client.NewClient(clientCfg)
 
 	if err != nil {
@@ -29,6 +28,9 @@ func main() {
 		fmt.Printf("Error creating web UI: %v\n", err)
 		os.Exit(1)
 	}
+
+	client.EnterAltScreen()
+	defer client.ExitAltScreen()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -59,6 +61,4 @@ func main() {
 	if err := c.Shutdown(); err != nil {
 		c.Logger.Error("Client shutdown error", "error", err)
 	}
-
-	client.ExitAltScreen()
 }
