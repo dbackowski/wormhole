@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
@@ -18,6 +19,7 @@ type Server struct {
 	httpServer    *http.Server
 	mux           *http.ServeMux
 	authToken     string
+	host          string
 }
 
 func NewServer(cfg *Config) (*Server, error) {
@@ -38,6 +40,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		Logger:        logger,
 		requestLogger: common.NewRequestLogger(logger),
 		authToken:     cfg.AuthToken,
+		host:          cfg.Host,
 	}
 
 	server.setupMessageHandlers()
@@ -53,9 +56,36 @@ func NewServer(cfg *Config) (*Server, error) {
 
 func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/ws", s.ServeWebSocket)
-	s.mux.HandleFunc("/", s.ServeHTTP)
-	s.mux.HandleFunc("/health", s.handleHealth)
-	s.mux.HandleFunc("/metrics", s.handleMetrics)
+	s.mux.HandleFunc("/", s.routeRequest)
+}
+
+func (s *Server) routeRequest(w http.ResponseWriter, r *http.Request) {
+	if s.isBareHost(r.Host) {
+		switch r.URL.Path {
+		case "/health":
+			s.handleHealth(w, r)
+		case "/metrics":
+			s.handleMetrics(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+		return
+	}
+	s.ServeHTTP(w, r)
+}
+
+func (s *Server) isBareHost(host string) bool {
+	h, _, err := net.SplitHostPort(host)
+	if err != nil {
+		h = host
+	}
+	if s.host != "" {
+		return strings.EqualFold(h, s.host)
+	}
+	if net.ParseIP(h) != nil {
+		return true
+	}
+	return !strings.Contains(h, ".")
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

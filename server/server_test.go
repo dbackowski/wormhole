@@ -273,3 +273,125 @@ func TestSetupRoutes(t *testing.T) {
 		t.Errorf("/health status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 }
+
+func TestRouteRequest_HealthOnBareHost(t *testing.T) {
+	s := newTestServer(t)
+	r := httptest.NewRequest(http.MethodGet, "/health", nil)
+	r.Host = "wormhole"
+	w := httptest.NewRecorder()
+
+	s.routeRequest(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if body := w.Body.String(); body != "OK" {
+		t.Errorf("body = %q, want %q", body, "OK")
+	}
+}
+
+func TestRouteRequest_MetricsOnBareHost(t *testing.T) {
+	s := newTestServer(t)
+	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	r.Host = "wormhole"
+	w := httptest.NewRecorder()
+
+	s.routeRequest(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if body := w.Body.String(); body != "active_connections: 0\n" {
+		t.Errorf("unexpected body: %q", body)
+	}
+}
+
+func TestRouteRequest_HealthOnSubdomainIsTunneled(t *testing.T) {
+	s := newTestServer(t)
+	r := httptest.NewRequest(http.MethodGet, "/health", nil)
+	r.Host = "myapp.wormhole.tools"
+	w := httptest.NewRecorder()
+
+	s.routeRequest(w, r)
+
+	if w.Code == http.StatusOK && w.Body.String() == "OK" {
+		t.Error("subdomain /health should be tunneled, not answered by server")
+	}
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d (no tunnel registered)", w.Code, http.StatusBadGateway)
+	}
+}
+
+func TestRouteRequest_MetricsOnSubdomainIsTunneled(t *testing.T) {
+	s := newTestServer(t)
+	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	r.Host = "myapp.wormhole.tools"
+	w := httptest.NewRecorder()
+
+	s.routeRequest(w, r)
+
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d (no tunnel registered)", w.Code, http.StatusBadGateway)
+	}
+}
+
+func TestRouteRequest_UnknownPathOnBareHost(t *testing.T) {
+	s := newTestServer(t)
+	r := httptest.NewRequest(http.MethodGet, "/nope", nil)
+	r.Host = "wormhole"
+	w := httptest.NewRecorder()
+
+	s.routeRequest(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestRouteRequest_ConfiguredHostMatchesBare(t *testing.T) {
+	s, err := NewServer(&Config{Port: 9999, Host: "wormhole.tools"})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/health", nil)
+	r.Host = "wormhole.tools"
+	w := httptest.NewRecorder()
+
+	s.routeRequest(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+func TestRouteRequest_ConfiguredHost_SubdomainTunneled(t *testing.T) {
+	s, err := NewServer(&Config{Port: 9999, Host: "wormhole.tools"})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	r.Host = "damian.wormhole.tools"
+	w := httptest.NewRecorder()
+
+	s.routeRequest(w, r)
+
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d (subdomain /metrics should tunnel)", w.Code, http.StatusBadGateway)
+	}
+}
+
+func TestRouteRequest_ConfiguredHost_IgnoresPort(t *testing.T) {
+	s, err := NewServer(&Config{Port: 9999, Host: "wormhole.tools"})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/health", nil)
+	r.Host = "wormhole.tools:8080"
+	w := httptest.NewRecorder()
+
+	s.routeRequest(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+}
