@@ -155,14 +155,14 @@ func TestRefreshTerminalOutput(t *testing.T) {
 
 	client.RefreshTerminalOutput()
 
-	if !display.showConnectionInfoCalled {
+	if !display.ConnectionInfoCalled() {
 		t.Error("expected ShowConnectionInfo to be called")
 	}
-	if !display.showRequestHistoryCalled {
+	if !display.RequestHistoryCalled() {
 		t.Error("expected ShowRequestHistory to be called")
 	}
-	if len(display.lastLogs) != 2 {
-		t.Errorf("lastLogs length = %d, want 2", len(display.lastLogs))
+	if logs := display.LastLogs(); len(logs) != 2 {
+		t.Errorf("lastLogs length = %d, want 2", len(logs))
 	}
 }
 
@@ -183,14 +183,14 @@ func TestRefreshTerminalOutput_EmptyHistory(t *testing.T) {
 
 	client.RefreshTerminalOutput()
 
-	if !display.showConnectionInfoCalled {
+	if !display.ConnectionInfoCalled() {
 		t.Error("expected ShowConnectionInfo to be called")
 	}
-	if !display.showRequestHistoryCalled {
+	if !display.RequestHistoryCalled() {
 		t.Error("expected ShowRequestHistory to be called")
 	}
-	if len(display.lastLogs) != 0 {
-		t.Errorf("lastLogs length = %d, want 0", len(display.lastLogs))
+	if logs := display.LastLogs(); len(logs) != 0 {
+		t.Errorf("lastLogs length = %d, want 0", len(logs))
 	}
 }
 
@@ -436,7 +436,11 @@ func TestHandleConnection_DispatchesMessages(t *testing.T) {
 		t.Errorf("response Status = %d, want %d", resp.Status, http.StatusOK)
 	}
 
-	if !display.showConnectionInfoCalled {
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && !display.ConnectionInfoCalled() {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !display.ConnectionInfoCalled() {
 		t.Error("expected ShowConnectionInfo to be called")
 	}
 

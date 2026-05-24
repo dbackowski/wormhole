@@ -3,6 +3,7 @@ package client
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,18 +13,41 @@ import (
 )
 
 type mockDisplay struct {
+	mu                       sync.Mutex
 	showConnectionInfoCalled bool
 	showRequestHistoryCalled bool
 	lastLogs                 []RequestLog
 }
 
 func (m *mockDisplay) ShowConnectionInfo(tunnelURL string, webUIPort int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.showConnectionInfoCalled = true
 }
 
 func (m *mockDisplay) ShowRequestHistory(logs []RequestLog) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.showRequestHistoryCalled = true
 	m.lastLogs = logs
+}
+
+func (m *mockDisplay) ConnectionInfoCalled() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.showConnectionInfoCalled
+}
+
+func (m *mockDisplay) RequestHistoryCalled() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.showRequestHistoryCalled
+}
+
+func (m *mockDisplay) LastLogs() []RequestLog {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastLogs
 }
 
 func setupTestWebsocket(t *testing.T) (*websocket.Conn, *httptest.Server, *websocket.Conn) {
@@ -86,10 +110,10 @@ func TestHandleDomainRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleDomainRegistered() error = %v, want nil", err)
 	}
-	if !display.showConnectionInfoCalled {
+	if !display.ConnectionInfoCalled() {
 		t.Error("expected ShowConnectionInfo to be called")
 	}
-	if !display.showRequestHistoryCalled {
+	if !display.RequestHistoryCalled() {
 		t.Error("expected ShowRequestHistory to be called")
 	}
 }
@@ -192,10 +216,10 @@ func TestHandleHTTPRequest(t *testing.T) {
 		t.Errorf("log StatusCode = %d, want %d", log.StatusCode, http.StatusOK)
 	}
 
-	if !display.showConnectionInfoCalled {
+	if !display.ConnectionInfoCalled() {
 		t.Error("expected ShowConnectionInfo to be called")
 	}
-	if !display.showRequestHistoryCalled {
+	if !display.RequestHistoryCalled() {
 		t.Error("expected ShowRequestHistory to be called")
 	}
 }
