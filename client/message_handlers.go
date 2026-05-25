@@ -15,7 +15,7 @@ func (c *Client) handleDomainRegistered(_ *common.Message) error {
 func (c *Client) handleDomainTaken(_ *common.Message) error {
 	fmt.Println("Domain is already taken. Please choose another one.")
 
-	if err := closeWebsocket(c.Conn); err != nil {
+	if err := c.safeCloseWebsocket(); err != nil {
 		return fmt.Errorf("failed to close websocket after domain taken: %w", err)
 	}
 
@@ -46,10 +46,24 @@ func (c *Client) handleHTTPRequest(msg *common.Message) error {
 	return nil
 }
 
+func (c *Client) dispatchHTTPRequest(msg *common.Message) error {
+	c.requestSem <- struct{}{}
+	go func() {
+		defer func() { <-c.requestSem }()
+		if err := c.handleHTTPRequest(msg); err != nil && c.Logger != nil {
+			c.Logger.Error("HTTP request handling failed", "uuid", msg.UUID, "error", err)
+		}
+	}()
+	return nil
+}
+
 func (c *Client) setupMessageHandlers() {
 	c.dispatcher = common.NewMessageDispatcher()
+	if c.requestSem == nil {
+		c.requestSem = make(chan struct{}, MaxConcurrentRequests)
+	}
 
 	c.dispatcher.Register(common.MessageTypeDomainRegistered, c.handleDomainRegistered)
 	c.dispatcher.Register(common.MessageTypeDomainTaken, c.handleDomainTaken)
-	c.dispatcher.Register(common.MessageTypeHTTPRequest, c.handleHTTPRequest)
+	c.dispatcher.Register(common.MessageTypeHTTPRequest, c.dispatchHTTPRequest)
 }

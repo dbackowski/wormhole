@@ -2,9 +2,11 @@ package client
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -384,6 +386,79 @@ func TestHandleConnection_ReturnsOnClose(t *testing.T) {
 		// HandleConnection returned as expected
 	case <-time.After(3 * time.Second):
 		t.Fatal("HandleConnection did not return after connection closed")
+	}
+}
+
+func TestHandleConnection_RequestsRunConcurrently(t *testing.T) {
+	const (
+		numRequests   = 5
+		handlerDelay  = 100 * time.Millisecond
+		readDeadline  = 3 * time.Second
+	)
+
+	var inFlight, maxInFlight int32
+	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cur := atomic.AddInt32(&inFlight, 1)
+		defer atomic.AddInt32(&inFlight, -1)
+		for {
+			peak := atomic.LoadInt32(&maxInFlight)
+			if cur <= peak || atomic.CompareAndSwapInt32(&maxInFlight, peak, cur) {
+				break
+			}
+		}
+		time.Sleep(handlerDelay)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer proxyServer.Close()
+
+	client, _, wsServer, serverConn := newTestClient(t, proxyServer.URL)
+	defer wsServer.Close()
+	defer client.Conn.Close()
+	defer serverConn.Close()
+
+	client.Logger = common.NewLogger(common.LevelError, "text")
+	client.setupMessageHandlers()
+
+	done := make(chan struct{})
+	go func() {
+		client.HandleConnection()
+		close(done)
+	}()
+
+	start := time.Now()
+	for i := range numRequests {
+		err := serverConn.WriteJSON(common.Message{
+			Type:    common.MessageTypeHTTPRequest,
+			UUID:    fmt.Sprintf("concurrent-%d", i),
+			Method:  "GET",
+			URL:     "/",
+			Headers: map[string][]string{"Host": {"test.example.com"}},
+		})
+		if err != nil {
+			t.Fatalf("write request %d: %v", i, err)
+		}
+	}
+
+	serverConn.SetReadDeadline(time.Now().Add(readDeadline))
+	for i := range numRequests {
+		var resp common.Message
+		if err := serverConn.ReadJSON(&resp); err != nil {
+			t.Fatalf("read response %d: %v", i, err)
+		}
+		if resp.Status != http.StatusOK {
+			t.Errorf("response %d status = %d, want %d", i, resp.Status, http.StatusOK)
+		}
+	}
+	elapsed := time.Since(start)
+
+	if peak := atomic.LoadInt32(&maxInFlight); peak < 2 {
+		t.Errorf("max concurrent in-flight requests = %d, want >= 2 (requests were serialized)", peak)
+	}
+
+	// Serialized would be ~numRequests * handlerDelay. Allow generous slack.
+	maxSerialized := time.Duration(numRequests) * handlerDelay
+	if elapsed >= maxSerialized {
+		t.Errorf("requests took %v, expected well under serialized time of %v", elapsed, maxSerialized)
 	}
 }
 

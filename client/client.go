@@ -3,12 +3,15 @@ package client
 import (
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
 
 	"github.com/gorilla/websocket"
 )
+
+const MaxConcurrentRequests = 64
 
 type RequestLog struct {
 	UUID            string
@@ -26,6 +29,9 @@ type Client struct {
 	domain     string
 	tunnelURL  string
 	Conn       *websocket.Conn
+	writeMu    sync.Mutex
+	displayMu  sync.Mutex
+	requestSem chan struct{}
 	proxy      *LocalProxy
 	history    *RequestHistory
 	display    Display
@@ -66,14 +72,15 @@ func NewClient(cfg *Config) (*Client, error) {
 	tunnelURL := common.BuildSubdomainURL(serverConfig.HTTPScheme, cfg.Domain, serverConfig.Host, "")
 
 	client := &Client{
-		domain:    cfg.Domain,
-		tunnelURL: tunnelURL,
-		Conn:      conn,
-		proxy:     NewLocalProxy(localURL, tunnelURL, common.RequestTimeout),
-		history:   NewRequestHistory(common.ClientRequestHistorySize),
-		display:   NewTerminalDisplay(common.ClientTerminalMaxLogs),
-		Logger:    logger,
-		WebUIPort: cfg.WebUIPort,
+		domain:     cfg.Domain,
+		tunnelURL:  tunnelURL,
+		Conn:       conn,
+		requestSem: make(chan struct{}, MaxConcurrentRequests),
+		proxy:      NewLocalProxy(localURL, tunnelURL, common.RequestTimeout),
+		history:    NewRequestHistory(common.ClientRequestHistorySize),
+		display:    NewTerminalDisplay(common.ClientTerminalMaxLogs),
+		Logger:     logger,
+		WebUIPort:  cfg.WebUIPort,
 	}
 
 	client.setupMessageHandlers()
@@ -98,11 +105,23 @@ func (c *Client) HandleConnection() {
 func (c *Client) Shutdown() error {
 	c.Logger.Info("Shutting down client")
 
-	if err := closeWebsocket(c.Conn); err != nil {
+	if err := c.safeCloseWebsocket(); err != nil {
 		c.Logger.Error("Failed to send close frame", "error", err)
 	}
 
 	return c.Conn.Close()
+}
+
+func (c *Client) safeWriteJSON(v any) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.Conn.WriteJSON(v)
+}
+
+func (c *Client) safeCloseWebsocket() error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return closeWebsocket(c.Conn)
 }
 
 func resolveProxyResponse(proxyResp *ProxyResponse, proxyErr error) ProxyResponse {
@@ -127,7 +146,7 @@ func (c *Client) sendResponse(msg *common.Message, resolved ProxyResponse) error
 		Headers: resolved.Headers,
 	}
 
-	if err := c.Conn.WriteJSON(responseMsg); err != nil {
+	if err := c.safeWriteJSON(responseMsg); err != nil {
 		return fmt.Errorf("failed to send response: %w", err)
 	}
 
@@ -135,6 +154,8 @@ func (c *Client) sendResponse(msg *common.Message, resolved ProxyResponse) error
 }
 
 func (c *Client) RefreshTerminalOutput() {
+	c.displayMu.Lock()
+	defer c.displayMu.Unlock()
 	ClearTerminal()
 	recentLogs := c.history.GetRecent(common.ClientTerminalMaxLogs)
 	c.display.ShowConnectionInfo(c.tunnelURL, c.WebUIPort)
