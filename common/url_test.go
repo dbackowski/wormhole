@@ -31,6 +31,14 @@ func TestJoinURLPath(t *testing.T) {
 		{"base with query", "https://example.com?foo=bar", "api", "https://example.com/api?foo=bar", false},
 		{"path with query string", "https://example.com", "/boards/2/cards/new?list=todo", "https://example.com/boards/2/cards/new?list=todo", false},
 		{"path with multiple query params", "http://localhost:3000", "/search?q=hello&page=2", "http://localhost:3000/search?q=hello&page=2", false},
+		{"trailing slash preserved", "http://localhost:3000", "/users/", "http://localhost:3000/users/", false},
+		{"empty segments preserved", "http://localhost:3000", "/api//v1/data", "http://localhost:3000/api//v1/data", false},
+		{"dot segments not resolved", "http://localhost:3000", "/files/../etc", "http://localhost:3000/files/../etc", false},
+		{"encoded slashes preserved", "http://localhost:3000", "/repos/owner%2Frepo", "http://localhost:3000/repos/owner%2Frepo", false},
+		{"encoded space preserved", "http://localhost:3000", "/a%20b/c", "http://localhost:3000/a%20b/c", false},
+		{"root path", "http://localhost:3000", "/", "http://localhost:3000/", false},
+		{"base prefix with trailing slash on request", "http://localhost:3000/app", "/users/", "http://localhost:3000/app/users/", false},
+		{"empty query preserved with trailing slash", "http://localhost:3000", "/search/?q=a/b/", "http://localhost:3000/search/?q=a/b/", false},
 	}
 
 	for _, tt := range tests {

@@ -2,7 +2,7 @@ package common
 
 import (
 	"net/url"
-	"path"
+	"strings"
 )
 
 func JoinURLPath(baseURL url.URL, urlPath string) (string, error) {
@@ -10,11 +10,30 @@ func JoinURLPath(baseURL url.URL, urlPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	baseURL.Path = path.Join(baseURL.Path, p.Path)
+
+	joined := joinEscapedPaths(baseURL.EscapedPath(), p.EscapedPath())
+
+	baseURL.RawPath = joined
+	baseURL.Path, err = url.PathUnescape(joined)
+	if err != nil {
+		return "", err
+	}
+
 	if p.RawQuery != "" {
 		baseURL.RawQuery = p.RawQuery
 	}
 	return baseURL.String(), nil
+}
+
+func joinEscapedPaths(base, ref string) string {
+	if ref == "" {
+		return base
+	}
+	base = strings.TrimSuffix(base, "/")
+	if !strings.HasPrefix(ref, "/") {
+		ref = "/" + ref
+	}
+	return base + ref
 }
 
 func BuildSubdomainURL(scheme, subdomain, host, urlPath string) string {
