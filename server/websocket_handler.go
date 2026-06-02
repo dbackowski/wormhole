@@ -55,15 +55,16 @@ func (s *Server) upgradeAndExtractDomain(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) registerClient(conn *websocket.Conn, domain string) error {
-	if err := s.connManager.AddConnection(domain, conn); err != nil {
+	connection, err := s.connManager.AddConnection(domain, conn)
+	if err != nil {
 		conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
 		conn.Close()
 		return fmt.Errorf("registering domain: %w", err)
 	}
 
-	if err := conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
+	if err := connection.SendMessage(&common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
 		s.connManager.RemoveConnection(domain)
-		conn.Close()
+		connection.Close()
 		return fmt.Errorf("failed to send registration confirmation: %w", err)
 	}
 

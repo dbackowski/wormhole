@@ -18,21 +18,22 @@ func NewConnectionManager() *ConnectionManager {
 	}
 }
 
-func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) error {
+func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) (*Connection, error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
 	_, exists := cm.connections[domain]
 	if exists {
-		return fmt.Errorf("domain %s is already taken", domain)
+		return nil, fmt.Errorf("domain %s is already taken", domain)
 	}
 
-	cm.connections[domain] = &Connection{
+	connection := &Connection{
 		conn:     conn,
 		requests: NewPendingRequests(),
 	}
+	cm.connections[domain] = connection
 
-	return nil
+	return connection, nil
 }
 
 func (cm *ConnectionManager) GetConnection(domain string) (*Connection, error) {

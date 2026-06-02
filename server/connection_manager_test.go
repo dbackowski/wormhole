@@ -57,7 +57,7 @@ func TestAddConnection(t *testing.T) {
 			cm := NewConnectionManager()
 			var err error
 			for _, d := range tc.domains {
-				err = cm.AddConnection(d, nil)
+				_, err = cm.AddConnection(d, nil)
 			}
 			if (err != nil) != tc.wantErr {
 				t.Errorf("AddConnection() error = %v, wantErr %v", err, tc.wantErr)

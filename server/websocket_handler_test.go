@@ -1,9 +1,12 @@
 package server
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -305,6 +308,55 @@ func TestRegisterClient_DuplicateDomain(t *testing.T) {
 	err := s.registerClient(dialer, "dup.com")
 	if err == nil {
 		t.Error("expected error for duplicate domain, got nil")
+	}
+}
+
+func TestServeWebSocket_ConcurrentRequestDuringRegistration(t *testing.T) {
+	s := newTestServer(t)
+	srv := httptest.NewServer(s.mux)
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	httpURL := srv.URL
+
+	const iterations = 40
+	for i := 0; i < iterations; i++ {
+		host := fmt.Sprintf("race%d.localhost", i)
+
+		stop := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, httpURL, nil)
+				if err == nil {
+					req.Host = host
+					if resp, err := http.DefaultClient.Do(req); err == nil {
+						resp.Body.Close()
+					}
+				}
+				cancel()
+			}
+		}()
+
+		conn := dialWS(t, wsURL+"/ws", host)
+		var msg common.Message
+		if err := conn.ReadJSON(&msg); err != nil {
+			t.Fatalf("iteration %d: failed to read registration: %v", i, err)
+		}
+		if msg.Type != common.MessageTypeDomainRegistered {
+			t.Fatalf("iteration %d: type = %q, want %q", i, msg.Type, common.MessageTypeDomainRegistered)
+		}
+		conn.Close()
+		close(stop)
+		wg.Wait()
 	}
 }
 
