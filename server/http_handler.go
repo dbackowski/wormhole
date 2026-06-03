@@ -42,14 +42,17 @@ func isWebSocketUpgradeRequest(headers http.Header) bool {
 }
 
 func prepareRequestHeaders(r *http.Request) map[string][]string {
-	headers := make(map[string][]string)
-	headers["Host"] = []string{r.Host}
+	headers := http.Header{}
 
 	for key, values := range r.Header {
 		if len(values) > 0 {
 			headers[key] = values
 		}
 	}
+
+	common.RemoveHopByHopHeaders(headers)
+
+	headers["Host"] = []string{r.Host}
 
 	return headers
 }
@@ -126,4 +129,3 @@ func (s *Server) handleResponse(ctx context.Context, w http.ResponseWriter, resp
 		s.writeTimeoutResponse(w)
 	}
 }
-

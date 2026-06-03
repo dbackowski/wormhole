@@ -83,6 +83,8 @@ func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
+	common.RemoveHopByHopHeaders(httpResp.Header)
+
 	return &ProxyResponse{
 		StatusCode: httpResp.StatusCode,
 		Headers:    httpResp.Header,

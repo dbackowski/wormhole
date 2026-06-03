@@ -3,6 +3,8 @@ package common
 import (
 	"fmt"
 	"net/http"
+	"net/textproto"
+	"strings"
 	"time"
 )
 
@@ -54,6 +56,30 @@ func CopyHTTPHeaders(src http.Header, dest http.Header) {
 	}
 }
 
+var hopByHopHeaders = []string{
+	"Connection",
+	"Proxy-Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"Te",
+	"Trailer",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
+func RemoveHopByHopHeaders(h http.Header) {
+	for _, f := range h["Connection"] {
+		for sf := range strings.SplitSeq(f, ",") {
+			if sf = textproto.TrimString(sf); sf != "" {
+				h.Del(sf)
+			}
+		}
+	}
+	for _, k := range hopByHopHeaders {
+		h.Del(k)
+	}
+}
 
 func ValidatePort(port int) error {
 	if port < MinValidPort || port > MaxValidPort {

@@ -93,6 +93,29 @@ func TestPrepareRequestHeaders(t *testing.T) {
 	}
 }
 
+func TestPrepareRequestHeaders_StripsHopByHop(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Host = "foo.localhost"
+	r.Header.Set("Connection", "keep-alive, X-Hop")
+	r.Header.Set("X-Hop", "drop me")
+	r.Header.Set("Keep-Alive", "timeout=5")
+	r.Header.Set("X-Custom", "keep me")
+
+	headers := prepareRequestHeaders(r)
+
+	for _, k := range []string{"Connection", "X-Hop", "Keep-Alive"} {
+		if _, ok := headers[http.CanonicalHeaderKey(k)]; ok {
+			t.Errorf("hop-by-hop header %q should have been stripped", k)
+		}
+	}
+	if got := headers["X-Custom"]; len(got) != 1 || got[0] != "keep me" {
+		t.Errorf("X-Custom = %v, want [keep me]", got)
+	}
+	if got := headers["Host"]; len(got) != 1 || got[0] != "foo.localhost" {
+		t.Errorf("Host = %v, want [foo.localhost]", got)
+	}
+}
+
 func TestPrepareRequestHeaders_EmptyHeadersExcluded(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header["X-Empty"] = []string{}

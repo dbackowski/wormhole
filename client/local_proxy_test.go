@@ -289,6 +289,34 @@ func TestForwardResponseHeaders(t *testing.T) {
 	}
 }
 
+func TestForwardStripsHopByHopResponseHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Keep-Alive", "timeout=5")
+		w.Header().Set("X-App", "keep me")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
+	resp, err := lp.Forward(ProxyRequest{
+		Method:  "GET",
+		URL:     "/",
+		Headers: map[string][]string{"Host": {"example.com"}},
+	})
+	if err != nil {
+		t.Fatalf("Forward() unexpected error: %v", err)
+	}
+
+	headers := http.Header(resp.Headers)
+	if got := headers.Get("Keep-Alive"); got != "" {
+		t.Errorf("Keep-Alive should have been stripped, got %q", got)
+	}
+	if got := headers.Get("X-App"); got != "keep me" {
+		t.Errorf("X-App = %q, want %q", got, "keep me")
+	}
+}
+
 func TestForwardURLPath(t *testing.T) {
 	var gotPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
