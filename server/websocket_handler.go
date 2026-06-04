@@ -81,7 +81,7 @@ func disconnectReason(err error) string {
 func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, conn *websocket.Conn) {
 	defer conn.Close()
 
-	common.RunMessageLoop(conn, s.dispatcher,
+	common.RunMessageLoop(conn, s.dispatcher, s.heartbeat,
 		func(err error) {
 			s.requestLogger.LogClientDisconnected(domain, remoteAddr, disconnectReason(err))
 			s.connManager.RemoveConnection(domain)

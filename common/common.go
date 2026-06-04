@@ -23,7 +23,24 @@ const (
 	ServerShutdownTimeout    = 10 * time.Second
 	ClientShutdownTimeout    = 5 * time.Second
 	MaxRequestBodySize       = 10 << 20 // 10 MB
+	PongWait                 = 60 * time.Second
+	PingPeriod               = (PongWait * 9) / 10
+	WriteWait                = 10 * time.Second
 )
+
+type Heartbeat struct {
+	PongWait   time.Duration
+	PingPeriod time.Duration
+	WriteWait  time.Duration
+}
+
+func DefaultHeartbeat() Heartbeat {
+	return Heartbeat{
+		PongWait:   PongWait,
+		PingPeriod: PingPeriod,
+		WriteWait:  WriteWait,
+	}
+}
 
 type MessageType string
 

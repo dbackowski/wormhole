@@ -20,6 +20,7 @@ type Server struct {
 	mux           *http.ServeMux
 	authToken     string
 	host          string
+	heartbeat     common.Heartbeat
 }
 
 func NewServer(cfg *Config) (*Server, error) {
@@ -41,6 +42,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		requestLogger: common.NewRequestLogger(logger),
 		authToken:     cfg.AuthToken,
 		host:          cfg.Host,
+		heartbeat:     common.DefaultHeartbeat(),
 	}
 
 	server.setupMessageHandlers()

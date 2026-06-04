@@ -98,6 +98,7 @@ func TestRunMessageLoop_DispatchesMessagesUntilReadError(t *testing.T) {
 		RunMessageLoop(
 			pair.client,
 			dispatcher,
+			DefaultHeartbeat(),
 			func(err error) { readErr = err; close(done) },
 			func(msg *Message, err error) { t.Errorf("unexpected dispatch error: %v", err) },
 		)
@@ -150,6 +151,7 @@ func TestRunMessageLoop_CallsOnReadErrAndReturns(t *testing.T) {
 		RunMessageLoop(
 			pair.client,
 			dispatcher,
+			DefaultHeartbeat(),
 			func(err error) { readErr = err; close(done) },
 			func(msg *Message, err error) { t.Errorf("unexpected dispatch error: %v", err) },
 		)
@@ -186,6 +188,7 @@ func TestRunMessageLoop_CallsOnDispatchErrAndContinues(t *testing.T) {
 		RunMessageLoop(
 			pair.client,
 			dispatcher,
+			DefaultHeartbeat(),
 			func(err error) { close(done) },
 			func(msg *Message, err error) {
 				mu.Lock()
@@ -239,6 +242,63 @@ func TestRunMessageLoop_CallsOnDispatchErrAndContinues(t *testing.T) {
 	}
 }
 
+func TestRunMessageLoop_SendsPings(t *testing.T) {
+	pair := newWSTestPair(t)
+	defer pair.cleanup()
+
+	pinged := make(chan struct{}, 1)
+	pair.server.SetPingHandler(func(string) error {
+		select {
+		case pinged <- struct{}{}:
+		default:
+		}
+		return nil
+	})
+
+	// Drive the server's reader so incoming ping control frames are processed.
+	go func() {
+		for {
+			if _, _, err := pair.server.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	hb := Heartbeat{PongWait: time.Second, PingPeriod: 20 * time.Millisecond, WriteWait: time.Second}
+	go RunMessageLoop(pair.client, NewMessageDispatcher(), hb,
+		func(error) {}, func(*Message, error) {})
+
+	select {
+	case <-pinged:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected a ping to be sent within 2s")
+	}
+}
+
+func TestRunMessageLoop_ExitsWhenPeerStopsResponding(t *testing.T) {
+	pair := newWSTestPair(t)
+	defer pair.cleanup()
+
+	// The server side never reads, so it never auto-pongs; the client's read
+	// deadline must fire and terminate the loop.
+	hb := Heartbeat{PongWait: 150 * time.Millisecond, PingPeriod: 40 * time.Millisecond, WriteWait: time.Second}
+
+	var readErr error
+	done := make(chan struct{})
+	go RunMessageLoop(pair.client, NewMessageDispatcher(), hb,
+		func(err error) { readErr = err; close(done) },
+		func(*Message, error) {})
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected loop to exit after missed pongs")
+	}
+	if readErr == nil {
+		t.Fatal("expected a non-nil read error after missed heartbeat")
+	}
+}
+
 func TestRunMessageLoop_OnReadErrReceivesUnderlyingError(t *testing.T) {
 	pair := newWSTestPair(t)
 	defer pair.cleanup()
@@ -252,6 +312,7 @@ func TestRunMessageLoop_OnReadErrReceivesUnderlyingError(t *testing.T) {
 		RunMessageLoop(
 			pair.client,
 			dispatcher,
+			DefaultHeartbeat(),
 			func(err error) { readErr = err; close(done) },
 			func(msg *Message, err error) { t.Errorf("unexpected dispatch error: %v", err) },
 		)

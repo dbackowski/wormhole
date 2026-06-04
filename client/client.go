@@ -89,7 +89,7 @@ func NewClient(cfg *Config) (*Client, error) {
 }
 
 func (c *Client) HandleConnection() {
-	common.RunMessageLoop(c.Conn, c.dispatcher,
+	common.RunMessageLoop(c.Conn, c.dispatcher, common.DefaultHeartbeat(),
 		func(err error) {
 			c.Logger.Error("Failed to read message", "error", err)
 		},
@@ -115,6 +115,9 @@ func (c *Client) Shutdown() error {
 func (c *Client) safeWriteJSON(v any) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if err := c.Conn.SetWriteDeadline(time.Now().Add(common.WriteWait)); err != nil {
+		return err
+	}
 	return c.Conn.WriteJSON(v)
 }
 

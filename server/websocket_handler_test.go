@@ -360,6 +360,44 @@ func TestServeWebSocket_ConcurrentRequestDuringRegistration(t *testing.T) {
 	}
 }
 
+func waitForConnCount(s *Server, want int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if s.connManager.Count() == want {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return s.connManager.Count() == want
+}
+
+// TestServeWebSocket_FreesDomainWhenClientStopsResponding verifies the heartbeat
+// releases a domain held by a half-open connection: a client that connects but
+// never reads (so never pongs) must be detected and dropped within PongWait,
+// rather than holding the subdomain indefinitely.
+func TestServeWebSocket_FreesDomainWhenClientStopsResponding(t *testing.T) {
+	s := newTestServer(t)
+	s.heartbeat = common.Heartbeat{
+		PongWait:   150 * time.Millisecond,
+		PingPeriod: 40 * time.Millisecond,
+		WriteWait:  time.Second,
+	}
+	wsURL, cleanup := startWSServer(t, s)
+	defer cleanup()
+
+	// Connect but never read from the connection: the client never processes
+	// the server's pings and therefore never pongs.
+	conn := dialWS(t, wsURL+"/ws", "stuck.localhost")
+	defer conn.Close()
+
+	if !waitForConnCount(s, 1, time.Second) {
+		t.Fatalf("connection count = %d, want 1 after registration", s.connManager.Count())
+	}
+	if !waitForConnCount(s, 0, 2*time.Second) {
+		t.Fatalf("connection count = %d, want 0 after missed heartbeat", s.connManager.Count())
+	}
+}
+
 func TestRegisterClient_WriteConfirmationFails(t *testing.T) {
 	s := newTestServer(t)
 	ws, cleanup := newTestWSPair(t)
