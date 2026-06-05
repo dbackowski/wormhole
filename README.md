@@ -74,10 +74,12 @@ go run cmd/server/main.go -port=8080
 
 **Optional flags:**
 - `-port`: Port to run the server on (default: 8080)
-- `-host`: Public hostname of this server (e.g. `wormhole.tools`). When set, `/health` and `/metrics` are only served on this host; requests to subdomains are tunneled to the matching client.
+- `-host`: Public hostname of this server (e.g. `wormhole.tools`). When set, `/health` and `/metrics` are only served on this host; requests to subdomains are tunneled to the matching client. **Required for any deployment on a real domain** — see the note below.
 - `-auth-token`: Authentication token required for client connections
 - `-debug`: Enable debug mode
 - `-version`: Print version and exit
+
+> **Note on `-host`:** When `-host` is unset, the server falls back to a heuristic — any `Host` containing a dot is treated as a tunnel subdomain. This works for local development (`*.localhost`) and bare-IP access, but on a real domain it has two consequences: requests to your apex (e.g. `wormhole.tools/health`) are treated as a tunnel and return `502` instead of serving health/metrics, and the apex's first label (`wormhole`) becomes a reserved subdomain that shadows any client claiming it. Set `-host` to your public hostname in production to route exactly.
 
 ### Client Options
 ```bash
@@ -186,9 +188,9 @@ To run your own Wormhole server, you need:
 
 1. **Wildcard DNS** - Point `*.yourdomain.com` to your server so that subdomain-based routing works
 2. **TLS termination** - Wormhole does not handle TLS natively. Use a reverse proxy like Caddy or nginx to terminate TLS
-3. **Run the server:**
+3. **Run the server** with `-host` set to your public hostname so apex requests (health/metrics) are routed correctly:
    ```bash
-   ./wormhole-server -port=8080
+   ./wormhole-server -port=8080 -host=yourdomain.com
    ```
 
 ### Docker
