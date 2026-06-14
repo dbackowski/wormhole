@@ -27,7 +27,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.registerClient(conn, domain)
+	connection, err := s.registerClient(conn, domain)
 
 	if err != nil {
 		s.Logger.Error("Client registration failed", "error", err, "domain", domain)
@@ -35,7 +35,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.requestLogger.LogClientConnected(domain, r.RemoteAddr)
-	s.handleWebSocketConnection(domain, r.RemoteAddr, conn)
+	s.handleWebSocketConnection(domain, r.RemoteAddr, connection)
 }
 
 func (s *Server) upgradeAndExtractDomain(w http.ResponseWriter, r *http.Request) (*websocket.Conn, string, error) {
@@ -54,21 +54,21 @@ func (s *Server) upgradeAndExtractDomain(w http.ResponseWriter, r *http.Request)
 	return conn, domain, nil
 }
 
-func (s *Server) registerClient(conn *websocket.Conn, domain string) error {
+func (s *Server) registerClient(conn *websocket.Conn, domain string) (*Connection, error) {
 	connection, err := s.connManager.AddConnection(domain, conn)
 	if err != nil {
 		conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
 		conn.Close()
-		return fmt.Errorf("registering domain: %w", err)
+		return nil, fmt.Errorf("registering domain: %w", err)
 	}
 
 	if err := connection.SendMessage(&common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
 		s.connManager.RemoveConnection(domain)
 		connection.Close()
-		return fmt.Errorf("failed to send registration confirmation: %w", err)
+		return nil, fmt.Errorf("failed to send registration confirmation: %w", err)
 	}
 
-	return nil
+	return connection, nil
 }
 
 func disconnectReason(err error) string {
@@ -78,10 +78,17 @@ func disconnectReason(err error) string {
 	return "connection error: " + err.Error()
 }
 
-func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, conn *websocket.Conn) {
+func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, connection *Connection) {
+	conn := connection.conn
 	defer conn.Close()
 
-	common.RunMessageLoop(conn, s.dispatcher, s.heartbeat,
+	dispatcher := common.NewMessageDispatcher()
+	dispatcher.Register(common.MessageTypeHTTPResponse, func(msg *common.Message) error {
+		s.requestLogger.LogHTTPResponse(domain, msg.UUID, msg.Status, msg.Body)
+		return connection.DeliverResponse(msg)
+	})
+
+	common.RunMessageLoop(conn, dispatcher, s.heartbeat,
 		func(err error) {
 			s.requestLogger.LogClientDisconnected(domain, remoteAddr, disconnectReason(err))
 			s.connManager.RemoveConnection(domain)

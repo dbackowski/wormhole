@@ -8,8 +8,6 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"github.com/dbackowski/wormhole/common"
 )
 
 func newTestServer(t *testing.T) *Server {
@@ -130,26 +128,6 @@ func TestHandleMetrics_WithConnections(t *testing.T) {
 	want := "active_connections: 1\n"
 	if body := w.Body.String(); body != want {
 		t.Errorf("body = %q, want %q", body, want)
-	}
-}
-
-func TestDeliverResponse_DomainNotFound(t *testing.T) {
-	s := newTestServer(t)
-	msg := &common.Message{Domain: "unknown", UUID: "u1"}
-
-	err := s.deliverResponse(msg)
-	if err == nil {
-		t.Error("expected error for unknown domain, got nil")
-	}
-}
-
-func TestHandleHTTPResponse_DomainNotFound(t *testing.T) {
-	s := newTestServer(t)
-	msg := &common.Message{Domain: "unknown", UUID: "u1", Status: 200, Body: []byte("body")}
-
-	err := s.handleHTTPResponse(msg)
-	if err == nil {
-		t.Error("expected error for unknown domain, got nil")
 	}
 }
 

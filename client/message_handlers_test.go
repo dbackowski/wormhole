@@ -194,9 +194,6 @@ func TestHandleHTTPRequest(t *testing.T) {
 	if string(responseMsg.Body) != "proxy response" {
 		t.Errorf("response Body = %q, want %q", string(responseMsg.Body), "proxy response")
 	}
-	if responseMsg.Domain != "test" {
-		t.Errorf("response Domain = %q, want %q", responseMsg.Domain, "test")
-	}
 
 	logs := client.history.GetRecent(10)
 	if len(logs) != 1 {

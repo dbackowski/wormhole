@@ -53,7 +53,6 @@ const (
 
 type Message struct {
 	Type    MessageType         `json:"type"`
-	Domain  string              `json:"domain,omitempty"`
 	UUID    string              `json:"uuid"`
 	Method  string              `json:"method,omitempty"`
 	URL     string              `json:"url,omitempty"`

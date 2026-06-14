@@ -140,7 +140,6 @@ func resolveProxyResponse(proxyResp *ProxyResponse, proxyErr error) ProxyRespons
 func (c *Client) sendResponse(msg *common.Message, resolved ProxyResponse) error {
 	responseMsg := common.Message{
 		Type:    common.MessageTypeHTTPResponse,
-		Domain:  c.domain,
 		UUID:    msg.UUID,
 		Method:  msg.Method,
 		URL:     msg.URL,

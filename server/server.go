@@ -13,7 +13,6 @@ import (
 
 type Server struct {
 	connManager   *ConnectionManager
-	dispatcher    *common.MessageDispatcher
 	Logger        *common.Logger
 	requestLogger *common.RequestLogger
 	httpServer    *http.Server
@@ -45,7 +44,6 @@ func NewServer(cfg *Config) (*Server, error) {
 		heartbeat:     common.DefaultHeartbeat(),
 	}
 
-	server.setupMessageHandlers()
 	server.setupRoutes()
 
 	server.httpServer = &http.Server{
@@ -96,31 +94,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "active_connections: %d\n", s.connManager.Count())
-}
-
-func (s *Server) setupMessageHandlers() {
-	s.dispatcher = common.NewMessageDispatcher()
-	s.dispatcher.Register(common.MessageTypeHTTPResponse, s.handleHTTPResponse)
-}
-
-func (s *Server) deliverResponse(message *common.Message) error {
-	connection, err := s.connManager.GetConnection(message.Domain)
-
-	if err != nil {
-		return err
-	}
-
-	if err := connection.DeliverResponse(message); err != nil {
-		return fmt.Errorf("failed to deliver HTTP response for %s: %w", message.UUID, err)
-	}
-
-	return nil
-}
-
-
-func (s *Server) handleHTTPResponse(msg *common.Message) error {
-	s.requestLogger.LogHTTPResponse(msg.Domain, msg.UUID, msg.Status, msg.Body)
-	return s.deliverResponse(msg)
 }
 
 func (s *Server) authenticateRequest(r *http.Request) bool {

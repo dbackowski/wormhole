@@ -152,18 +152,11 @@ func TestServeWebSocket_ClientDisconnect(t *testing.T) {
 	t.Errorf("connection count = %d, want 0 after disconnect", s.connManager.Count())
 }
 
-func TestServeWebSocket_MessageDispatch(t *testing.T) {
+func TestServeWebSocket_ResponseDeliveredToOriginatingConnection(t *testing.T) {
 	s := newTestServer(t)
 	wsURL, cleanup := startWSServer(t, s)
 	defer cleanup()
 
-	// Register a connection via the dialer side and keep the acceptor for sending messages
-	dialer, acceptor, wsCleanup := newWSPair(t)
-	defer wsCleanup()
-
-	s.connManager.AddConnection("msgtest", dialer) //nolint:errcheck
-
-	// Connect a WebSocket client to /ws
 	conn := dialWS(t, wsURL+"/ws", "dispatch.localhost")
 	defer conn.Close()
 
@@ -172,11 +165,20 @@ func TestServeWebSocket_MessageDispatch(t *testing.T) {
 		t.Fatalf("failed to read registration: %v", err)
 	}
 
-	// Send an HTTP response message from the client
+	// Register a pending request on the server side for this connection.
+	connection, err := s.connManager.GetConnection("dispatch")
+	if err != nil {
+		t.Fatalf("GetConnection() error = %v", err)
+	}
+	respChan, cancelReq := connection.RegisterRequest(context.Background(), "req-uuid")
+	defer cancelReq()
+
+	// The client replies. Delivery is keyed solely on the connection the
+	// message arrived on (and the UUID within it), so a client cannot reach
+	// another tunnel's pending requests.
 	responseMsg := common.Message{
 		Type:   common.MessageTypeHTTPResponse,
-		Domain: "msgtest",
-		UUID:   "test-uuid",
+		UUID:   "req-uuid",
 		Status: 200,
 		Body:   []byte("hello"),
 	}
@@ -184,8 +186,14 @@ func TestServeWebSocket_MessageDispatch(t *testing.T) {
 		t.Fatalf("failed to write message: %v", err)
 	}
 
-	// The server's dispatcher should handle it — verify msgtest connection got the response
-	_ = acceptor // acceptor available if needed for further verification
+	select {
+	case got := <-respChan:
+		if got.Status != 200 || string(got.Body) != "hello" {
+			t.Errorf("got status=%d body=%q, want status=200 body=%q", got.Status, got.Body, "hello")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for response delivery")
+	}
 }
 
 func TestServeWebSocket_AuthRequired_NoToken(t *testing.T) {
@@ -286,7 +294,7 @@ func TestRegisterClient_Success(t *testing.T) {
 	dialer, _, cleanup := newWSPair(t)
 	defer cleanup()
 
-	err := s.registerClient(dialer, "regtest.com")
+	_, err := s.registerClient(dialer, "regtest.com")
 	if err != nil {
 		t.Fatalf("registerClient() error = %v", err)
 	}
@@ -305,7 +313,7 @@ func TestRegisterClient_DuplicateDomain(t *testing.T) {
 
 	s.connManager.AddConnection("dup.com", ws1) //nolint:errcheck
 
-	err := s.registerClient(dialer, "dup.com")
+	_, err := s.registerClient(dialer, "dup.com")
 	if err == nil {
 		t.Error("expected error for duplicate domain, got nil")
 	}
@@ -403,7 +411,7 @@ func TestRegisterClient_WriteConfirmationFails(t *testing.T) {
 	ws, cleanup := newTestWSPair(t)
 	cleanup() // close immediately so WriteJSON fails
 
-	err := s.registerClient(ws, "writefail.com")
+	_, err := s.registerClient(ws, "writefail.com")
 	if err == nil {
 		t.Error("expected error when write fails, got nil")
 	}

@@ -99,9 +99,6 @@ func TestSendResponse(t *testing.T) {
 	if received.Type != common.MessageTypeHTTPResponse {
 		t.Errorf("Type = %q, want %q", received.Type, common.MessageTypeHTTPResponse)
 	}
-	if received.Domain != "myapp" {
-		t.Errorf("Domain = %q, want %q", received.Domain, "myapp")
-	}
 	if received.UUID != "resp-uuid-1" {
 		t.Errorf("UUID = %q, want %q", received.UUID, "resp-uuid-1")
 	}
