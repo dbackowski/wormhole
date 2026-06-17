@@ -66,6 +66,8 @@ func TestExtractDomain(t *testing.T) {
 	}{
 		{"myapp.example.com", "myapp", false},
 		{"foo.localhost", "foo", false},
+		{"MyApp.example.com", "myapp", false},
+		{"FOO.localhost:8080", "foo", false},
 		{"localhost", "", true},
 		{"", "", true},
 		{".example.com", "", true},

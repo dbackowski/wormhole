@@ -115,7 +115,7 @@ func (s *Server) extractDomain(host string) (string, error) {
 	if len(parts) < 2 || parts[0] == "" {
 		return "", fmt.Errorf("invalid host: %s", host)
 	}
-	return parts[0], nil
+	return strings.ToLower(parts[0]), nil
 }
 
 func (s *Server) Start() error {
