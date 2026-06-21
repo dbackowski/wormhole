@@ -35,7 +35,7 @@ func NewWebUI(client *Client, port int) (*WebUI, error) {
 	mux.HandleFunc("/api/requests", ui.handleRequests)
 
 	ui.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
+		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
 		Handler: mux,
 	}
 

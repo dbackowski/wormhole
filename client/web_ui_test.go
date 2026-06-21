@@ -220,7 +220,7 @@ func TestNewWebUI(t *testing.T) {
 		t.Fatal("server is nil")
 	}
 
-	if ui.server.Addr != ":8080" {
-		t.Errorf("server.Addr = %q, want %q", ui.server.Addr, ":8080")
+	if ui.server.Addr != "127.0.0.1:8080" {
+		t.Errorf("server.Addr = %q, want %q", ui.server.Addr, "127.0.0.1:8080")
 	}
 }
