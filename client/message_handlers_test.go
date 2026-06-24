@@ -315,6 +315,58 @@ func TestHandleHTTPRequestPreservesRequestDetails(t *testing.T) {
 	}
 }
 
+func TestDispatchHTTPRequestSheds503WhenSaturated(t *testing.T) {
+	client, _, wsServer, serverConn := newTestClient(t, "http://localhost:1")
+	defer wsServer.Close()
+	defer client.Conn.Close()
+	defer serverConn.Close()
+
+	// Saturate the semaphore so no slots are available.
+	client.requestSem = make(chan struct{}, 1)
+	client.requestSem <- struct{}{}
+
+	msg := &common.Message{
+		Type:    common.MessageTypeHTTPRequest,
+		UUID:    "saturated-uuid",
+		Method:  "GET",
+		URL:     "/busy",
+		Headers: map[string][]string{"Host": {"test.example.com"}},
+	}
+
+	// dispatchHTTPRequest must not block the read loop when saturated.
+	done := make(chan error, 1)
+	go func() { done <- client.dispatchHTTPRequest(msg) }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("dispatchHTTPRequest() error = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatchHTTPRequest blocked while saturated; expected immediate 503")
+	}
+
+	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var responseMsg common.Message
+	if err := serverConn.ReadJSON(&responseMsg); err != nil {
+		t.Fatalf("failed to read response: %v", err)
+	}
+	if responseMsg.UUID != "saturated-uuid" {
+		t.Errorf("response UUID = %q, want %q", responseMsg.UUID, "saturated-uuid")
+	}
+	if responseMsg.Status != http.StatusServiceUnavailable {
+		t.Errorf("response Status = %d, want %d", responseMsg.Status, http.StatusServiceUnavailable)
+	}
+	if string(responseMsg.Body) != http.StatusText(http.StatusServiceUnavailable) {
+		t.Errorf("response Body = %q, want %q", string(responseMsg.Body), http.StatusText(http.StatusServiceUnavailable))
+	}
+
+	// A shed request never reaches the proxy, so it should not be logged.
+	if logs := client.history.GetRecent(10); len(logs) != 0 {
+		t.Errorf("history length = %d, want 0 for shed request", len(logs))
+	}
+}
+
 func TestSetupMessageHandlers(t *testing.T) {
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
