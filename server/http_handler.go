@@ -11,7 +11,12 @@ import (
 	"github.com/google/uuid"
 )
 
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// tunnelRequest forwards an HTTP request to the client that owns its
+// subdomain. It is the tunnel-path helper invoked by routeRequest after
+// bare-host (health/metrics) requests have been filtered out; it is
+// deliberately not named ServeHTTP so *Server does not satisfy http.Handler
+// and get mistakenly wired in place of the mux.
+func (s *Server) tunnelRequest(w http.ResponseWriter, r *http.Request) {
 	domain, err := s.extractDomain(r.Host)
 
 	if err != nil {

@@ -286,33 +286,33 @@ func TestRegisterAndForwardRequest_SendFails(t *testing.T) {
 	}
 }
 
-func TestServeHTTP_InvalidHost(t *testing.T) {
+func TestTunnelRequest_InvalidHost(t *testing.T) {
 	s := newTestServer(t)
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Host = "localhost"
 	w := httptest.NewRecorder()
 
-	s.ServeHTTP(w, r)
+	s.tunnelRequest(w, r)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
 }
 
-func TestServeHTTP_DomainNotFound(t *testing.T) {
+func TestTunnelRequest_DomainNotFound(t *testing.T) {
 	s := newTestServer(t)
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Host = "unknown.localhost"
 	w := httptest.NewRecorder()
 
-	s.ServeHTTP(w, r)
+	s.tunnelRequest(w, r)
 
 	if w.Code != http.StatusBadGateway {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
 	}
 }
 
-func TestServeHTTP_WebSocketUpgradeRejected(t *testing.T) {
+func TestTunnelRequest_WebSocketUpgradeRejected(t *testing.T) {
 	dialer, _, cleanup := newWSPair(t)
 	defer cleanup()
 
@@ -325,14 +325,14 @@ func TestServeHTTP_WebSocketUpgradeRejected(t *testing.T) {
 	r.Header.Set("Upgrade", "websocket")
 	w := httptest.NewRecorder()
 
-	s.ServeHTTP(w, r)
+	s.tunnelRequest(w, r)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
 }
 
-func TestServeHTTP_Success(t *testing.T) {
+func TestTunnelRequest_Success(t *testing.T) {
 	dialer, acceptor, cleanup := newWSPair(t)
 	defer cleanup()
 
@@ -356,7 +356,7 @@ func TestServeHTTP_Success(t *testing.T) {
 	r.Host = "foo.localhost"
 	w := httptest.NewRecorder()
 
-	s.ServeHTTP(w, r)
+	s.tunnelRequest(w, r)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)

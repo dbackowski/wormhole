@@ -71,7 +71,7 @@ func (s *Server) routeRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.ServeHTTP(w, r)
+	s.tunnelRequest(w, r)
 }
 
 func (s *Server) isBareHost(host string) bool {
