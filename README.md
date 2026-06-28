@@ -100,7 +100,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 
 ✅ **Custom Subdomains** - Choose your own subdomain name  
 ✅ **Real-time Tunneling** - Instant request forwarding via WebSockets  
-✅ **Header Preservation** - Complete HTTP headers are maintained  
+✅ **Header Forwarding** - End-to-end headers are forwarded; hop-by-hop headers are stripped and `Host` is set to the tunnel host (standard proxy behavior)  
 ✅ **Multiple Clients** - Support for multiple simultaneous tunnels  
 ✅ **Automatic Cleanup** - Domains are released when clients disconnect  
 ✅ **Web UI Dashboard** - Monitor tunneled requests in a browser at `http://localhost:4040`  
@@ -208,7 +208,7 @@ The repository includes a `fly.toml` for deployment to Fly.io. Set your `FLY_API
 
 - **No WebSocket passthrough** - WebSocket upgrade requests to tunneled services are not supported
 - **No built-in TLS** - Requires a reverse proxy for HTTPS
-- **10 MB request body limit** - Requests larger than 10 MB are rejected
+- **10 MB request body limit** - Requests larger than 10 MB are rejected with `413 Request Entity Too Large`
 - **10 second request timeout** - Requests that take longer than 10 seconds will time out
 
 ## Requirements

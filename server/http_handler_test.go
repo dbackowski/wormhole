@@ -332,6 +332,25 @@ func TestTunnelRequest_WebSocketUpgradeRejected(t *testing.T) {
 	}
 }
 
+func TestTunnelRequest_BodyTooLarge(t *testing.T) {
+	dialer, _, cleanup := newWSPair(t)
+	defer cleanup()
+
+	s := newTestServer(t)
+	s.connManager.AddConnection("foo", dialer) //nolint:errcheck
+
+	body := bytes.Repeat([]byte("a"), common.MaxRequestBodySize+1)
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	r.Host = "foo.localhost"
+	w := httptest.NewRecorder()
+
+	s.tunnelRequest(w, r)
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
 func TestTunnelRequest_Success(t *testing.T) {
 	dialer, acceptor, cleanup := newWSPair(t)
 	defer cleanup()

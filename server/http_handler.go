@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,11 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// tunnelRequest forwards an HTTP request to the client that owns its
-// subdomain. It is the tunnel-path helper invoked by routeRequest after
-// bare-host (health/metrics) requests have been filtered out; it is
-// deliberately not named ServeHTTP so *Server does not satisfy http.Handler
-// and get mistakenly wired in place of the mux.
 func (s *Server) tunnelRequest(w http.ResponseWriter, r *http.Request) {
 	domain, err := s.extractDomain(r.Host)
 
@@ -34,6 +30,11 @@ func (s *Server) tunnelRequest(w http.ResponseWriter, r *http.Request) {
 	requestMsg, err := s.buildRequestMessage(w, r)
 
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
