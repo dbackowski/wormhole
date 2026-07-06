@@ -47,8 +47,10 @@ func NewServer(cfg *Config) (*Server, error) {
 	server.setupRoutes()
 
 	server.httpServer = &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Port),
-		Handler: server.mux,
+		Addr:              fmt.Sprintf(":%d", cfg.Port),
+		Handler:           server.mux,
+		ReadHeaderTimeout: common.ServerReadHeaderTimeout,
+		IdleTimeout:       common.ServerIdleTimeout,
 	}
 
 	return &server, nil

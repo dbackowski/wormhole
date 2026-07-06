@@ -22,6 +22,8 @@ const (
 	ClientTerminalMaxLogs    = 25
 	ServerShutdownTimeout    = 10 * time.Second
 	ClientShutdownTimeout    = 5 * time.Second
+	ServerReadHeaderTimeout  = 10 * time.Second
+	ServerIdleTimeout        = 120 * time.Second
 	MaxRequestBodySize       = 10 << 20 // 10 MB
 	PongWait                 = 60 * time.Second
 	PingPeriod               = (PongWait * 9) / 10
