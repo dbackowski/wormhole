@@ -197,8 +197,10 @@ To run your own Wormhole server, you need:
 
 ```bash
 docker build -t wormhole .
-docker run -p 8080:8080 wormhole
+docker run -p 8080:8080 -e HOST=yourdomain.com -e AUTH_TOKEN=my-secret-token wormhole
 ```
+
+The server reads `AUTH_TOKEN` and `HOST` from the environment (equivalent to the `-auth-token` and `-host` flags), so secrets stay out of the process command line. Flags, when provided, take precedence over the environment.
 
 ### Fly.io
 

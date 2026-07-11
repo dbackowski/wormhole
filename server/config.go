@@ -36,6 +36,14 @@ func ParseFlags(version string) *Config {
 	}
 
 	if cfg.AuthToken == "" {
+		cfg.AuthToken = os.Getenv("AUTH_TOKEN")
+	}
+
+	if cfg.Host == "" {
+		cfg.Host = os.Getenv("HOST")
+	}
+
+	if cfg.AuthToken == "" {
 		fileCfg, err := common.LoadConfigFile(common.DefaultConfigPath())
 		if err != nil {
 			fmt.Printf("Warning: failed to load config file: %v\n", err)

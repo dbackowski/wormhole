@@ -74,6 +74,44 @@ func TestParseFlags_AllFlags(t *testing.T) {
 	}
 }
 
+func TestParseFlags_EnvFallback(t *testing.T) {
+	resetFlags()
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	os.Args = []string{"cmd"}
+	t.Setenv("AUTH_TOKEN", "env-token")
+	t.Setenv("HOST", "wormhole.example")
+
+	cfg := ParseFlags("test")
+
+	if cfg.AuthToken != "env-token" {
+		t.Errorf("AuthToken = %q, want %q", cfg.AuthToken, "env-token")
+	}
+	if cfg.Host != "wormhole.example" {
+		t.Errorf("Host = %q, want %q", cfg.Host, "wormhole.example")
+	}
+}
+
+func TestParseFlags_FlagOverridesEnv(t *testing.T) {
+	resetFlags()
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	os.Args = []string{"cmd", "-auth-token", "flag-token", "-host", "flag.example"}
+	t.Setenv("AUTH_TOKEN", "env-token")
+	t.Setenv("HOST", "env.example")
+
+	cfg := ParseFlags("test")
+
+	if cfg.AuthToken != "flag-token" {
+		t.Errorf("AuthToken = %q, want %q (flag should win over env)", cfg.AuthToken, "flag-token")
+	}
+	if cfg.Host != "flag.example" {
+		t.Errorf("Host = %q, want %q (flag should win over env)", cfg.Host, "flag.example")
+	}
+}
+
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
