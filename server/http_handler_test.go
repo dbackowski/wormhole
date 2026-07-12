@@ -318,6 +318,7 @@ func TestTunnelRequest_WebSocketUpgradeRejected(t *testing.T) {
 
 	s := newTestServer(t)
 	s.connManager.AddConnection("foo", dialer) //nolint:errcheck
+	s.connManager.ActivateConnection("foo")
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Host = "foo.localhost"
@@ -327,8 +328,8 @@ func TestTunnelRequest_WebSocketUpgradeRejected(t *testing.T) {
 
 	s.tunnelRequest(w, r)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	if w.Code != http.StatusNotImplemented {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotImplemented)
 	}
 }
 
@@ -338,6 +339,7 @@ func TestTunnelRequest_BodyTooLarge(t *testing.T) {
 
 	s := newTestServer(t)
 	s.connManager.AddConnection("foo", dialer) //nolint:errcheck
+	s.connManager.ActivateConnection("foo")
 
 	body := bytes.Repeat([]byte("a"), common.MaxRequestBodySize+1)
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
@@ -357,6 +359,7 @@ func TestTunnelRequest_Success(t *testing.T) {
 
 	s := newTestServer(t)
 	s.connManager.AddConnection("foo", dialer) //nolint:errcheck
+	s.connManager.ActivateConnection("foo")
 
 	go func() {
 		var req common.Message

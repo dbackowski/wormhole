@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var errWebSocketUpgradeUnsupported = errors.New("WebSocket upgrade not supported")
+
 func (s *Server) tunnelRequest(w http.ResponseWriter, r *http.Request) {
 	domain, err := s.extractDomain(r.Host)
 
@@ -33,6 +35,12 @@ func (s *Server) tunnelRequest(w http.ResponseWriter, r *http.Request) {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		if errors.Is(err, errWebSocketUpgradeUnsupported) {
+			s.Logger.Debug("Rejected WebSocket upgrade to tunnel (passthrough not supported)",
+				"domain", domain, "remote_addr", r.RemoteAddr, "url", r.URL.String())
+			http.Error(w, "WebSocket passthrough is not supported", http.StatusNotImplemented)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -65,7 +73,7 @@ func prepareRequestHeaders(r *http.Request) map[string][]string {
 
 func (s *Server) buildRequestMessage(w http.ResponseWriter, r *http.Request) (*common.Message, error) {
 	if isWebSocketUpgradeRequest(r.Header) {
-		return nil, fmt.Errorf("WebSocket upgrade not supported")
+		return nil, errWebSocketUpgradeUnsupported
 	}
 
 	defer r.Body.Close()

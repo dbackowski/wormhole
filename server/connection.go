@@ -13,6 +13,7 @@ type Connection struct {
 	conn     *websocket.Conn
 	requests *PendingRequests
 	mu       sync.Mutex
+	ready    bool // guarded by ConnectionManager.mu
 }
 
 func (c *Connection) RegisterRequest(ctx context.Context, uuid string) (chan *common.Message, context.CancelFunc) {

@@ -84,6 +84,7 @@ func TestGetConnection(t *testing.T) {
 			cm := NewConnectionManager()
 			for _, d := range tc.setup {
 				cm.AddConnection(d, nil) //nolint:errcheck
+				cm.ActivateConnection(d)
 			}
 			conn, err := cm.GetConnection(tc.domain)
 			if (err != nil) != tc.wantErr {

@@ -36,12 +36,23 @@ func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) 
 	return connection, nil
 }
 
+// ActivateConnection marks a reserved connection as ready to serve HTTP
+// requests. Until it is called, GetConnection treats the domain as absent, so
+// the registration confirmation can be delivered before any forwarded request.
+func (cm *ConnectionManager) ActivateConnection(domain string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if connection, exists := cm.connections[domain]; exists {
+		connection.ready = true
+	}
+}
+
 func (cm *ConnectionManager) GetConnection(domain string) (*Connection, error) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	connection, exists := cm.connections[domain]
 
-	if !exists {
+	if !exists || !connection.ready {
 		return nil, fmt.Errorf("connection for domain %s not found", domain)
 	}
 

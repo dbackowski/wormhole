@@ -68,6 +68,10 @@ func (s *Server) registerClient(conn *websocket.Conn, domain string) (*Connectio
 		return nil, fmt.Errorf("failed to send registration confirmation: %w", err)
 	}
 
+	// Only expose the domain to HTTP forwarding after the confirmation has been
+	// written, so the client always reads domain_registered before any request.
+	s.connManager.ActivateConnection(domain)
+
 	return connection, nil
 }
 
