@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -19,7 +20,11 @@ func main() {
 	c, err := client.NewClient(clientCfg)
 
 	if err != nil {
-		fmt.Printf("Error creating client: %v\n", err)
+		if errors.Is(err, client.ErrDomainTaken) {
+			fmt.Printf("Domain %q is already taken. Please choose another one with -domain.\n", clientCfg.Domain)
+		} else {
+			fmt.Printf("Error creating client: %v\n", err)
+		}
 		os.Exit(1)
 	}
 
@@ -29,8 +34,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	connectionLost := false
+	defer func() {
+		if connectionLost {
+			fmt.Println("Connection to the server was lost. Exiting.")
+		}
+	}()
+
 	client.EnterAltScreen()
 	defer client.ExitAltScreen()
+
+	c.RefreshTerminalOutput()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -44,11 +58,17 @@ func main() {
 		}
 	}()
 
-	go c.HandleConnection()
+	disconnectedCh := make(chan struct{})
+	go func() {
+		c.HandleConnection()
+		close(disconnectedCh)
+	}()
 
 	select {
 	case <-sigCh:
 	case <-quitCh:
+	case <-disconnectedCh:
+		connectionLost = true
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), common.ClientShutdownTimeout)

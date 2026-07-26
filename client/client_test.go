@@ -358,6 +358,55 @@ func TestNewClient_Success(t *testing.T) {
 	}
 }
 
+func TestAwaitRegistration_Registered(t *testing.T) {
+	clientConn, wsServer, serverConn := setupTestWebsocket(t)
+	defer wsServer.Close()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	if err := serverConn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
+		t.Fatalf("failed to send domain_registered: %v", err)
+	}
+
+	if err := awaitRegistration(clientConn); err != nil {
+		t.Errorf("awaitRegistration() error = %v, want nil", err)
+	}
+}
+
+func TestAwaitRegistration_DomainTaken(t *testing.T) {
+	clientConn, wsServer, serverConn := setupTestWebsocket(t)
+	defer wsServer.Close()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	if err := serverConn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken}); err != nil {
+		t.Fatalf("failed to send domain_taken: %v", err)
+	}
+
+	if err := awaitRegistration(clientConn); !errors.Is(err, ErrDomainTaken) {
+		t.Errorf("awaitRegistration() error = %v, want ErrDomainTaken", err)
+	}
+}
+
+func TestAwaitRegistration_UnexpectedMessage(t *testing.T) {
+	clientConn, wsServer, serverConn := setupTestWebsocket(t)
+	defer wsServer.Close()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	if err := serverConn.WriteJSON(common.Message{Type: common.MessageTypeHTTPRequest}); err != nil {
+		t.Fatalf("failed to send message: %v", err)
+	}
+
+	err := awaitRegistration(clientConn)
+	if err == nil {
+		t.Fatal("awaitRegistration() error = nil, want error for unexpected message")
+	}
+	if errors.Is(err, ErrDomainTaken) {
+		t.Errorf("awaitRegistration() returned ErrDomainTaken, want a generic error")
+	}
+}
+
 func TestHandleConnection_ReturnsOnClose(t *testing.T) {
 	clientConn, wsServer, serverConn := setupTestWebsocket(t)
 	defer wsServer.Close()

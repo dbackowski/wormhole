@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -12,6 +13,8 @@ import (
 )
 
 const MaxConcurrentRequests = 64
+
+var ErrDomainTaken = errors.New("domain is already taken")
 
 type RequestLog struct {
 	UUID            string
@@ -65,6 +68,11 @@ func NewClient(cfg *Config) (*Client, error) {
 			return nil, fmt.Errorf("authentication failed: invalid or missing auth token")
 		}
 		return nil, fmt.Errorf("failed to connect to %s: %w", wsURL, err)
+	}
+
+	if err := awaitRegistration(conn); err != nil {
+		conn.Close()
+		return nil, err
 	}
 
 	logger := common.NewLogger(common.LevelError, "text")
@@ -166,4 +174,28 @@ func (c *Client) RefreshTerminalOutput() {
 
 func closeWebsocket(c *websocket.Conn) error {
 	return c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+}
+
+func awaitRegistration(conn *websocket.Conn) error {
+	if err := conn.SetReadDeadline(time.Now().Add(common.WriteWait)); err != nil {
+		return err
+	}
+
+	var msg common.Message
+	if err := conn.ReadJSON(&msg); err != nil {
+		return fmt.Errorf("waiting for domain registration: %w", err)
+	}
+
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		return err
+	}
+
+	switch msg.Type {
+	case common.MessageTypeDomainRegistered:
+		return nil
+	case common.MessageTypeDomainTaken:
+		return ErrDomainTaken
+	default:
+		return fmt.Errorf("unexpected message during registration: %s", msg.Type)
+	}
 }

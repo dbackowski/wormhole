@@ -13,16 +13,6 @@ func (c *Client) handleDomainRegistered(_ *common.Message) error {
 	return nil
 }
 
-func (c *Client) handleDomainTaken(_ *common.Message) error {
-	fmt.Println("Domain is already taken. Please choose another one.")
-
-	if err := c.safeCloseWebsocket(); err != nil {
-		return fmt.Errorf("failed to close websocket after domain taken: %w", err)
-	}
-
-	return nil
-}
-
 func (c *Client) handleHTTPRequest(msg *common.Message) error {
 	proxyResp, err := c.proxy.Forward(NewProxyRequest(msg))
 	resolved := resolveProxyResponse(proxyResp, err)
@@ -74,6 +64,5 @@ func (c *Client) setupMessageHandlers() {
 	}
 
 	c.dispatcher.Register(common.MessageTypeDomainRegistered, c.handleDomainRegistered)
-	c.dispatcher.Register(common.MessageTypeDomainTaken, c.handleDomainTaken)
 	c.dispatcher.Register(common.MessageTypeHTTPRequest, c.dispatchHTTPRequest)
 }

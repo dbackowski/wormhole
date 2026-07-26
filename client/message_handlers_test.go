@@ -118,37 +118,6 @@ func TestHandleDomainRegistered(t *testing.T) {
 	}
 }
 
-func TestHandleDomainTaken(t *testing.T) {
-	clientConn, wsServer, serverConn := setupTestWebsocket(t)
-	defer wsServer.Close()
-	defer serverConn.Close()
-
-	client := &Client{
-		Conn: clientConn,
-	}
-
-	err := client.handleDomainTaken(&common.Message{
-		Type: common.MessageTypeDomainTaken,
-	})
-
-	if err != nil {
-		t.Fatalf("handleDomainTaken() error = %v, want nil", err)
-	}
-
-	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	_, _, readErr := serverConn.ReadMessage()
-	if readErr == nil {
-		t.Error("expected error reading from closed connection, got nil")
-	}
-	closeErr, ok := readErr.(*websocket.CloseError)
-	if !ok {
-		t.Fatalf("expected *websocket.CloseError, got %T: %v", readErr, readErr)
-	}
-	if closeErr.Code != websocket.CloseNormalClosure {
-		t.Errorf("close code = %d, want %d", closeErr.Code, websocket.CloseNormalClosure)
-	}
-}
-
 func TestHandleHTTPRequest(t *testing.T) {
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Response", "test-value")
