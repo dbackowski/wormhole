@@ -80,7 +80,7 @@ func TestPrepareRequestHeaders(t *testing.T) {
 	r.Header.Set("X-Custom", "value")
 	r.Header.Set("Accept", "application/json")
 
-	headers := prepareRequestHeaders(r)
+	headers := newTestServer(t).prepareRequestHeaders(r)
 
 	if got := headers["Host"]; len(got) != 1 || got[0] != "foo.localhost" {
 		t.Errorf("Host = %v, want [foo.localhost]", got)
@@ -101,7 +101,7 @@ func TestPrepareRequestHeaders_StripsHopByHop(t *testing.T) {
 	r.Header.Set("Keep-Alive", "timeout=5")
 	r.Header.Set("X-Custom", "keep me")
 
-	headers := prepareRequestHeaders(r)
+	headers := newTestServer(t).prepareRequestHeaders(r)
 
 	for _, k := range []string{"Connection", "X-Hop", "Keep-Alive"} {
 		if _, ok := headers[http.CanonicalHeaderKey(k)]; ok {
@@ -120,10 +120,96 @@ func TestPrepareRequestHeaders_EmptyHeadersExcluded(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header["X-Empty"] = []string{}
 
-	headers := prepareRequestHeaders(r)
+	headers := newTestServer(t).prepareRequestHeaders(r)
 
 	if _, ok := headers["X-Empty"]; ok {
 		t.Error("expected empty-value header to be excluded")
+	}
+}
+
+func TestPrepareRequestHeaders_ForwardedFor(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Host = "foo.localhost"
+	r.RemoteAddr = "203.0.113.7:54321"
+
+	headers := newTestServer(t).prepareRequestHeaders(r)
+
+	if got := http.Header(headers).Get("X-Forwarded-For"); got != "203.0.113.7" {
+		t.Errorf("X-Forwarded-For = %q, want %q", got, "203.0.113.7")
+	}
+}
+
+func TestPrepareRequestHeaders_ForwardedForAppends(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Host = "foo.localhost"
+	r.RemoteAddr = "10.0.0.1:1000"
+	r.Header.Set("X-Forwarded-For", "203.0.113.7")
+
+	headers := newTestServer(t).prepareRequestHeaders(r)
+
+	if got := http.Header(headers).Get("X-Forwarded-For"); got != "203.0.113.7, 10.0.0.1" {
+		t.Errorf("X-Forwarded-For = %q, want %q", got, "203.0.113.7, 10.0.0.1")
+	}
+}
+
+func TestPrepareRequestHeaders_ForwardedHost(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Host = "foo.localhost"
+
+	headers := newTestServer(t).prepareRequestHeaders(r)
+
+	if got := http.Header(headers).Get("X-Forwarded-Host"); got != "foo.localhost" {
+		t.Errorf("X-Forwarded-Host = %q, want %q", got, "foo.localhost")
+	}
+}
+
+func TestPrepareRequestHeaders_ForwardedHostPreserved(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Host = "foo.localhost"
+	r.Header.Set("X-Forwarded-Host", "public.example.com")
+
+	headers := newTestServer(t).prepareRequestHeaders(r)
+
+	if got := http.Header(headers).Get("X-Forwarded-Host"); got != "public.example.com" {
+		t.Errorf("X-Forwarded-Host = %q, want %q (inbound value must be preserved)", got, "public.example.com")
+	}
+}
+
+func TestPrepareRequestHeaders_ForwardedProtoDefaultsHTTP(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Host = "foo.localhost"
+
+	headers := newTestServer(t).prepareRequestHeaders(r)
+
+	if got := http.Header(headers).Get("X-Forwarded-Proto"); got != "http" {
+		t.Errorf("X-Forwarded-Proto = %q, want %q (no -host, no TLS)", got, "http")
+	}
+}
+
+func TestPrepareRequestHeaders_ForwardedProtoHTTPSWhenHostSet(t *testing.T) {
+	s, err := NewServer(&Config{Port: 9999, Host: "wormhole.tools"})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Host = "foo.wormhole.tools"
+
+	headers := s.prepareRequestHeaders(r)
+
+	if got := http.Header(headers).Get("X-Forwarded-Proto"); got != "https" {
+		t.Errorf("X-Forwarded-Proto = %q, want %q (-host set implies HTTPS front)", got, "https")
+	}
+}
+
+func TestPrepareRequestHeaders_ForwardedProtoPreserved(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Host = "foo.localhost"
+	r.Header.Set("X-Forwarded-Proto", "https")
+
+	headers := newTestServer(t).prepareRequestHeaders(r)
+
+	if got := http.Header(headers).Get("X-Forwarded-Proto"); got != "https" {
+		t.Errorf("X-Forwarded-Proto = %q, want %q (inbound value must be preserved)", got, "https")
 	}
 }
 

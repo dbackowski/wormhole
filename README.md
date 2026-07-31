@@ -100,7 +100,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 
 ✅ **Custom Subdomains** - Choose your own subdomain name  
 ✅ **Real-time Tunneling** - Instant request forwarding via WebSockets  
-✅ **Header Forwarding** - End-to-end headers are forwarded; hop-by-hop headers are stripped and `Host` is set to the tunnel host (standard proxy behavior)  
+✅ **Header Forwarding** - End-to-end headers are forwarded; hop-by-hop headers are stripped, `Host` is set to the tunnel host, and `X-Forwarded-For`/`-Proto`/`-Host` are added so your local app sees the original client IP and public URL (standard proxy behavior)  
 ✅ **Multiple Clients** - Support for multiple simultaneous tunnels  
 ✅ **Automatic Cleanup** - Domains are released when clients disconnect  
 ✅ **Web UI Dashboard** - Monitor tunneled requests in a browser at `http://localhost:4040`  
@@ -192,6 +192,8 @@ To run your own Wormhole server, you need:
    ```bash
    ./wormhole-server -port=8080 -host=yourdomain.com
    ```
+
+> **Forwarded headers behind TLS termination:** The server adds `X-Forwarded-Proto` to each tunneled request. Because TLS is terminated by your reverse proxy, an inbound `X-Forwarded-Proto` (set by Caddy/nginx) is always honored; when absent, the value defaults to `https` if `-host` is set and `http` otherwise. `X-Forwarded-For` appends the incoming peer to any existing chain, so configure your proxy to forward the real client IP.
 
 ### Docker
 

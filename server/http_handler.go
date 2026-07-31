@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 
@@ -55,7 +56,7 @@ func isWebSocketUpgradeRequest(headers http.Header) bool {
 		strings.EqualFold(headers.Get("Upgrade"), "websocket")
 }
 
-func prepareRequestHeaders(r *http.Request) map[string][]string {
+func (s *Server) prepareRequestHeaders(r *http.Request) map[string][]string {
 	headers := http.Header{}
 
 	for key, values := range r.Header {
@@ -65,10 +66,35 @@ func prepareRequestHeaders(r *http.Request) map[string][]string {
 	}
 
 	common.RemoveHopByHopHeaders(headers)
-
+	s.setForwardedHeaders(headers, r)
 	headers["Host"] = []string{r.Host}
 
 	return headers
+}
+
+func (s *Server) setForwardedHeaders(headers http.Header, r *http.Request) {
+	if clientIP, _, err := net.SplitHostPort(r.RemoteAddr); err == nil && clientIP != "" {
+		if prior := headers.Get("X-Forwarded-For"); prior != "" {
+			headers.Set("X-Forwarded-For", prior+", "+clientIP)
+		} else {
+			headers.Set("X-Forwarded-For", clientIP)
+		}
+	}
+
+	if headers.Get("X-Forwarded-Proto") == "" {
+		headers.Set("X-Forwarded-Proto", s.forwardedProto(r))
+	}
+
+	if headers.Get("X-Forwarded-Host") == "" && r.Host != "" {
+		headers.Set("X-Forwarded-Host", r.Host)
+	}
+}
+
+func (s *Server) forwardedProto(r *http.Request) string {
+	if r.TLS != nil || s.host != "" {
+		return "https"
+	}
+	return "http"
 }
 
 func (s *Server) buildRequestMessage(w http.ResponseWriter, r *http.Request) (*common.Message, error) {
@@ -88,7 +114,7 @@ func (s *Server) buildRequestMessage(w http.ResponseWriter, r *http.Request) (*c
 		UUID:    uuid.New().String(),
 		URL:     r.URL.String(),
 		Method:  r.Method,
-		Headers: prepareRequestHeaders(r),
+		Headers: s.prepareRequestHeaders(r),
 		Body:    reqBody,
 	}, nil
 }
