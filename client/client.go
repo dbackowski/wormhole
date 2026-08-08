@@ -137,6 +137,12 @@ func (c *Client) safeCloseWebsocket() error {
 
 func resolveProxyResponse(proxyResp *ProxyResponse, proxyErr error) ProxyResponse {
 	if proxyErr != nil {
+		if errors.Is(proxyErr, ErrResponseTooLarge) {
+			return ProxyResponse{
+				StatusCode: http.StatusBadGateway,
+				Body:       []byte("response body too large"),
+			}
+		}
 		return ProxyResponse{
 			StatusCode: http.StatusBadGateway,
 			Body:       []byte(http.StatusText(http.StatusBadGateway)),

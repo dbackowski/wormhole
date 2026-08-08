@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -242,6 +243,49 @@ func TestForwardRedirectNotFollowed(t *testing.T) {
 	}
 	if loc := http.Header(resp.Headers).Get("Location"); loc != "/redirected" {
 		t.Errorf("Location header = %q, want %q", loc, "/redirected")
+	}
+}
+
+func TestForwardResponseTooLarge(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(make([]byte, 101)) // one byte over the limit set below
+	}))
+	defer server.Close()
+
+	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
+	lp.maxResponseBytes = 100
+
+	_, err := lp.Forward(ProxyRequest{
+		Method:  "GET",
+		URL:     "/big",
+		Headers: map[string][]string{"Host": {"example.com"}},
+	})
+
+	if !errors.Is(err, ErrResponseTooLarge) {
+		t.Fatalf("Forward() error = %v, want ErrResponseTooLarge", err)
+	}
+}
+
+func TestForwardResponseAtLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(make([]byte, 100)) // exactly at the limit is allowed
+	}))
+	defer server.Close()
+
+	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
+	lp.maxResponseBytes = 100
+
+	resp, err := lp.Forward(ProxyRequest{
+		Method:  "GET",
+		URL:     "/exact",
+		Headers: map[string][]string{"Host": {"example.com"}},
+	})
+
+	if err != nil {
+		t.Fatalf("Forward() unexpected error: %v", err)
+	}
+	if len(resp.Body) != 100 {
+		t.Errorf("Body length = %d, want 100", len(resp.Body))
 	}
 }
 

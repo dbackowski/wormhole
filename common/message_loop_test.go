@@ -165,6 +165,39 @@ func TestRunMessageLoop_CallsOnReadErrAndReturns(t *testing.T) {
 	}
 }
 
+func TestRunMessageLoop_EnforcesReadLimit(t *testing.T) {
+	pair := newWSTestPair(t)
+	defer pair.cleanup()
+
+	dispatcher := NewMessageDispatcher()
+	dispatcher.Register(MessageTypeHTTPResponse, func(msg *Message) error { return nil })
+
+	var readErr error
+	done := make(chan struct{})
+
+	go func() {
+		RunMessageLoop(
+			pair.client,
+			dispatcher,
+			DefaultHeartbeat(),
+			func(err error) { readErr = err; close(done) },
+			func(msg *Message, err error) { t.Errorf("unexpected dispatch error: %v", err) },
+		)
+	}()
+
+	// A body past MaxWebSocketMessageSize (base64 inflates it further) must trip
+	// the read limit and terminate the loop rather than being buffered.
+	oversized := Message{Type: MessageTypeHTTPResponse, UUID: "big", Body: make([]byte, MaxWebSocketMessageSize+1)}
+	if err := pair.server.WriteJSON(oversized); err != nil {
+		t.Fatalf("server WriteJSON: %v", err)
+	}
+
+	waitFor(t, done, "loop exit on read limit")
+	if readErr == nil {
+		t.Fatal("expected onReadErr when message exceeds read limit")
+	}
+}
+
 func TestRunMessageLoop_CallsOnDispatchErrAndContinues(t *testing.T) {
 	pair := newWSTestPair(t)
 	defer pair.cleanup()

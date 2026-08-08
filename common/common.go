@@ -25,6 +25,7 @@ const (
 	ServerReadHeaderTimeout  = 10 * time.Second
 	ServerIdleTimeout        = 120 * time.Second
 	MaxRequestBodySize       = 10 << 20 // 10 MB
+	MaxWebSocketMessageSize  = 16 << 20 // 16 MB
 	PongWait                 = 60 * time.Second
 	PingPeriod               = (PongWait * 9) / 10
 	WriteWait                = 10 * time.Second

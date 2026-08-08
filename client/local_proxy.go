@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/dbackowski/wormhole/common"
 )
+
+var ErrResponseTooLarge = errors.New("local server response body too large")
 
 type ProxyRequest struct {
 	Method  string
@@ -34,15 +37,17 @@ type ProxyResponse struct {
 }
 
 type LocalProxy struct {
-	httpClient *http.Client
-	baseURL    url.URL
-	tunnelURL  string
+	httpClient       *http.Client
+	baseURL          url.URL
+	tunnelURL        string
+	maxResponseBytes int64
 }
 
 func NewLocalProxy(baseURL url.URL, tunnelURL string, timeout time.Duration) *LocalProxy {
 	return &LocalProxy{
-		baseURL:   baseURL,
-		tunnelURL: tunnelURL,
+		baseURL:          baseURL,
+		tunnelURL:        tunnelURL,
+		maxResponseBytes: common.MaxRequestBodySize,
 		httpClient: &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{
@@ -78,9 +83,14 @@ func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
 	}
 	defer httpResp.Body.Close()
 
-	body, err := io.ReadAll(httpResp.Body)
+	// Read one byte past the limit so an exactly-at-limit body is allowed while
+	// anything larger is detected and rejected instead of buffered in full.
+	body, err := io.ReadAll(io.LimitReader(httpResp.Body, lp.maxResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if int64(len(body)) > lp.maxResponseBytes {
+		return nil, ErrResponseTooLarge
 	}
 
 	common.RemoveHopByHopHeaders(httpResp.Header)

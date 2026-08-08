@@ -49,6 +49,17 @@ func TestResolveProxyResponse_Error(t *testing.T) {
 	}
 }
 
+func TestResolveProxyResponse_ResponseTooLarge(t *testing.T) {
+	result := resolveProxyResponse(nil, ErrResponseTooLarge)
+
+	if result.StatusCode != http.StatusBadGateway {
+		t.Errorf("StatusCode = %d, want %d", result.StatusCode, http.StatusBadGateway)
+	}
+	if string(result.Body) != "response body too large" {
+		t.Errorf("Body = %q, want %q", string(result.Body), "response body too large")
+	}
+}
+
 func TestResolveProxyResponse_ErrorIgnoresResponse(t *testing.T) {
 	resp := &ProxyResponse{
 		StatusCode: http.StatusOK,

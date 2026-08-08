@@ -7,6 +7,7 @@ import (
 )
 
 func RunMessageLoop(conn *websocket.Conn, dispatcher *MessageDispatcher, hb Heartbeat, onReadErr func(error), onDispatchErr func(*Message, error)) {
+	conn.SetReadLimit(MaxWebSocketMessageSize)
 	if err := conn.SetReadDeadline(time.Now().Add(hb.PongWait)); err != nil {
 		onReadErr(err)
 		return
