@@ -185,12 +185,17 @@ func TestRunMessageLoop_EnforcesReadLimit(t *testing.T) {
 		)
 	}()
 
-	// A body past MaxWebSocketMessageSize (base64 inflates it further) must trip
-	// the read limit and terminate the loop rather than being buffered.
-	oversized := Message{Type: MessageTypeHTTPResponse, UUID: "big", Body: make([]byte, MaxWebSocketMessageSize+1)}
-	if err := pair.server.WriteJSON(oversized); err != nil {
-		t.Fatalf("server WriteJSON: %v", err)
-	}
+	// Body base64-encodes to ~4/3 its size, so 13 MB yields a frame over the
+	// 16 MB limit. Write it from a goroutine: the reader stops draining once the
+	// limit trips, so the write blocks on flow control until cleanup() closes
+	// the connection — waiting on it inline would deadlock the test.
+	go func() {
+		pair.server.WriteJSON(Message{
+			Type: MessageTypeHTTPResponse,
+			UUID: "big",
+			Body: make([]byte, 13<<20),
+		})
+	}()
 
 	waitFor(t, done, "loop exit on read limit")
 	if readErr == nil {
