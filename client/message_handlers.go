@@ -14,11 +14,16 @@ func (c *Client) handleDomainRegistered(_ *common.Message) error {
 }
 
 func (c *Client) handleHTTPRequest(msg *common.Message) error {
-	proxyResp, err := c.proxy.Forward(NewProxyRequest(msg))
-	resolved := resolveProxyResponse(proxyResp, err)
+	proxyResp, forwardErr := c.proxy.Forward(NewProxyRequest(msg))
+	resolved := resolveProxyResponse(proxyResp, forwardErr)
 
 	if err := c.sendResponse(msg, resolved); err != nil {
 		return fmt.Errorf("failed to send response for %s: %w", msg.UUID, err)
+	}
+
+	errText := ""
+	if forwardErr != nil {
+		errText = forwardErr.Error()
 	}
 
 	c.history.Add(RequestLog{
@@ -31,6 +36,7 @@ func (c *Client) handleHTTPRequest(msg *common.Message) error {
 		RequestBody:     msg.Body,
 		ResponseHeaders: resolved.Headers,
 		ResponseBody:    resolved.Body,
+		Error:           errText,
 	})
 
 	c.RefreshTerminalOutput()

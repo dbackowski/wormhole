@@ -26,6 +26,7 @@ type RequestLog struct {
 	RequestBody     []byte
 	ResponseHeaders map[string][]string
 	ResponseBody    []byte
+	Error           string // reason the local forward failed, empty on success
 }
 
 type Client struct {

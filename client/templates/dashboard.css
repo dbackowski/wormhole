@@ -161,3 +161,18 @@ tbody tr.selected { background: #e7f3ff; }
 .details-section .no-content { color: var(--color-text-light); font-style: italic; }
 
 .body-section { grid-column: 1 / -1; }
+
+.error-section { grid-column: 1 / -1; }
+.error-section h4 { color: var(--color-server-error); }
+.error-section .error-reason {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--color-server-error);
+    background: var(--color-bg-secondary);
+    padding: 12px;
+    border-radius: 4px;
+    border-left: 3px solid var(--color-server-error);
+}

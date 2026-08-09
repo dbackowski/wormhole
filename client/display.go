@@ -124,9 +124,13 @@ func (td *TerminalDisplay) ShowRequestHistory(logs []RequestLog) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s── last %d requests ──%s\n\n", ansiDim, td.maxLogs, ansiReset)
 	for _, rl := range logs {
-		fmt.Fprintf(&b, "  %s%s%s  %-7s %-30s %s\n",
+		fmt.Fprintf(&b, "  %s%s%s  %-7s %-30s %s",
 			ansiDim, FormatTime(rl.Timestamp), ansiReset,
 			rl.Method, rl.URL, colorStatus(rl.StatusCode))
+		if rl.Error != "" {
+			fmt.Fprintf(&b, "  %s%s%s", ansiRed, rl.Error, ansiReset)
+		}
+		fmt.Fprintln(&b)
 	}
 	fmt.Print(b.String())
 }

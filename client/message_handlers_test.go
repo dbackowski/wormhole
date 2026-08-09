@@ -181,6 +181,9 @@ func TestHandleHTTPRequest(t *testing.T) {
 	if log.StatusCode != http.StatusOK {
 		t.Errorf("log StatusCode = %d, want %d", log.StatusCode, http.StatusOK)
 	}
+	if log.Error != "" {
+		t.Errorf("log Error = %q, want empty on success", log.Error)
+	}
 
 	if !display.ConnectionInfoCalled() {
 		t.Error("expected ShowConnectionInfo to be called")
@@ -229,6 +232,9 @@ func TestHandleHTTPRequestProxyError(t *testing.T) {
 	}
 	if logs[0].StatusCode != http.StatusBadGateway {
 		t.Errorf("log StatusCode = %d, want %d", logs[0].StatusCode, http.StatusBadGateway)
+	}
+	if logs[0].Error == "" {
+		t.Error("expected log Error to capture the forward failure reason, got empty")
 	}
 }
 

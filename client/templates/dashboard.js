@@ -56,6 +56,15 @@ function showDetails(id) {
     });
 
     document.getElementById('detailsTitle').textContent = req.Method + ' ' + req.URL;
+
+    const errorSection = document.getElementById('errorSection');
+    if (req.Error) {
+        document.getElementById('errorReason').textContent = req.Error;
+        errorSection.style.display = '';
+    } else {
+        errorSection.style.display = 'none';
+    }
+
     document.getElementById('requestHeaders').innerHTML = formatHeaders(req.RequestHeaders);
     document.getElementById('responseHeaders').innerHTML = formatHeaders(req.ResponseHeaders);
     document.getElementById('requestBody').innerHTML = formatBody(req.RequestBody);
