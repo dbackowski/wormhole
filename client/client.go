@@ -84,7 +84,6 @@ func NewClient(cfg *Config) (*Client, error) {
 		domain:     cfg.Domain,
 		tunnelURL:  tunnelURL,
 		Conn:       conn,
-		requestSem: make(chan struct{}, MaxConcurrentRequests),
 		proxy:      NewLocalProxy(localURL, tunnelURL, common.RequestTimeout),
 		history:    NewRequestHistory(common.ClientRequestHistorySize),
 		display:    NewTerminalDisplay(common.ClientTerminalMaxLogs),
