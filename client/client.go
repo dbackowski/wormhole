@@ -111,8 +111,6 @@ func (c *Client) HandleConnection() {
 }
 
 func (c *Client) Shutdown() error {
-	c.Logger.Info("Shutting down client")
-
 	if err := c.safeCloseWebsocket(); err != nil {
 		c.Logger.Error("Failed to send close frame", "error", err)
 	}
