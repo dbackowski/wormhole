@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"net"
@@ -177,6 +178,96 @@ func TestStart_PortAlreadyInUse(t *testing.T) {
 
 	if err := s.Start(); err == nil {
 		t.Error("expected error when port is already in use, got nil")
+	}
+}
+
+type deadlineRecorder struct {
+	*httptest.ResponseRecorder
+	read  time.Time
+	write time.Time
+}
+
+func (d *deadlineRecorder) SetReadDeadline(deadline time.Time) error {
+	d.read = deadline
+	return nil
+}
+
+func (d *deadlineRecorder) SetWriteDeadline(deadline time.Time) error {
+	d.write = deadline
+	return nil
+}
+
+func TestSetRequestDeadlines(t *testing.T) {
+	s := newTestServer(t)
+	w := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+
+	before := time.Now()
+	s.setRequestDeadlines(w)
+	after := time.Now()
+
+	if w.read.Before(before.Add(s.bodyReadTimeout)) || w.read.After(after.Add(s.bodyReadTimeout)) {
+		t.Errorf("read deadline = %v, want %v from now", w.read, s.bodyReadTimeout)
+	}
+	if w.write.Before(before.Add(s.writeTimeout)) || w.write.After(after.Add(s.writeTimeout)) {
+		t.Errorf("write deadline = %v, want %v from now", w.write, s.writeTimeout)
+	}
+}
+
+// A ResponseWriter without deadline support must not fail the request.
+func TestSetRequestDeadlines_UnsupportedResponseWriter(t *testing.T) {
+	s := newTestServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/health", nil)
+	r.Host = "localhost"
+
+	s.routeRequest(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+// A body trickled in below MaxRequestBodySize must not hold the handler open
+// indefinitely: the read deadline cuts it short.
+func TestTunnelRequest_SlowBodyIsCutOff(t *testing.T) {
+	s := newTestServer(t)
+	s.bodyReadTimeout = 100 * time.Millisecond
+
+	_, acceptor, cleanupWS := newWSPair(t)
+	defer cleanupWS()
+	if _, err := s.connManager.AddConnection("foo", acceptor); err != nil {
+		t.Fatalf("AddConnection() error = %v", err)
+	}
+	s.connManager.ActivateConnection("foo")
+
+	srv := httptest.NewServer(s.mux)
+	defer srv.Close()
+
+	// Spoken over a raw socket rather than through http.Client: a client that
+	// stalls mid-body leaves the transport waiting on its own body writer, which
+	// would hang this test instead of failing it if the deadline ever regressed.
+	conn, err := net.DialTimeout("tcp", srv.Listener.Addr().String(), 2*time.Second)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	// Promise a body, then never send it.
+	if _, err := fmt.Fprint(conn, "POST / HTTP/1.1\r\nHost: foo.localhost\r\nContent-Length: 1024\r\n\r\n"); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("SetReadDeadline() error = %v", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatalf("handler held the connection open past the %v read deadline: %v", s.bodyReadTimeout, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
 	}
 }
 

@@ -24,6 +24,8 @@ const (
 	ClientShutdownTimeout    = 5 * time.Second
 	ServerReadHeaderTimeout  = 10 * time.Second
 	ServerIdleTimeout        = 120 * time.Second
+	ServerBodyReadTimeout    = 30 * time.Second
+	ServerWriteTimeout       = 60 * time.Second
 	MaxRequestBodySize       = 10 << 20 // 10 MB
 	MaxWebSocketMessageSize  = 16 << 20 // 16 MB
 	PongWait                 = 60 * time.Second

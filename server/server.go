@@ -3,23 +3,27 @@ package server
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dbackowski/wormhole/common"
 )
 
 type Server struct {
-	connManager   *ConnectionManager
-	Logger        *common.Logger
-	requestLogger *common.RequestLogger
-	httpServer    *http.Server
-	mux           *http.ServeMux
-	authToken     string
-	host          string
-	heartbeat     common.Heartbeat
+	connManager     *ConnectionManager
+	Logger          *common.Logger
+	requestLogger   *common.RequestLogger
+	httpServer      *http.Server
+	mux             *http.ServeMux
+	authToken       string
+	host            string
+	heartbeat       common.Heartbeat
+	bodyReadTimeout time.Duration
+	writeTimeout    time.Duration
 }
 
 func NewServer(cfg *Config) (*Server, error) {
@@ -35,13 +39,15 @@ func NewServer(cfg *Config) (*Server, error) {
 	logger := common.NewLogger(logLvl, "text")
 
 	server := Server{
-		connManager:   NewConnectionManager(),
-		mux:           http.NewServeMux(),
-		Logger:        logger,
-		requestLogger: common.NewRequestLogger(logger),
-		authToken:     cfg.AuthToken,
-		host:          cfg.Host,
-		heartbeat:     common.DefaultHeartbeat(),
+		connManager:     NewConnectionManager(),
+		mux:             http.NewServeMux(),
+		Logger:          logger,
+		requestLogger:   common.NewRequestLogger(logger),
+		authToken:       cfg.AuthToken,
+		host:            cfg.Host,
+		heartbeat:       common.DefaultHeartbeat(),
+		bodyReadTimeout: common.ServerBodyReadTimeout,
+		writeTimeout:    common.ServerWriteTimeout,
 	}
 
 	server.setupRoutes()
@@ -61,7 +67,21 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/", s.routeRequest)
 }
 
+func (s *Server) setRequestDeadlines(w http.ResponseWriter) {
+	rc := http.NewResponseController(w)
+	now := time.Now()
+
+	if err := rc.SetReadDeadline(now.Add(s.bodyReadTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		s.Logger.Debug("failed to set read deadline", "error", err)
+	}
+	if err := rc.SetWriteDeadline(now.Add(s.writeTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		s.Logger.Debug("failed to set write deadline", "error", err)
+	}
+}
+
 func (s *Server) routeRequest(w http.ResponseWriter, r *http.Request) {
+	s.setRequestDeadlines(w)
+
 	if s.isBareHost(r.Host) {
 		switch r.URL.Path {
 		case "/health":
