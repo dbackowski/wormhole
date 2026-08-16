@@ -29,6 +29,20 @@ body {
 h1 { font-weight: 500; font-size: 24px; margin: 0 0 30px 0; }
 h2 { font-weight: 500; font-size: 16px; color: var(--color-text-muted); margin: 30px 0 15px 0; }
 
+.requests-header { display: flex; align-items: center; justify-content: space-between; }
+
+.clear-button {
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--color-text-muted);
+}
+
+.clear-button:hover { color: var(--color-text); background: var(--color-bg-secondary); }
+
 .tunnel-url {
     background: var(--color-bg-secondary);
     padding: 16px 20px;

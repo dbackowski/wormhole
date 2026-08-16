@@ -151,6 +151,31 @@ func TestHandleRequests(t *testing.T) {
 	}
 }
 
+func TestHandleRequestsDelete(t *testing.T) {
+	history := NewRequestHistory(100)
+	history.Add(RequestLog{UUID: "abc-123", Method: "GET", URL: "/hello", StatusCode: 200})
+
+	ui := &WebUI{
+		client: &Client{
+			history: history,
+			display: &mockDisplay{},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/requests", nil)
+	w := httptest.NewRecorder()
+
+	ui.handleRequests(w, req)
+
+	if w.Result().StatusCode != http.StatusNoContent {
+		t.Errorf("status = %d, want %d", w.Result().StatusCode, http.StatusNoContent)
+	}
+
+	if logs := history.GetRecent(100); len(logs) != 0 {
+		t.Errorf("got %d logs after DELETE, want 0", len(logs))
+	}
+}
+
 func TestHandleRequestsEmpty(t *testing.T) {
 	history := NewRequestHistory(100)
 

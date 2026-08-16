@@ -78,6 +78,16 @@ function closeDetails() {
     document.getElementById('detailsPanel').classList.remove('visible');
 }
 
+async function clearRequests() {
+    try {
+        await fetch('/api/requests', { method: 'DELETE' });
+        closeDetails();
+        refresh();
+    } catch (err) {
+        console.error('Failed to clear:', err);
+    }
+}
+
 function renderRequestRow(req) {
     const statusClass = getStatusClass(req.StatusCode);
     const time = new Date(req.Timestamp).toLocaleTimeString();

@@ -95,6 +95,11 @@ func (ui *WebUI) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ui *WebUI) handleRequests(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodDelete {
+		ui.client.ClearHistory()
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	writeJSON(w, ui.client.history.GetRecent(common.ClientRequestHistorySize))
 }
 

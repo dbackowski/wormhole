@@ -120,6 +120,7 @@ When the client is running, a dashboard is available at `http://localhost:4040` 
 - See the active tunnel URL
 - View recent requests with method, path, status code, and timestamp
 - Inspect request/response headers and bodies
+- Clear the request history with the **Clear** button (also clears the terminal view)
 
 ![Dashboard with request list](https://i.imgur.com/dKNxqI4.png)
 

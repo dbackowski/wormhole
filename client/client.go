@@ -167,6 +167,11 @@ func (c *Client) sendResponse(msg *common.Message, resolved ProxyResponse) error
 	return nil
 }
 
+func (c *Client) ClearHistory() {
+	c.history.Clear()
+	c.RefreshTerminalOutput()
+}
+
 func (c *Client) RefreshTerminalOutput() {
 	c.displayMu.Lock()
 	defer c.displayMu.Unlock()

@@ -25,6 +25,13 @@ func (rh *RequestHistory) Add(log RequestLog) {
 	}
 }
 
+func (rh *RequestHistory) Clear() {
+	rh.mutex.Lock()
+	defer rh.mutex.Unlock()
+
+	rh.logs = rh.logs[:0]
+}
+
 func (rh *RequestHistory) GetRecent(n int) []RequestLog {
 	rh.mutex.RLock()
 	defer rh.mutex.RUnlock()

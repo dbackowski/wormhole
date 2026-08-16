@@ -57,6 +57,25 @@ func TestAddEvictsOldEntries(t *testing.T) {
 	}
 }
 
+func TestClear(t *testing.T) {
+	rh := NewRequestHistory(5)
+
+	rh.Add(makeLog(1))
+	rh.Add(makeLog(2))
+	rh.Clear()
+
+	if len(rh.logs) != 0 {
+		t.Fatalf("expected 0 logs after Clear, got %d", len(rh.logs))
+	}
+
+	rh.Add(makeLog(3))
+
+	recent := rh.GetRecent(5)
+	if len(recent) != 1 || recent[0].UUID != "uuid-3" {
+		t.Errorf("after Clear then Add, got %+v, want only uuid-3", recent)
+	}
+}
+
 func TestGetRecent(t *testing.T) {
 	rh := NewRequestHistory(10)
 

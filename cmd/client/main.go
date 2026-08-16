@@ -50,7 +50,7 @@ func main() {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
 	quitCh := make(chan struct{})
-	go client.WaitForQuit(quitCh)
+	go client.WaitForInput(quitCh, c.ClearHistory)
 
 	go func() {
 		if err := webUI.Start(); err != nil && err != http.ErrServerClosed {

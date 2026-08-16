@@ -61,16 +61,19 @@ func ExitAltScreen() {
 	fmt.Print(showCursor + altScreenOff)
 }
 
-func WaitForQuit(quit chan<- struct{}) {
+func WaitForInput(quit chan<- struct{}, onClear func()) {
 	buf := make([]byte, 1)
 	for {
 		_, err := os.Stdin.Read(buf)
 		if err != nil {
 			return
 		}
-		if buf[0] == 'q' || buf[0] == 'Q' {
+		switch buf[0] {
+		case 'q', 'Q':
 			close(quit)
 			return
+		case 'c', 'C':
+			onClear()
 		}
 	}
 }
@@ -116,7 +119,7 @@ func (td *TerminalDisplay) ShowConnectionInfo(tunnelURL string, webUIPort int) {
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "  Tunnel:  %s\n", tunnelURL)
 	fmt.Fprintf(&b, "  Web UI:  http://localhost:%d\n", webUIPort)
-	fmt.Fprintf(&b, "\n  %sPress q to quit%s\n\n", ansiDim, ansiReset)
+	fmt.Fprintf(&b, "\n  %sPress q to quit, c to clear%s\n\n", ansiDim, ansiReset)
 	fmt.Print(b.String())
 }
 
