@@ -5,48 +5,49 @@
     <style>{{CSS}}</style>
 </head>
 <body>
-    <div class="container">
+    <header class="app-header">
         <h1>Wormhole</h1>
-        <div class="tunnel-url">
-            <a id="tunnelUrl" href="#" target="_blank"></a>
-        </div>
-        <div class="requests-header">
-            <h2>Requests</h2>
-            <button class="clear-button" onclick="clearRequests()">Clear</button>
-        </div>
-        <table>
-            <thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th></tr></thead>
-            <tbody id="requests"></tbody>
-        </table>
-        <div id="detailsPanel" class="details-panel">
-            <div class="details-header">
-                <h3 id="detailsTitle">Request Details</h3>
-                <button class="details-close" onclick="closeDetails()">&times;</button>
+        <a id="tunnelUrl" class="tunnel-url" href="#" target="_blank"></a>
+        <button class="clear-button" onclick="clearRequests()">Clear</button>
+    </header>
+    <main class="app-main">
+        <aside class="sidebar">
+            <input id="filter" class="filter-input" type="search" placeholder="Filter requests&hellip;"
+                   autocomplete="off" oninput="renderList()">
+            <ul id="requests" class="request-list"></ul>
+        </aside>
+        <section id="details" class="details">
+            <div id="detailsEmpty" class="details-empty">Select a request</div>
+            <div id="detailsPanel" class="details-panel">
+                <div class="details-header">
+                    <h3 id="detailsTitle">Request Details</h3>
+                    <button class="details-close" onclick="closeDetails()">&times;</button>
+                </div>
+                <div class="details-content">
+                    <div id="errorSection" class="details-section error-section">
+                        <h4>Error</h4>
+                        <pre id="errorReason" class="error-reason"></pre>
+                    </div>
+                    <div class="details-section">
+                        <h4>Request Headers</h4>
+                        <div id="requestHeaders" class="headers"></div>
+                    </div>
+                    <div class="details-section">
+                        <h4>Response Headers</h4>
+                        <div id="responseHeaders" class="headers"></div>
+                    </div>
+                    <div class="details-section">
+                        <h4>Request Body</h4>
+                        <pre id="requestBody"></pre>
+                    </div>
+                    <div class="details-section">
+                        <h4>Response Body</h4>
+                        <pre id="responseBody"></pre>
+                    </div>
+                </div>
             </div>
-            <div class="details-content">
-                <div id="errorSection" class="details-section error-section">
-                    <h4>Error</h4>
-                    <pre id="errorReason" class="error-reason"></pre>
-                </div>
-                <div class="details-section">
-                    <h4>Request Headers</h4>
-                    <div id="requestHeaders" class="headers"></div>
-                </div>
-                <div class="details-section">
-                    <h4>Response Headers</h4>
-                    <div id="responseHeaders" class="headers"></div>
-                </div>
-                <div class="details-section body-section">
-                    <h4>Request Body</h4>
-                    <pre id="requestBody"></pre>
-                </div>
-                <div class="details-section body-section">
-                    <h4>Response Body</h4>
-                    <pre id="responseBody"></pre>
-                </div>
-            </div>
-        </div>
-    </div>
+        </section>
+    </main>
     <script>{{JS}}</script>
 </body>
 </html>

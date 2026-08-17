@@ -7,6 +7,8 @@ const STATUS_BOUNDARIES = {
 
 let requestsData = [];
 let selectedId = null;
+let lastRequestsPayload = '';
+let lastDetailsPayload = '';
 
 function getStatusClass(statusCode) {
     if (statusCode < STATUS_BOUNDARIES.SUCCESS) return 'status-2xx';
@@ -46,36 +48,87 @@ function formatBody(body) {
     }
 }
 
-function showDetails(id) {
-    const req = requestsData.find(r => r.UUID === id);
-    if (!req) return;
+function matchesFilter(req, query) {
+    return (req.Method + ' ' + req.URL + ' ' + req.StatusCode).toLowerCase().includes(query);
+}
 
+function renderList() {
+    const query = document.getElementById('filter').value.trim().toLowerCase();
+    const matches = requestsData.filter(req => !query || matchesFilter(req, query)).reverse();
+    const list = document.getElementById('requests');
+
+    if (matches.length === 0) {
+        const message = requestsData.length === 0 ? 'No requests yet' : 'No matching requests';
+        list.innerHTML = '<li class="empty">' + message + '</li>';
+        return;
+    }
+
+    list.innerHTML = matches.map(renderRequestItem).join('');
+}
+
+function renderRequestItem(req) {
+    const time = new Date(req.Timestamp).toLocaleTimeString();
+    const selected = req.UUID === selectedId ? ' selected' : '';
+    const errorDot = req.Error ? '<span class="error-dot" title="Forwarding failed">&bull;</span>' : '';
+
+    return '<li class="request-item' + selected + '" data-id="' + req.UUID + '"' +
+        ' title="' + escapeHtml(req.URL) + '" onclick="selectRequest(\'' + req.UUID + '\')">' +
+        '<div class="request-path">' + escapeHtml(req.URL) + '</div>' +
+        '<div class="request-meta">' +
+        '<span class="status ' + getStatusClass(req.StatusCode) + '">' + req.StatusCode + '</span>' +
+        '<span class="method">' + escapeHtml(req.Method) + '</span>' +
+        errorDot +
+        '<span class="time">' + time + '</span>' +
+        '</div>' +
+        '</li>';
+}
+
+function selectRequest(id) {
     selectedId = id;
-    document.querySelectorAll('tbody tr').forEach(tr => {
-        tr.classList.toggle('selected', tr.dataset.id === id);
+    document.querySelectorAll('.request-item').forEach(item => {
+        item.classList.toggle('selected', item.dataset.id === id);
     });
+    renderDetails();
+}
+
+// Re-renders only when the selected request actually changed, so polling does not
+// wipe text selection or reset scroll inside the details pane.
+function renderDetails() {
+    const req = requestsData.find(r => r.UUID === selectedId);
+    if (!req) {
+        closeDetails();
+        return;
+    }
+
+    const payload = JSON.stringify(req);
+    if (payload === lastDetailsPayload) return;
+    lastDetailsPayload = payload;
 
     document.getElementById('detailsTitle').textContent = req.Method + ' ' + req.URL;
 
     const errorSection = document.getElementById('errorSection');
     if (req.Error) {
         document.getElementById('errorReason').textContent = req.Error;
-        errorSection.style.display = '';
+        errorSection.classList.remove('hidden');
     } else {
-        errorSection.style.display = 'none';
+        errorSection.classList.add('hidden');
     }
 
     document.getElementById('requestHeaders').innerHTML = formatHeaders(req.RequestHeaders);
     document.getElementById('responseHeaders').innerHTML = formatHeaders(req.ResponseHeaders);
     document.getElementById('requestBody').innerHTML = formatBody(req.RequestBody);
     document.getElementById('responseBody').innerHTML = formatBody(req.ResponseBody);
+
     document.getElementById('detailsPanel').classList.add('visible');
+    document.getElementById('detailsEmpty').classList.add('hidden');
 }
 
 function closeDetails() {
     selectedId = null;
-    document.querySelectorAll('tbody tr').forEach(tr => tr.classList.remove('selected'));
+    lastDetailsPayload = '';
+    document.querySelectorAll('.request-item').forEach(item => item.classList.remove('selected'));
     document.getElementById('detailsPanel').classList.remove('visible');
+    document.getElementById('detailsEmpty').classList.remove('hidden');
 }
 
 async function clearRequests() {
@@ -88,44 +141,19 @@ async function clearRequests() {
     }
 }
 
-function renderRequestRow(req) {
-    const statusClass = getStatusClass(req.StatusCode);
-    const time = new Date(req.Timestamp).toLocaleTimeString();
-    const selected = req.UUID === selectedId ? ' selected' : '';
-
-    return '<tr data-id="' + req.UUID + '" class="' + selected + '" onclick="showDetails(\'' + req.UUID + '\')">' +
-        '<td class="time">' + time + '</td>' +
-        '<td class="method">' + req.Method + '</td>' +
-        '<td class="url">' + escapeHtml(req.URL) + '</td>' +
-        '<td class="status ' + statusClass + '">' + req.StatusCode + '</td>' +
-        '</tr>';
-}
-
 async function refresh() {
     try {
         const status = await fetch('/api/status').then(r => r.json());
         document.getElementById('tunnelUrl').href = status.tunnelURL;
         document.getElementById('tunnelUrl').textContent = status.tunnelURL;
 
-        const requests = await fetch('/api/requests').then(r => r.json());
-        requestsData = requests || [];
-        const tbody = document.getElementById('requests');
+        const payload = await fetch('/api/requests').then(r => r.text());
+        if (payload === lastRequestsPayload) return;
+        lastRequestsPayload = payload;
 
-        if (!requests || requests.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="empty">No requests yet</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = requests.slice().reverse().map(renderRequestRow).join('');
-
-        if (selectedId) {
-            const stillExists = requestsData.find(r => r.UUID === selectedId);
-            if (stillExists) {
-                showDetails(selectedId);
-            } else {
-                closeDetails();
-            }
-        }
+        requestsData = JSON.parse(payload) || [];
+        renderList();
+        renderDetails();
     } catch (err) {
         console.error('Failed to refresh:', err);
     }
