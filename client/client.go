@@ -42,7 +42,17 @@ type Client struct {
 	Logger     *common.Logger
 	dispatcher *common.MessageDispatcher
 	WebUIPort  int
+
+	wsURL       string
+	dialHeaders http.Header
+	status      string // guarded by displayMu
 }
+
+const (
+	reconnectInitialDelay = 500 * time.Millisecond
+	reconnectMaxDelay     = 30 * time.Second
+	reconnectMaxElapsed   = 5 * time.Minute
+)
 
 func NewClient(cfg *Config) (*Client, error) {
 	localURL, err := validateClientConfig(cfg.Domain, cfg.Local, cfg.WebUIPort)
@@ -63,7 +73,36 @@ func NewClient(cfg *Config) (*Client, error) {
 		dialHeaders.Set("Authorization", "Bearer "+cfg.AuthToken)
 	}
 
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, dialHeaders)
+	conn, err := dialAndRegister(wsURL, dialHeaders)
+	if err != nil {
+		return nil, err
+	}
+
+	logger := common.NewLogger(common.LevelError, "text")
+
+	tunnelURL := common.BuildSubdomainURL(serverConfig.HTTPScheme, cfg.Domain, serverConfig.Host, "")
+
+	client := &Client{
+		domain:    cfg.Domain,
+		tunnelURL: tunnelURL,
+		Conn:      conn,
+		proxy:     NewLocalProxy(localURL, tunnelURL, common.RequestTimeout),
+		history:   NewRequestHistory(common.ClientRequestHistorySize),
+		display:   NewTerminalDisplay(common.ClientTerminalMaxLogs),
+		Logger:    logger,
+		WebUIPort: cfg.WebUIPort,
+
+		wsURL:       wsURL,
+		dialHeaders: dialHeaders,
+	}
+
+	client.setupMessageHandlers()
+
+	return client, nil
+}
+
+func dialAndRegister(wsURL string, headers http.Header) (*websocket.Conn, error) {
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, headers)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 			return nil, fmt.Errorf("authentication failed: invalid or missing auth token")
@@ -76,24 +115,49 @@ func NewClient(cfg *Config) (*Client, error) {
 		return nil, err
 	}
 
-	logger := common.NewLogger(common.LevelError, "text")
+	return conn, nil
+}
 
-	tunnelURL := common.BuildSubdomainURL(serverConfig.HTTPScheme, cfg.Domain, serverConfig.Host, "")
-
-	client := &Client{
-		domain:     cfg.Domain,
-		tunnelURL:  tunnelURL,
-		Conn:       conn,
-		proxy:      NewLocalProxy(localURL, tunnelURL, common.RequestTimeout),
-		history:    NewRequestHistory(common.ClientRequestHistorySize),
-		display:    NewTerminalDisplay(common.ClientTerminalMaxLogs),
-		Logger:     logger,
-		WebUIPort:  cfg.WebUIPort,
+func (c *Client) Reconnect() error {
+	conn, err := dialAndRegister(c.wsURL, c.dialHeaders)
+	if err != nil {
+		return err
 	}
 
-	client.setupMessageHandlers()
+	c.writeMu.Lock()
+	old := c.Conn
+	c.Conn = conn
+	c.writeMu.Unlock()
 
-	return client, nil
+	old.Close()
+
+	return nil
+}
+
+func (c *Client) ReconnectWithBackoff(cancel <-chan struct{}) bool {
+	deadline := time.Now().Add(reconnectMaxElapsed)
+	delay := reconnectInitialDelay
+
+	for attempt := 1; ; attempt++ {
+		c.setStatus(fmt.Sprintf("reconnecting... (attempt %d)", attempt))
+
+		select {
+		case <-cancel:
+			return false
+		case <-time.After(delay):
+		}
+
+		if err := c.Reconnect(); err == nil {
+			c.setStatus("")
+			return true
+		}
+
+		if time.Now().After(deadline) {
+			return false
+		}
+
+		delay = min(delay*2, reconnectMaxDelay)
+	}
 }
 
 func (c *Client) HandleConnection() {
@@ -172,12 +236,23 @@ func (c *Client) ClearHistory() {
 	c.RefreshTerminalOutput()
 }
 
+func (c *Client) setStatus(status string) {
+	c.displayMu.Lock()
+	c.status = status
+	c.displayMu.Unlock()
+
+	c.RefreshTerminalOutput()
+}
+
 func (c *Client) RefreshTerminalOutput() {
 	c.displayMu.Lock()
 	defer c.displayMu.Unlock()
 	ClearTerminal()
 	recentLogs := c.history.GetRecent(common.ClientTerminalMaxLogs)
 	c.display.ShowConnectionInfo(c.tunnelURL, c.WebUIPort)
+	if c.status != "" {
+		fmt.Printf("  %s%s%s\n\n", ansiYellow, c.status, ansiReset)
+	}
 	c.display.ShowRequestHistory(recentLogs)
 }
 

@@ -60,8 +60,13 @@ func main() {
 
 	disconnectedCh := make(chan struct{})
 	go func() {
-		c.HandleConnection()
-		close(disconnectedCh)
+		defer close(disconnectedCh)
+		for {
+			c.HandleConnection()
+			if !c.ReconnectWithBackoff(quitCh) {
+				return
+			}
+		}
 	}()
 
 	select {

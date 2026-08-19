@@ -448,9 +448,9 @@ func TestHandleConnection_ReturnsOnClose(t *testing.T) {
 
 func TestHandleConnection_RequestsRunConcurrently(t *testing.T) {
 	const (
-		numRequests   = 5
-		handlerDelay  = 100 * time.Millisecond
-		readDeadline  = 3 * time.Second
+		numRequests  = 5
+		handlerDelay = 100 * time.Millisecond
+		readDeadline = 3 * time.Second
 	)
 
 	var inFlight, maxInFlight int32
@@ -583,5 +583,87 @@ func TestHandleConnection_DispatchesMessages(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("HandleConnection did not return after connection closed")
+	}
+}
+
+// reconnectTestServer accepts websocket connections, confirms registration on
+// each one, and reports how many times it has been dialed.
+func reconnectTestServer(t *testing.T) (*httptest.Server, string, *int32) {
+	t.Helper()
+
+	var dials int32
+	upgrader := websocket.Upgrader{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		atomic.AddInt32(&dials, 1)
+		if err := conn.WriteJSON(common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
+			return
+		}
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	return server, "ws" + server.URL[len("http"):], &dials
+}
+
+func TestReconnectWithBackoff_RestoresDroppedConnection(t *testing.T) {
+	server, wsURL, dials := reconnectTestServer(t)
+
+	conn, err := dialAndRegister(wsURL, nil)
+	if err != nil {
+		t.Fatalf("initial dial: %v", err)
+	}
+
+	c := &Client{
+		tunnelURL: "https://test.example.com",
+		Conn:      conn,
+		history:   NewRequestHistory(10),
+		display:   &mockDisplay{},
+		wsURL:     wsURL,
+	}
+
+	// Simulate the tunnel dropping out from under the client.
+	conn.Close()
+
+	if !c.ReconnectWithBackoff(nil) {
+		t.Fatal("ReconnectWithBackoff() = false, want true")
+	}
+	if c.Conn == conn {
+		t.Error("Conn was not swapped for the new connection")
+	}
+	if got := atomic.LoadInt32(dials); got != 2 {
+		t.Errorf("server saw %d dials, want 2", got)
+	}
+	if c.status != "" {
+		t.Errorf("status = %q, want empty after a successful reconnect", c.status)
+	}
+
+	c.Conn.Close()
+	server.Close()
+}
+
+func TestReconnectWithBackoff_GivesUpWhenCancelled(t *testing.T) {
+	_, wsURL, _ := reconnectTestServer(t)
+
+	c := &Client{
+		tunnelURL: "https://test.example.com",
+		history:   NewRequestHistory(10),
+		display:   &mockDisplay{},
+		wsURL:     wsURL,
+	}
+
+	cancel := make(chan struct{})
+	close(cancel)
+
+	if c.ReconnectWithBackoff(cancel) {
+		t.Error("ReconnectWithBackoff() = true, want false when cancelled")
 	}
 }
