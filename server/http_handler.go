@@ -13,6 +13,11 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	minValidHTTPStatus = 100
+	maxValidHTTPStatus = 999
+)
+
 var errWebSocketUpgradeUnsupported = errors.New("WebSocket upgrade not supported")
 
 func (s *Server) tunnelRequest(w http.ResponseWriter, r *http.Request) {
@@ -142,6 +147,12 @@ func (s *Server) registerAndForwardRequest(ctx context.Context, connection *Conn
 }
 
 func (s *Server) writeResponse(w http.ResponseWriter, status int, body []byte) {
+	if status < minValidHTTPStatus || status > maxValidHTTPStatus {
+		s.Logger.Error("client returned invalid HTTP status", "status", status)
+		clear(w.Header())
+		status, body = http.StatusBadGateway, []byte("upstream returned invalid status")
+	}
+
 	w.WriteHeader(status)
 	if _, err := w.Write(body); err != nil {
 		s.Logger.Debug("failed to write response body", "error", err)

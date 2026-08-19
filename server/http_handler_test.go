@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -471,5 +472,50 @@ func TestTunnelRequest_Success(t *testing.T) {
 	}
 	if body := w.Body.String(); body != "proxied response" {
 		t.Errorf("body = %q, want %q", body, "proxied response")
+	}
+}
+
+func TestWriteSuccessResponse_InvalidStatus(t *testing.T) {
+	for _, status := range []int{0, -1, 99, 1000, 99999} {
+		t.Run("status_"+strconv.Itoa(status), func(t *testing.T) {
+			w := httptest.NewRecorder()
+			msg := &common.Message{
+				Type:    common.MessageTypeHTTPResponse,
+				Status:  status,
+				Headers: map[string][]string{"Content-Length": {"5"}, "Content-Encoding": {"gzip"}},
+				Body:    []byte("hello"),
+			}
+
+			newTestServer(t).writeSuccessResponse(w, msg)
+
+			if w.Code != http.StatusBadGateway {
+				t.Errorf("code = %d, want %d", w.Code, http.StatusBadGateway)
+			}
+			if got := w.Header().Get("Content-Encoding"); got != "" {
+				t.Errorf("stale upstream header kept: Content-Encoding = %q", got)
+			}
+			if got := w.Header().Get("Content-Length"); got != "" {
+				t.Errorf("stale upstream header kept: Content-Length = %q", got)
+			}
+			if body := w.Body.String(); body != "upstream returned invalid status" {
+				t.Errorf("body = %q", body)
+			}
+		})
+	}
+}
+
+func TestWriteSuccessResponse_ValidStatusBoundaries(t *testing.T) {
+	for _, status := range []int{100, 200, 404, 599, 999} {
+		w := httptest.NewRecorder()
+		msg := &common.Message{Status: status, Body: []byte("ok")}
+
+		newTestServer(t).writeSuccessResponse(w, msg)
+
+		if w.Code != status {
+			t.Errorf("code = %d, want %d", w.Code, status)
+		}
+		if body := w.Body.String(); body != "ok" {
+			t.Errorf("status %d: body = %q, want %q", status, body, "ok")
+		}
 	}
 }
