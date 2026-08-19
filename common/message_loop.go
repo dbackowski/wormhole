@@ -1,6 +1,8 @@
 package common
 
 import (
+	"errors"
+	"net"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -42,10 +44,23 @@ func pingLoop(conn *websocket.Conn, hb Heartbeat, done <-chan struct{}) {
 		case <-done:
 			return
 		case <-ticker.C:
-			deadline := time.Now().Add(hb.WriteWait)
-			if err := conn.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
+			err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(hb.WriteWait))
+			if err == nil {
+				continue
+			}
+
+			// The connection is already closing gracefully.
+			if errors.Is(err, websocket.ErrCloseSent) {
 				return
 			}
+
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				continue
+			}
+
+			conn.Close()
+			return
 		}
 	}
 }

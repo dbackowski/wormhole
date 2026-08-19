@@ -2,6 +2,7 @@ package common
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -215,9 +216,9 @@ func TestRunMessageLoop_CallsOnDispatchErrAndContinues(t *testing.T) {
 	})
 
 	var (
-		mu            sync.Mutex
-		dispatchErrs  []error
-		dispatchMsgs  []*Message
+		mu           sync.Mutex
+		dispatchErrs []error
+		dispatchMsgs []*Message
 	)
 	dispatchSeen := make(chan struct{}, 2)
 	done := make(chan struct{})
@@ -370,4 +371,77 @@ func TestRunMessageLoop_OnReadErrReceivesUnderlyingError(t *testing.T) {
 	if readErr == nil {
 		t.Fatal("expected onReadErr to be called with a non-nil error")
 	}
+}
+
+func TestPingLoop_ClosesConnectionOnWriteError(t *testing.T) {
+	pair := newWSTestPair(t)
+	defer pair.cleanup()
+
+	// Shut down only the write half, so pings fail with a plain network error
+	// while the socket itself is still open and readable.
+	tcpConn, ok := pair.server.UnderlyingConn().(*net.TCPConn)
+	if !ok {
+		t.Fatalf("underlying conn is %T, want *net.TCPConn", pair.server.UnderlyingConn())
+	}
+	if err := tcpConn.CloseWrite(); err != nil {
+		t.Fatalf("closing write half: %v", err)
+	}
+
+	hb := Heartbeat{PingPeriod: 10 * time.Millisecond, WriteWait: time.Second}
+	done := make(chan struct{})
+	defer close(done)
+
+	returned := make(chan struct{})
+	go func() {
+		pingLoop(pair.server, hb, done)
+		close(returned)
+	}()
+
+	waitFor(t, returned, "pingLoop to give up on a dead connection")
+
+	// Giving up is not enough: the socket has to be closed so the read loop
+	// fails now instead of waiting out PongWait.
+	// Errors here already mean the socket is gone; the deadline is only a guard
+	// against blocking forever if it is not.
+	_ = pair.server.SetReadDeadline(time.Now().Add(2 * time.Second))
+
+	_, _, err := pair.server.ReadMessage()
+	if err == nil {
+		t.Fatal("ReadMessage() succeeded, want a closed-connection error")
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		t.Errorf("ReadMessage() blocked until the deadline (%v), want pingLoop to have closed the connection", err)
+	}
+}
+
+func TestPingLoop_SurvivesWriteTimeout(t *testing.T) {
+	pair := newWSTestPair(t)
+	defer pair.cleanup()
+
+	// A negative WriteWait puts every ping deadline in the past, so WriteControl
+	// reports a timeout without ever touching the socket - the same error a busy
+	// write lock produces.
+	hb := Heartbeat{PingPeriod: 10 * time.Millisecond, WriteWait: -time.Second}
+	done := make(chan struct{})
+
+	returned := make(chan struct{})
+	go func() {
+		pingLoop(pair.client, hb, done)
+		close(returned)
+	}()
+
+	select {
+	case <-returned:
+		t.Fatal("pingLoop returned after a write timeout, want it to keep pinging")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// The connection must still be usable once the write lock frees up.
+	if err := pair.client.WriteMessage(websocket.TextMessage, []byte("still here")); err != nil {
+		t.Fatalf("writing after a ping timeout: %v", err)
+	}
+
+	close(done)
+	waitFor(t, returned, "pingLoop to stop when done is closed")
 }
