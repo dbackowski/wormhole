@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dbackowski/wormhole/common"
 	"github.com/gorilla/websocket"
@@ -311,7 +312,7 @@ func TestHandleResponse_MessageReceived(t *testing.T) {
 	ch := make(chan *common.Message, 1)
 	ch <- &common.Message{Status: http.StatusOK, Body: []byte("ok")}
 
-	s.handleResponse(context.Background(), w, ch)
+	s.handleResponse(context.Background(), w, newConnection(nil), ch)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
@@ -324,7 +325,7 @@ func TestHandleResponse_ChannelClosed(t *testing.T) {
 	ch := make(chan *common.Message)
 	close(ch)
 
-	s.handleResponse(context.Background(), w, ch)
+	s.handleResponse(context.Background(), w, newConnection(nil), ch)
 
 	if w.Code != http.StatusRequestTimeout {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusRequestTimeout)
@@ -338,7 +339,7 @@ func TestHandleResponse_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	s.handleResponse(ctx, w, ch)
+	s.handleResponse(ctx, w, newConnection(nil), ch)
 
 	if w.Code != http.StatusRequestTimeout {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusRequestTimeout)
@@ -351,7 +352,7 @@ func TestHandleResponse_NilMessage(t *testing.T) {
 	ch := make(chan *common.Message, 1)
 	ch <- nil
 
-	s.handleResponse(context.Background(), w, ch)
+	s.handleResponse(context.Background(), w, newConnection(nil), ch)
 
 	if w.Code != http.StatusRequestTimeout {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusRequestTimeout)
@@ -364,7 +365,7 @@ func TestRegisterAndForwardRequest_SendFails(t *testing.T) {
 	ws.Close()
 	cleanup()
 
-	conn := &Connection{conn: ws, requests: NewPendingRequests()}
+	conn := newConnection(ws)
 	msg := &common.Message{UUID: "u1", Type: common.MessageTypeHTTPRequest}
 
 	_, _, err := s.registerAndForwardRequest(context.Background(), conn, msg)
@@ -517,5 +518,97 @@ func TestWriteSuccessResponse_ValidStatusBoundaries(t *testing.T) {
 		if body := w.Body.String(); body != "ok" {
 			t.Errorf("status %d: body = %q, want %q", status, body, "ok")
 		}
+	}
+}
+
+func TestHandleResponse_ConnectionClosed(t *testing.T) {
+	s := newTestServer(t)
+	w := httptest.NewRecorder()
+	conn := newConnection(nil)
+	conn.closeOnce.Do(func() { close(conn.done) })
+
+	done := make(chan time.Duration, 1)
+	start := time.Now()
+	go func() {
+		s.handleResponse(context.Background(), w, conn, make(chan *common.Message))
+		done <- time.Since(start)
+	}()
+
+	select {
+	case d := <-done:
+		if d > time.Second {
+			t.Errorf("took %v, want immediate", d)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("handleResponse blocked after the tunnel closed")
+	}
+
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
+	}
+}
+
+// A response delivered just before the tunnel closes must win over the 502.
+func TestHandleResponse_ClosedConnectionPrefersBufferedResponse(t *testing.T) {
+	s := newTestServer(t)
+	conn := newConnection(nil)
+	conn.closeOnce.Do(func() { close(conn.done) })
+
+	for range 50 {
+		w := httptest.NewRecorder()
+		ch := make(chan *common.Message, 1)
+		ch <- &common.Message{Status: http.StatusOK, Body: []byte("ok")}
+
+		s.handleResponse(context.Background(), w, conn, ch)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d (buffered response lost to close race)", w.Code, http.StatusOK)
+		}
+	}
+}
+
+// End-to-end: a request in flight when the tunnel drops must fail fast with 502
+// instead of parking until RequestTimeoutBuffer expires.
+func TestForwardAndWaitForResponse_ClientDisconnects(t *testing.T) {
+	dialer, acceptor, cleanup := newWSPair(t)
+	defer cleanup()
+
+	s := newTestServer(t)
+	connection, err := s.connManager.AddConnection("foo", dialer)
+	if err != nil {
+		t.Fatalf("AddConnection() error = %v", err)
+	}
+	s.connManager.ActivateConnection("foo")
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Host = "foo.example.com"
+	w := httptest.NewRecorder()
+
+	done := make(chan time.Duration, 1)
+	start := time.Now()
+	go func() {
+		msg := &common.Message{Type: common.MessageTypeHTTPRequest, UUID: "uuid-1", Method: http.MethodGet, URL: "/"}
+		s.forwardAndWaitForResponse(r.Context(), w, connection, msg, "foo")
+		done <- time.Since(start)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// What the disconnect callback in handleWebSocketConnection does.
+	acceptor.Close()
+	s.connManager.RemoveConnection("foo")
+	connection.Close()
+
+	select {
+	case d := <-done:
+		if d > 2*time.Second {
+			t.Errorf("responded after %v, want immediate", d)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("still waiting after 5s (RequestTimeoutBuffer is %v)", common.RequestTimeoutBuffer)
+	}
+
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
 	}
 }

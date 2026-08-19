@@ -133,7 +133,7 @@ func (s *Server) forwardAndWaitForResponse(ctx context.Context, w http.ResponseW
 		return
 	}
 	defer cancelCleanup()
-	s.handleResponse(ctx, w, responseChan)
+	s.handleResponse(ctx, w, connection, responseChan)
 }
 
 func (s *Server) registerAndForwardRequest(ctx context.Context, connection *Connection, requestMsg *common.Message) (chan *common.Message, context.CancelFunc, error) {
@@ -168,7 +168,11 @@ func (s *Server) writeTimeoutResponse(w http.ResponseWriter) {
 	s.writeResponse(w, http.StatusRequestTimeout, []byte("Request timeout"))
 }
 
-func (s *Server) handleResponse(ctx context.Context, w http.ResponseWriter, responseChan chan *common.Message) {
+func (s *Server) writeDisconnectedResponse(w http.ResponseWriter) {
+	s.writeResponse(w, http.StatusBadGateway, []byte("tunnel client disconnected"))
+}
+
+func (s *Server) handleResponse(ctx context.Context, w http.ResponseWriter, connection *Connection, responseChan chan *common.Message) {
 	select {
 	case responseMsg, ok := <-responseChan:
 		if !ok || responseMsg == nil {
@@ -176,6 +180,20 @@ func (s *Server) handleResponse(ctx context.Context, w http.ResponseWriter, resp
 			return
 		}
 		s.writeSuccessResponse(w, responseMsg)
+	case <-connection.Done():
+		// Both cases can be ready at once when a response lands just before the
+		// tunnel closes, and select would pick at random. Prefer the response.
+		select {
+		case responseMsg, ok := <-responseChan:
+			if ok && responseMsg != nil {
+				s.writeSuccessResponse(w, responseMsg)
+				return
+			}
+		default:
+		}
+		// No response can ever arrive now. Answer with the same status a request
+		// that arrived after the disconnect would get.
+		s.writeDisconnectedResponse(w)
 	case <-ctx.Done():
 		s.writeTimeoutResponse(w)
 	}

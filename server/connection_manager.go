@@ -27,18 +27,12 @@ func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) 
 		return nil, fmt.Errorf("domain %s is already taken", domain)
 	}
 
-	connection := &Connection{
-		conn:     conn,
-		requests: NewPendingRequests(),
-	}
+	connection := newConnection(conn)
 	cm.connections[domain] = connection
 
 	return connection, nil
 }
 
-// ActivateConnection marks a reserved connection as ready to serve HTTP
-// requests. Until it is called, GetConnection treats the domain as absent, so
-// the registration confirmation can be delivered before any forwarded request.
 func (cm *ConnectionManager) ActivateConnection(domain string) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()

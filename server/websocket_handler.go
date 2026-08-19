@@ -84,7 +84,7 @@ func disconnectReason(err error) string {
 
 func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, connection *Connection) {
 	conn := connection.conn
-	defer conn.Close()
+	defer connection.Close()
 
 	dispatcher := common.NewMessageDispatcher()
 	dispatcher.Register(common.MessageTypeHTTPResponse, func(msg *common.Message) error {
@@ -96,6 +96,7 @@ func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, con
 		func(err error) {
 			s.requestLogger.LogClientDisconnected(domain, remoteAddr, disconnectReason(err))
 			s.connManager.RemoveConnection(domain)
+			connection.Close()
 		},
 		func(msg *common.Message, err error) {
 			s.Logger.Error("Message dispatch failed", "uuid", msg.UUID, "error", err)

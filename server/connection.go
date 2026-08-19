@@ -10,10 +10,24 @@ import (
 )
 
 type Connection struct {
-	conn     *websocket.Conn
-	requests *PendingRequests
-	mu       sync.Mutex
-	ready    bool // guarded by ConnectionManager.mu
+	conn      *websocket.Conn
+	requests  *PendingRequests
+	mu        sync.Mutex
+	ready     bool // guarded by ConnectionManager.mu
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func newConnection(conn *websocket.Conn) *Connection {
+	return &Connection{
+		conn:     conn,
+		requests: NewPendingRequests(),
+		done:     make(chan struct{}),
+	}
+}
+
+func (c *Connection) Done() <-chan struct{} {
+	return c.done
 }
 
 func (c *Connection) RegisterRequest(ctx context.Context, uuid string) (chan *common.Message, context.CancelFunc) {
@@ -38,5 +52,6 @@ func (c *Connection) DeliverResponse(msg *common.Message) error {
 }
 
 func (c *Connection) Close() error {
+	c.closeOnce.Do(func() { close(c.done) })
 	return c.conn.Close()
 }

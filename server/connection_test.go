@@ -10,10 +10,7 @@ import (
 func newTestConnection(t *testing.T) (*Connection, func()) {
 	t.Helper()
 	ws, cleanup := newTestWSPair(t)
-	return &Connection{
-		conn:     ws,
-		requests: NewPendingRequests(),
-	}, cleanup
+	return newConnection(ws), cleanup
 }
 
 func TestConnection_RegisterRequest(t *testing.T) {
