@@ -359,7 +359,7 @@ func TestHandleResponse_NilMessage(t *testing.T) {
 	}
 }
 
-func TestRegisterAndForwardRequest_SendFails(t *testing.T) {
+func TestForwardAndWaitForResponse_SendFails(t *testing.T) {
 	s := newTestServer(t)
 	ws, cleanup := newTestWSPair(t)
 	ws.Close()
@@ -367,10 +367,15 @@ func TestRegisterAndForwardRequest_SendFails(t *testing.T) {
 
 	conn := newConnection(ws)
 	msg := &common.Message{UUID: "u1", Type: common.MessageTypeHTTPRequest}
+	w := httptest.NewRecorder()
 
-	_, _, err := s.registerAndForwardRequest(context.Background(), conn, msg)
-	if err == nil {
-		t.Error("expected error when send fails, got nil")
+	s.forwardAndWaitForResponse(context.Background(), w, conn, msg, "foo")
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+	if _, exists := conn.requests.pending["u1"]; exists {
+		t.Error("pending request not cleaned up after send failure")
 	}
 }
 

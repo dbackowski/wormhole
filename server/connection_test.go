@@ -25,15 +25,19 @@ func TestConnection_RegisterRequest(t *testing.T) {
 	}
 }
 
-func TestConnection_CleanupRequest(t *testing.T) {
+func TestConnection_RegisterRequest_CancelIsIdempotent(t *testing.T) {
 	conn, cleanup := newTestConnection(t)
 	defer cleanup()
 
-	conn.RegisterRequest(context.Background(), "uuid-1")
-	// should not panic
-	conn.CleanupRequest("uuid-1")
-	// double cleanup should also not panic
-	conn.CleanupRequest("uuid-1")
+	ch, cancel := conn.RegisterRequest(context.Background(), "uuid-1")
+
+	cancel()
+	// A second cancel must not panic on the already-closed channel.
+	cancel()
+
+	if _, ok := <-ch; ok {
+		t.Error("expected response channel to be closed after cancel")
+	}
 }
 
 func TestConnection_DeliverResponse_Success(t *testing.T) {

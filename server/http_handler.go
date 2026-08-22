@@ -127,23 +127,18 @@ func (s *Server) buildRequestMessage(w http.ResponseWriter, r *http.Request) (*c
 func (s *Server) forwardAndWaitForResponse(ctx context.Context, w http.ResponseWriter, connection *Connection, requestMsg *common.Message, domain string) {
 	s.requestLogger.LogHTTPRequest(domain, requestMsg.UUID, requestMsg.Method, requestMsg.URL, requestMsg.Headers, requestMsg.Body)
 
-	responseChan, cancelCleanup, err := s.registerAndForwardRequest(ctx, connection, requestMsg)
-	if err != nil {
+	// cancelCleanup drops the pending entry and releases the timeout context, so
+	// it is deferred at acquisition rather than handed to a caller that may skip
+	// it on an early return.
+	responseChan, cancelCleanup := connection.RegisterRequest(ctx, requestMsg.UUID)
+	defer cancelCleanup()
+
+	if err := connection.SendMessage(requestMsg); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer cancelCleanup()
+
 	s.handleResponse(ctx, w, connection, responseChan)
-}
-
-func (s *Server) registerAndForwardRequest(ctx context.Context, connection *Connection, requestMsg *common.Message) (chan *common.Message, context.CancelFunc, error) {
-	responseChan, cancelCleanup := connection.RegisterRequest(ctx, requestMsg.UUID)
-	if err := connection.SendMessage(requestMsg); err != nil {
-		connection.CleanupRequest(requestMsg.UUID)
-		return nil, cancelCleanup, err
-	}
-
-	return responseChan, cancelCleanup, nil
 }
 
 func (s *Server) writeResponse(w http.ResponseWriter, status int, body []byte) {

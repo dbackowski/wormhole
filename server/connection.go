@@ -43,10 +43,6 @@ func (c *Connection) SendMessage(msg *common.Message) error {
 	return c.conn.WriteJSON(msg)
 }
 
-func (c *Connection) CleanupRequest(uuid string) {
-	c.requests.Cleanup(uuid)
-}
-
 func (c *Connection) DeliverResponse(msg *common.Message) error {
 	return c.requests.Deliver(msg)
 }
