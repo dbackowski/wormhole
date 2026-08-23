@@ -82,17 +82,30 @@ func disconnectReason(err error) string {
 	return "connection error: " + err.Error()
 }
 
+func (s *Server) newTunnelDispatcher(domain string, connection *Connection) *common.MessageDispatcher {
+	dispatcher := common.NewMessageDispatcher()
+
+	dispatcher.Register(common.MessageTypeHTTPResponse, func(msg *common.Message) error {
+		if err := connection.DeliverResponse(msg); err != nil {
+			// The waiter is gone: the request timed out, or the browser hung up.
+			// Routine on a public tunnel and not actionable, so it is not
+			// reported as a dispatch failure.
+			s.Logger.Debug("dropped response with no waiting request",
+				"domain", domain, "uuid", msg.UUID, "status", msg.Status, "error", err)
+			return nil
+		}
+		s.requestLogger.LogHTTPResponse(domain, msg.UUID, msg.Status, msg.Body)
+		return nil
+	})
+
+	return dispatcher
+}
+
 func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, connection *Connection) {
 	conn := connection.conn
 	defer connection.Close()
 
-	dispatcher := common.NewMessageDispatcher()
-	dispatcher.Register(common.MessageTypeHTTPResponse, func(msg *common.Message) error {
-		s.requestLogger.LogHTTPResponse(domain, msg.UUID, msg.Status, msg.Body)
-		return connection.DeliverResponse(msg)
-	})
-
-	common.RunMessageLoop(conn, dispatcher, s.heartbeat,
+	common.RunMessageLoop(conn, s.newTunnelDispatcher(domain, connection), s.heartbeat,
 		func(err error) {
 			s.requestLogger.LogClientDisconnected(domain, remoteAddr, disconnectReason(err))
 			s.connManager.RemoveConnection(domain)

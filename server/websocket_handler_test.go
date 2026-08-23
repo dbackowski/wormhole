@@ -421,3 +421,66 @@ func TestRegisterClient_WriteConfirmationFails(t *testing.T) {
 		t.Errorf("connection count = %d, want 0 after failed registration", s.connManager.Count())
 	}
 }
+
+func TestTunnelDispatcher_DeliversToWaitingRequest(t *testing.T) {
+	conn, cleanup := newTestConnection(t)
+	defer cleanup()
+
+	ch, cancel := conn.RegisterRequest(context.Background(), "u1")
+	defer cancel()
+
+	msg := &common.Message{Type: common.MessageTypeHTTPResponse, UUID: "u1", Status: http.StatusOK}
+	if err := newTestServer(t).newTunnelDispatcher("foo", conn).Dispatch(msg); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
+	}
+
+	select {
+	case got := <-ch:
+		if got.Status != http.StatusOK {
+			t.Errorf("status = %d, want %d", got.Status, http.StatusOK)
+		}
+	default:
+		t.Error("response was not delivered to the waiting request")
+	}
+}
+
+// A response arriving after its waiter is gone (timeout, or the browser hung up)
+// is routine, so it must not surface as a dispatch failure.
+func TestTunnelDispatcher_UndeliverableResponseIsNotAnError(t *testing.T) {
+	conn, cleanup := newTestConnection(t)
+	defer cleanup()
+
+	dispatcher := newTestServer(t).newTunnelDispatcher("foo", conn)
+
+	t.Run("no pending request", func(t *testing.T) {
+		msg := &common.Message{Type: common.MessageTypeHTTPResponse, UUID: "gone", Status: http.StatusOK}
+		if err := dispatcher.Dispatch(msg); err != nil {
+			t.Errorf("Dispatch() error = %v, want nil", err)
+		}
+	})
+
+	t.Run("duplicate response", func(t *testing.T) {
+		_, cancel := conn.RegisterRequest(context.Background(), "u2")
+		defer cancel()
+
+		msg := &common.Message{Type: common.MessageTypeHTTPResponse, UUID: "u2", Status: http.StatusOK}
+		if err := dispatcher.Dispatch(msg); err != nil {
+			t.Fatalf("first Dispatch() error = %v", err)
+		}
+		// Second one finds the buffered channel full.
+		if err := dispatcher.Dispatch(msg); err != nil {
+			t.Errorf("duplicate Dispatch() error = %v, want nil", err)
+		}
+	})
+}
+
+// Genuine protocol faults must still reach onDispatchErr.
+func TestTunnelDispatcher_UnknownMessageTypeStillErrors(t *testing.T) {
+	conn, cleanup := newTestConnection(t)
+	defer cleanup()
+
+	msg := &common.Message{Type: "nonsense", UUID: "u1"}
+	if err := newTestServer(t).newTunnelDispatcher("foo", conn).Dispatch(msg); err == nil {
+		t.Error("expected error for unknown message type, got nil")
+	}
+}
