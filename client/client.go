@@ -65,11 +65,11 @@ func NewClient(cfg *Config) (*Client, error) {
 		return nil, fmt.Errorf("invalid server URL: %w", err)
 	}
 
-	wsURL := common.BuildSubdomainURL(serverConfig.WSScheme, cfg.Domain, serverConfig.Host, "/ws")
+	wsURL := common.BuildSubdomainURL(serverConfig.WSScheme, cfg.Domain, serverConfig.Host)
 
-	var dialHeaders http.Header
+	dialHeaders := http.Header{}
+	dialHeaders.Set(common.ClientHeader, "1")
 	if cfg.AuthToken != "" {
-		dialHeaders = http.Header{}
 		dialHeaders.Set("Authorization", "Bearer "+cfg.AuthToken)
 	}
 
@@ -80,7 +80,7 @@ func NewClient(cfg *Config) (*Client, error) {
 
 	logger := common.NewLogger(common.LevelError, "text")
 
-	tunnelURL := common.BuildSubdomainURL(serverConfig.HTTPScheme, cfg.Domain, serverConfig.Host, "")
+	tunnelURL := common.BuildSubdomainURL(serverConfig.HTTPScheme, cfg.Domain, serverConfig.Host)
 
 	client := &Client{
 		domain:    cfg.Domain,

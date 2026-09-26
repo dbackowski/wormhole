@@ -36,11 +36,10 @@ func joinEscapedPaths(base, ref string) string {
 	return base + ref
 }
 
-func BuildSubdomainURL(scheme, subdomain, host, urlPath string) string {
+func BuildSubdomainURL(scheme, subdomain, host string) string {
 	u := &url.URL{
 		Scheme: scheme,
 		Host:   subdomain + "." + host,
-		Path:   urlPath,
 	}
 	return u.String()
 }

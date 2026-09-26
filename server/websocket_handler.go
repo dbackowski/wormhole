@@ -14,6 +14,14 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+// isClientRegistration reports whether an upgrade is a tunnel client claiming a
+// domain. Without the marker header any WebSocket a browser opened against a
+// tunneled app would register instead, claiming the domain whenever the real
+// tunnel happens to be down.
+func isClientRegistration(r *http.Request) bool {
+	return websocket.IsWebSocketUpgrade(r) && r.Header.Get(common.ClientHeader) != ""
+}
+
 func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateRequest(r) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)

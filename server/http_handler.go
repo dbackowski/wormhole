@@ -7,10 +7,10 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strings"
 
 	"github.com/dbackowski/wormhole/common"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -18,13 +18,20 @@ const (
 	maxValidHTTPStatus = 999
 )
 
-var errWebSocketUpgradeUnsupported = errors.New("WebSocket upgrade not supported")
-
 func (s *Server) tunnelRequest(w http.ResponseWriter, r *http.Request) {
 	domain, err := s.extractDomain(r.Host)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Checked before the tunnel lookup so passthrough always reports itself as
+	// unsupported, rather than as a missing tunnel when no client is connected.
+	if websocket.IsWebSocketUpgrade(r) {
+		s.Logger.Debug("Rejected WebSocket upgrade to tunnel (passthrough not supported)",
+			"domain", domain, "remote_addr", r.RemoteAddr, "url", r.URL.String())
+		http.Error(w, "WebSocket passthrough is not supported", http.StatusNotImplemented)
 		return
 	}
 
@@ -43,22 +50,11 @@ func (s *Server) tunnelRequest(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-		if errors.Is(err, errWebSocketUpgradeUnsupported) {
-			s.Logger.Debug("Rejected WebSocket upgrade to tunnel (passthrough not supported)",
-				"domain", domain, "remote_addr", r.RemoteAddr, "url", r.URL.String())
-			http.Error(w, "WebSocket passthrough is not supported", http.StatusNotImplemented)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	s.forwardAndWaitForResponse(r.Context(), w, connection, requestMsg, domain)
-}
-
-func isWebSocketUpgradeRequest(headers http.Header) bool {
-	return strings.EqualFold(headers.Get("Connection"), "upgrade") &&
-		strings.EqualFold(headers.Get("Upgrade"), "websocket")
 }
 
 func (s *Server) prepareRequestHeaders(r *http.Request) map[string][]string {
@@ -103,10 +99,6 @@ func (s *Server) forwardedProto(r *http.Request) string {
 }
 
 func (s *Server) buildRequestMessage(w http.ResponseWriter, r *http.Request) (*common.Message, error) {
-	if isWebSocketUpgradeRequest(r.Header) {
-		return nil, errWebSocketUpgradeUnsupported
-	}
-
 	defer r.Body.Close()
 	reqBody, err := io.ReadAll(http.MaxBytesReader(w, r.Body, common.MaxRequestBodySize))
 

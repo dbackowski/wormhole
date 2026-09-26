@@ -63,7 +63,8 @@ func NewServer(cfg *Config) (*Server, error) {
 }
 
 func (s *Server) setupRoutes() {
-	s.mux.HandleFunc("/ws", s.ServeWebSocket)
+	// Everything routes through one handler: a path registered on the mux would
+	// be reserved on every tunnel subdomain too, since mux patterns match all hosts.
 	s.mux.HandleFunc("/", s.routeRequest)
 }
 
@@ -81,6 +82,11 @@ func (s *Server) setRequestDeadlines(w http.ResponseWriter) {
 
 func (s *Server) routeRequest(w http.ResponseWriter, r *http.Request) {
 	s.setRequestDeadlines(w)
+
+	if isClientRegistration(r) {
+		s.ServeWebSocket(w, r)
+		return
+	}
 
 	if s.isBareHost(r.Host) {
 		switch r.URL.Path {

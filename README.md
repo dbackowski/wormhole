@@ -65,6 +65,14 @@ go mod download
 make build
 ```
 
+This produces `bin/client/wormhole` and `bin/server/wormhole`.
+
+To run the test suite:
+
+```bash
+make test
+```
+
 ## Usage
 
 ### Server Options
@@ -96,6 +104,8 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 - `-webui-port`: Port for the Web UI dashboard (default: 4040)
 - `-version`: Print version and exit
 
+> **Note:** Unlike the server, the client does not read environment variables. It takes its configuration from flags or from `~/.wormhole/config` (see [Authentication](#authentication)).
+
 ## Features
 
 ✅ **Custom Subdomains** - Choose your own subdomain name  
@@ -103,6 +113,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 ✅ **Header Forwarding** - End-to-end headers are forwarded; hop-by-hop headers are stripped, `Host` is set to the tunnel host, and `X-Forwarded-For`/`-Proto`/`-Host` are added so your local app sees the original client IP and public URL (standard proxy behavior)  
 ✅ **Multiple Clients** - Support for multiple simultaneous tunnels  
 ✅ **Automatic Cleanup** - Domains are released when clients disconnect  
+✅ **Automatic Reconnect** - The client retries with exponential backoff if the connection drops  
 ✅ **Web UI Dashboard** - Monitor tunneled requests in a browser at `http://localhost:4040`  
 ✅ **Optional Authentication** - Secure your server with token-based auth  
 
@@ -178,10 +189,24 @@ graph TD
 
 | Endpoint | Description |
 |----------|-------------|
-| `/ws` | WebSocket endpoint for client connections |
-| `/health` | Health check, returns `OK` |
-| `/metrics` | Active connection count |
-| `/*` | All other requests are tunneled to the matching subdomain client |
+| `/health` | Health check, returns `OK`. Served on the server's own host only |
+| `/metrics` | Active connection count. Served on the server's own host only |
+| `/*` | Everything else is tunneled to the matching subdomain client |
+
+Client connections are not a path. The server recognizes them as WebSocket upgrades carrying the `X-Wormhole-Client` header, at whatever path the client dialed, so no path is reserved on your tunnel.
+
+### Status codes
+
+Statuses the server returns for tunneled requests, rather than passing through from your local app:
+
+| Status | Meaning |
+|--------|---------|
+| `400 Bad Request` | The `Host` header has no subdomain to route on |
+| `408 Request Timeout` | No response from the client within 15 seconds |
+| `413 Request Entity Too Large` | Request body exceeds 10 MB |
+| `501 Not Implemented` | WebSocket upgrade request (see [Limitations](#limitations)) |
+| `502 Bad Gateway` | No client is connected for the subdomain, the tunnel dropped mid-request, or the local server was unreachable, too slow, or returned a body over 10 MB |
+| `503 Service Unavailable` | The client is already handling 64 concurrent requests |
 
 ## Self-Hosting
 
@@ -211,14 +236,20 @@ The repository includes a `fly.toml` for deployment to Fly.io. Set your `FLY_API
 
 ## Limitations
 
-- **No WebSocket passthrough** - WebSocket upgrade requests to tunneled services are not supported
+- **No WebSocket passthrough** - WebSocket upgrade requests to tunneled services are rejected with `501 Not Implemented`
 - **No built-in TLS** - Requires a reverse proxy for HTTPS
 - **10 MB request body limit** - Requests larger than 10 MB are rejected with `413 Request Entity Too Large`
-- **10 second request timeout** - Requests that take longer than 10 seconds will time out
+- **10 MB response body limit** - Responses larger than 10 MB from your local server are rejected with `502 Bad Gateway`. Bodies travel base64-encoded inside a WebSocket frame capped at 16 MB, which is what sets both limits
+- **10 second request timeout** - The client gives up on your local server after 10 seconds and returns `502 Bad Gateway`. The server independently stops waiting after 15 seconds and returns `408 Request Timeout`
+- **64 concurrent requests per tunnel** - Beyond that the client returns `503 Service Unavailable` until a slot frees up
+- **Redirects are passed through unchanged** - The client does not follow redirects from your local server. A `Location` header pointing at `http://localhost:3000` is sent to the browser as-is, taking it off the tunnel. Configure your app to emit relative redirects, or to build absolute URLs from the `X-Forwarded-Host` and `X-Forwarded-Proto` headers
+- **Reconnect is time-limited** - If the connection drops, the client retries with exponential backoff (500 ms up to 30 s) for 5 minutes, then exits. Requests in flight when the connection drops fail with `502 Bad Gateway`
+- **Reconnect can be delayed after an unclean drop** - If the connection dies without closing cleanly (laptop sleep, Wi-Fi drop), the server only notices when its heartbeat times out, up to 60 seconds later. Until then the subdomain is still held by the stale connection and reconnect attempts fail as already taken. The client keeps retrying, so it recovers on its own
 
 ## Requirements
 
 - Go 1.25 or later
+- A client and server from the same release line. Clients up to `v1.0.5` identified themselves by connecting to `/ws`; the server now requires the `X-Wormhole-Client` header, so those clients cannot register and fail with `websocket: bad handshake`. Upgrade the client
 - Available port for the server (default: 8080)
 - Local development server to tunnel
 

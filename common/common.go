@@ -47,6 +47,11 @@ func DefaultHeartbeat() Heartbeat {
 	}
 }
 
+// ClientHeader marks a WebSocket upgrade as a tunnel client registering, rather
+// than a browser opening a socket against a tunneled app. Browsers cannot set a
+// request header on a WebSocket, so only a real client can send it.
+const ClientHeader = "X-Wormhole-Client"
+
 type MessageType string
 
 const (

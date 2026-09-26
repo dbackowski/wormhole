@@ -17,6 +17,7 @@ import (
 func dialWS(t *testing.T, url string, host string) *websocket.Conn {
 	t.Helper()
 	header := http.Header{}
+	header.Set(common.ClientHeader, "1")
 	if host != "" {
 		header.Set("Host", host)
 	}
@@ -203,6 +204,7 @@ func TestServeWebSocket_AuthRequired_NoToken(t *testing.T) {
 
 	// Try to connect without a token — should get HTTP 401, not a WebSocket upgrade
 	header := http.Header{}
+	header.Set(common.ClientHeader, "1")
 	header.Set("Host", "app.localhost")
 	_, resp, err := websocket.DefaultDialer.Dial(wsURL+"/ws", header)
 
@@ -220,6 +222,7 @@ func TestServeWebSocket_AuthRequired_WrongToken(t *testing.T) {
 	defer cleanup()
 
 	header := http.Header{}
+	header.Set(common.ClientHeader, "1")
 	header.Set("Host", "app.localhost")
 	header.Set("Authorization", "Bearer wrong")
 	_, resp, err := websocket.DefaultDialer.Dial(wsURL+"/ws", header)
@@ -238,6 +241,7 @@ func TestServeWebSocket_AuthRequired_ValidToken(t *testing.T) {
 	defer cleanup()
 
 	header := http.Header{}
+	header.Set(common.ClientHeader, "1")
 	header.Set("Host", "app.localhost")
 	header.Set("Authorization", "Bearer secret")
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL+"/ws", header)
@@ -482,5 +486,54 @@ func TestTunnelDispatcher_UnknownMessageTypeStillErrors(t *testing.T) {
 	msg := &common.Message{Type: "nonsense", UUID: "u1"}
 	if err := newTestServer(t).newTunnelDispatcher("foo", conn).Dispatch(msg); err == nil {
 		t.Error("expected error for unknown message type, got nil")
+	}
+}
+
+// A client carrying the marker header registers at any path, so /ws is no longer
+// reserved on tunnel subdomains.
+func TestServeWebSocket_MarkedClientRegistersOnAnyPath(t *testing.T) {
+	s := newTestServer(t)
+	wsURL, cleanup := startWSServer(t, s)
+	defer cleanup()
+
+	header := http.Header{}
+	header.Set("Host", "marked.localhost")
+	header.Set(common.ClientHeader, "1")
+
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL+"/anything", header)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	var msg common.Message
+	if err := conn.ReadJSON(&msg); err != nil {
+		t.Fatalf("failed to read registration message: %v", err)
+	}
+	if msg.Type != common.MessageTypeDomainRegistered {
+		t.Errorf("type = %q, want %q", msg.Type, common.MessageTypeDomainRegistered)
+	}
+}
+
+// An unmarked upgrade is a browser talking to the tunneled app, not a client.
+// It must never claim the domain, even while no tunnel is connected.
+func TestServeWebSocket_UnmarkedUpgradeDoesNotRegister(t *testing.T) {
+	s := newTestServer(t)
+	wsURL, cleanup := startWSServer(t, s)
+	defer cleanup()
+
+	header := http.Header{}
+	header.Set("Host", "victim.localhost")
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL+"/socket", header)
+	if err == nil {
+		conn.Close()
+		t.Fatal("unmarked upgrade was accepted as a client registration")
+	}
+	if resp == nil || resp.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("resp = %v, want %d", resp, http.StatusNotImplemented)
+	}
+	if count := s.connManager.Count(); count != 0 {
+		t.Errorf("active connections = %d, want 0", count)
 	}
 }

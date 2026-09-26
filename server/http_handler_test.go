@@ -34,45 +34,94 @@ func newWSPair(t *testing.T) (dialerConn *websocket.Conn, acceptorConn *websocke
 	return dialer, acceptor, func() { dialer.Close(); acceptor.Close(); srv.Close() }
 }
 
-func TestIsWebSocketUpgradeRequest(t *testing.T) {
+func TestIsClientRegistration(t *testing.T) {
 	tests := []struct {
 		name    string
+		path    string
 		headers http.Header
 		want    bool
 	}{
 		{
-			name:    "ws upgrade",
-			headers: http.Header{"Connection": []string{"upgrade"}, "Upgrade": []string{"websocket"}},
+			name:    "marked upgrade on any path",
+			path:    "/socket",
+			headers: http.Header{"Connection": []string{"Upgrade"}, "Upgrade": []string{"websocket"}, common.ClientHeader: []string{"1"}},
 			want:    true,
 		},
 		{
-			name:    "ws upgrade case insensitive",
-			headers: http.Header{"Connection": []string{"Upgrade"}, "Upgrade": []string{"WebSocket"}},
+			name:    "marked upgrade with comma-listed connection tokens",
+			path:    "/socket",
+			headers: http.Header{"Connection": []string{"keep-alive, Upgrade"}, "Upgrade": []string{"WebSocket"}, common.ClientHeader: []string{"1"}},
 			want:    true,
 		},
 		{
-			name:    "no upgrade header",
+			name:    "unmarked upgrade on /ws is tunnel traffic",
+			path:    "/ws",
+			headers: http.Header{"Connection": []string{"Upgrade"}, "Upgrade": []string{"websocket"}},
+			want:    false,
+		},
+		{
+			name:    "unmarked upgrade elsewhere is tunnel traffic",
+			path:    "/socket",
+			headers: http.Header{"Connection": []string{"Upgrade"}, "Upgrade": []string{"websocket"}},
+			want:    false,
+		},
+		{
+			name:    "plain request to /ws is tunnel traffic",
+			path:    "/ws",
 			headers: http.Header{},
 			want:    false,
 		},
 		{
-			name:    "upgrade but not websocket",
-			headers: http.Header{"Connection": []string{"upgrade"}, "Upgrade": []string{"h2c"}},
+			name:    "marker alone is not an upgrade",
+			path:    "/ws",
+			headers: http.Header{common.ClientHeader: []string{"1"}},
 			want:    false,
 		},
 		{
-			name:    "websocket but no connection upgrade",
-			headers: http.Header{"Upgrade": []string{"websocket"}},
+			name:    "upgrade but not websocket",
+			path:    "/ws",
+			headers: http.Header{"Connection": []string{"Upgrade"}, "Upgrade": []string{"h2c"}},
 			want:    false,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isWebSocketUpgradeRequest(tc.headers); got != tc.want {
-				t.Errorf("isWebSocketUpgradeRequest() = %v, want %v", got, tc.want)
+			r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			r.Header = tc.headers
+			if got := isClientRegistration(r); got != tc.want {
+				t.Errorf("isClientRegistration() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// A tunneled app may serve plain HTTP at /ws; the control plane must not eat it.
+func TestRouteRequest_PlainWSPathIsTunneled(t *testing.T) {
+	s := newTestServer(t)
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Host = "myapp.wormhole.tools"
+	w := httptest.NewRecorder()
+
+	s.routeRequest(w, r)
+
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d (tunneled, no client connected)", w.Code, http.StatusBadGateway)
+	}
+}
+
+func TestTunnelRequest_UpgradeRejectedWithoutTunnel(t *testing.T) {
+	s := newTestServer(t)
+	r := httptest.NewRequest(http.MethodGet, "/socket", nil)
+	r.Host = "myapp.wormhole.tools"
+	r.Header.Set("Connection", "keep-alive, Upgrade")
+	r.Header.Set("Upgrade", "websocket")
+	w := httptest.NewRecorder()
+
+	s.routeRequest(w, r)
+
+	if w.Code != http.StatusNotImplemented {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotImplemented)
 	}
 }
 
@@ -243,16 +292,29 @@ func TestBuildRequestMessage_Normal(t *testing.T) {
 	}
 }
 
-func TestBuildRequestMessage_WebSocketUpgrade(t *testing.T) {
+// Passthrough is rejected in tunnelRequest, ahead of the tunnel lookup, so the
+// answer is the same whether or not a client happens to be connected.
+func TestTunnelRequest_WebSocketUpgradeRejectedWithLiveTunnel(t *testing.T) {
 	s := newTestServer(t)
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	dialer, acceptor, cleanup := newWSPair(t)
+	defer cleanup()
+	defer dialer.Close()
+
+	if _, err := s.connManager.AddConnection("live", acceptor); err != nil {
+		t.Fatalf("AddConnection() error = %v", err)
+	}
+	s.connManager.ActivateConnection("live")
+
+	r := httptest.NewRequest(http.MethodGet, "/socket", nil)
+	r.Host = "live.localhost"
 	r.Header.Set("Connection", "upgrade")
 	r.Header.Set("Upgrade", "websocket")
 	w := httptest.NewRecorder()
 
-	_, err := s.buildRequestMessage(w, r)
-	if err == nil {
-		t.Error("expected error for WebSocket upgrade request, got nil")
+	s.tunnelRequest(w, r)
+
+	if w.Code != http.StatusNotImplemented {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotImplemented)
 	}
 }
 

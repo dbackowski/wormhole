@@ -61,19 +61,17 @@ func TestBuildSubdomainURL(t *testing.T) {
 		scheme    string
 		subdomain string
 		host      string
-		urlPath   string
 		want      string
 	}{
-		{"simple subdomain", "https", "api", "example.com", "", "https://api.example.com"},
-		{"with path", "https", "api", "example.com", "/v1/users", "https://api.example.com/v1/users"},
-		{"http scheme", "http", "test", "localhost", "/health", "http://test.localhost/health"},
-		{"nested subdomain", "https", "staging.api", "example.com", "", "https://staging.api.example.com"},
-		{"empty path", "https", "www", "example.com", "", "https://www.example.com"},
+		{"simple subdomain", "https", "api", "example.com", "https://api.example.com"},
+		{"http scheme", "http", "test", "localhost", "http://test.localhost"},
+		{"ws scheme", "ws", "myapp", "localhost:8080", "ws://myapp.localhost:8080"},
+		{"nested subdomain", "https", "staging.api", "example.com", "https://staging.api.example.com"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := BuildSubdomainURL(tt.scheme, tt.subdomain, tt.host, tt.urlPath)
+			got := BuildSubdomainURL(tt.scheme, tt.subdomain, tt.host)
 			if got != tt.want {
 				t.Errorf("BuildSubdomainURL() = %q, want %q", got, tt.want)
 			}
