@@ -24,7 +24,7 @@ go run cmd/server/main.go
 
 ### 2. Connect your local app
 ```bash
-go run cmd/client/main.go -domain=myapp -local=http://localhost:3000
+go run cmd/client/main.go -server=http://localhost:8080 -domain=myapp -local=http://localhost:3000
 ```
 
 ### 3. Access your app
@@ -202,11 +202,11 @@ Statuses the server returns for tunneled requests, rather than passing through f
 | Status | Meaning |
 |--------|---------|
 | `400 Bad Request` | The `Host` header has no subdomain to route on |
-| `408 Request Timeout` | No response from the client within 15 seconds |
 | `413 Request Entity Too Large` | Request body exceeds 10 MB |
 | `501 Not Implemented` | WebSocket upgrade request (see [Limitations](#limitations)) |
 | `502 Bad Gateway` | No client is connected for the subdomain, the tunnel dropped mid-request, or the local server was unreachable, too slow, or returned a body over 10 MB |
 | `503 Service Unavailable` | The client is already handling 64 concurrent requests |
+| `504 Gateway Timeout` | No response from the client within 15 seconds |
 
 ## Self-Hosting
 
@@ -240,7 +240,7 @@ The repository includes a `fly.toml` for deployment to Fly.io. Set your `FLY_API
 - **No built-in TLS** - Requires a reverse proxy for HTTPS
 - **10 MB request body limit** - Requests larger than 10 MB are rejected with `413 Request Entity Too Large`
 - **10 MB response body limit** - Responses larger than 10 MB from your local server are rejected with `502 Bad Gateway`. Bodies travel base64-encoded inside a WebSocket frame capped at 16 MB, which is what sets both limits
-- **10 second request timeout** - The client gives up on your local server after 10 seconds and returns `502 Bad Gateway`. The server independently stops waiting after 15 seconds and returns `408 Request Timeout`
+- **10 second request timeout** - The client gives up on your local server after 10 seconds and returns `502 Bad Gateway`. The server independently stops waiting after 15 seconds and returns `504 Gateway Timeout`
 - **64 concurrent requests per tunnel** - Beyond that the client returns `503 Service Unavailable` until a slot frees up
 - **Redirects are passed through unchanged** - The client does not follow redirects from your local server. A `Location` header pointing at `http://localhost:3000` is sent to the browser as-is, taking it off the tunnel. Configure your app to emit relative redirects, or to build absolute URLs from the `X-Forwarded-Host` and `X-Forwarded-Proto` headers
 - **Reconnect is time-limited** - If the connection drops, the client retries with exponential backoff (500 ms up to 30 s) for 5 minutes, then exits. Requests in flight when the connection drops fail with `502 Bad Gateway`

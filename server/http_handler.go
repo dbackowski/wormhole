@@ -126,7 +126,9 @@ func (s *Server) forwardAndWaitForResponse(ctx context.Context, w http.ResponseW
 	defer cancelCleanup()
 
 	if err := connection.SendMessage(requestMsg); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.Logger.Debug("failed to forward request to tunnel client",
+			"domain", domain, "uuid", requestMsg.UUID, "error", err)
+		s.writeDisconnectedResponse(w)
 		return
 	}
 
@@ -152,7 +154,7 @@ func (s *Server) writeSuccessResponse(w http.ResponseWriter, responseMsg *common
 }
 
 func (s *Server) writeTimeoutResponse(w http.ResponseWriter) {
-	s.writeResponse(w, http.StatusRequestTimeout, []byte("Request timeout"))
+	s.writeResponse(w, http.StatusGatewayTimeout, []byte("Gateway timeout"))
 }
 
 func (s *Server) writeDisconnectedResponse(w http.ResponseWriter) {

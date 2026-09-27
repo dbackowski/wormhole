@@ -338,11 +338,11 @@ func TestWriteTimeoutResponse(t *testing.T) {
 
 	s.writeTimeoutResponse(w)
 
-	if w.Code != http.StatusRequestTimeout {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusRequestTimeout)
+	if w.Code != http.StatusGatewayTimeout {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusGatewayTimeout)
 	}
-	if body := w.Body.String(); body != "Request timeout" {
-		t.Errorf("body = %q, want %q", body, "Request timeout")
+	if body := w.Body.String(); body != "Gateway timeout" {
+		t.Errorf("body = %q, want %q", body, "Gateway timeout")
 	}
 }
 
@@ -389,8 +389,8 @@ func TestHandleResponse_ChannelClosed(t *testing.T) {
 
 	s.handleResponse(context.Background(), w, newConnection(nil), ch)
 
-	if w.Code != http.StatusRequestTimeout {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusRequestTimeout)
+	if w.Code != http.StatusGatewayTimeout {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusGatewayTimeout)
 	}
 }
 
@@ -403,8 +403,8 @@ func TestHandleResponse_ContextCancelled(t *testing.T) {
 
 	s.handleResponse(ctx, w, newConnection(nil), ch)
 
-	if w.Code != http.StatusRequestTimeout {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusRequestTimeout)
+	if w.Code != http.StatusGatewayTimeout {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusGatewayTimeout)
 	}
 }
 
@@ -416,8 +416,8 @@ func TestHandleResponse_NilMessage(t *testing.T) {
 
 	s.handleResponse(context.Background(), w, newConnection(nil), ch)
 
-	if w.Code != http.StatusRequestTimeout {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusRequestTimeout)
+	if w.Code != http.StatusGatewayTimeout {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusGatewayTimeout)
 	}
 }
 
@@ -433,8 +433,8 @@ func TestForwardAndWaitForResponse_SendFails(t *testing.T) {
 
 	s.forwardAndWaitForResponse(context.Background(), w, conn, msg, "foo")
 
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
 	}
 	if _, exists := conn.requests.pending["u1"]; exists {
 		t.Error("pending request not cleaned up after send failure")
