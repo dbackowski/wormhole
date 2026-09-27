@@ -91,8 +91,16 @@ func (ui *WebUI) buildDashboardHTML() (string, error) {
 	return result, nil
 }
 
+// Start binds the port before returning, so a port already in use is reported
+// to the caller instead of lost in a background goroutine. Serving continues in
+// the background until Shutdown.
 func (ui *WebUI) Start() error {
-	return ui.server.ListenAndServe()
+	ln, err := net.Listen("tcp", ui.server.Addr)
+	if err != nil {
+		return err
+	}
+	go ui.server.Serve(ln)
+	return nil
 }
 
 func (ui *WebUI) Shutdown(ctx context.Context) error {

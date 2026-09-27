@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -34,6 +33,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Bound before entering the alt screen: an error printed there is wiped by
+	// the next refresh and discarded on exit.
+	if err := webUI.Start(); err != nil {
+		c.Shutdown()
+		fmt.Printf("Web UI could not start on port %d: %v. Choose another with -webui-port.\n", clientCfg.WebUIPort, err)
+		os.Exit(1)
+	}
+
 	connectionLost := false
 	defer func() {
 		if connectionLost {
@@ -51,12 +58,6 @@ func main() {
 
 	quitCh := make(chan struct{})
 	go client.WaitForInput(quitCh, c.ClearHistory)
-
-	go func() {
-		if err := webUI.Start(); err != nil && err != http.ErrServerClosed {
-			c.Logger.Error("Web UI error", "error", err)
-		}
-	}()
 
 	disconnectedCh := make(chan struct{})
 	go func() {

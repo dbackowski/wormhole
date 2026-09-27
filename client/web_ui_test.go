@@ -1,7 +1,9 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -277,5 +279,23 @@ func TestLocalHostOnly(t *testing.T) {
 		if w.Code != tt.want {
 			t.Errorf("Host %q: status = %d, want %d", tt.host, w.Code, tt.want)
 		}
+	}
+}
+
+func TestWebUIStart_PortInUse(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	ui, err := NewWebUI(&Client{}, ln.Addr().(*net.TCPAddr).Port)
+	if err != nil {
+		t.Fatalf("NewWebUI() error: %v", err)
+	}
+
+	if err := ui.Start(); err == nil {
+		ui.Shutdown(context.Background())
+		t.Fatal("Start() on a port in use returned nil, want error")
 	}
 }
