@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
@@ -36,10 +37,28 @@ func NewWebUI(client *Client, port int) (*WebUI, error) {
 
 	ui.server = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
-		Handler: mux,
+		Handler: localHostOnly(mux),
 	}
 
 	return ui, nil
+}
+
+// localHostOnly rejects requests whose Host is not the loopback name the UI is
+// served on. Binding to 127.0.0.1 alone does not stop DNS rebinding: a page on
+// an attacker's domain re-resolved to 127.0.0.1 reaches the UI same-origin, but
+// its requests still carry the attacker's hostname.
+func localHostOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = r.Host
+		}
+		if host != "localhost" && host != "127.0.0.1" {
+			http.Error(w, "forbidden host", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func readTemplate(name string) (string, error) {

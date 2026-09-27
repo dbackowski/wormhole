@@ -249,3 +249,33 @@ func TestNewWebUI(t *testing.T) {
 		t.Errorf("server.Addr = %q, want %q", ui.server.Addr, "127.0.0.1:8080")
 	}
 }
+
+func TestLocalHostOnly(t *testing.T) {
+	handler := localHostOnly(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	tests := []struct {
+		host string
+		want int
+	}{
+		{"localhost:4040", http.StatusOK},
+		{"127.0.0.1:4040", http.StatusOK},
+		{"localhost", http.StatusOK},
+		{"evil.example:4040", http.StatusForbidden},
+		{"localhost.evil.example:4040", http.StatusForbidden},
+		{"", http.StatusForbidden},
+	}
+
+	for _, tt := range tests {
+		req := httptest.NewRequest(http.MethodGet, "/api/requests", nil)
+		req.Host = tt.host
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != tt.want {
+			t.Errorf("Host %q: status = %d, want %d", tt.host, w.Code, tt.want)
+		}
+	}
+}

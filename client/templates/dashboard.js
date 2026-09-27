@@ -17,10 +17,12 @@ function getStatusClass(statusCode) {
     return 'status-5xx';
 }
 
+// Escapes quotes too: the result is also placed inside attribute values, where
+// textContent/innerHTML serialization would leave a `"` from a request URL intact.
 function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return String(text).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[c]);
 }
 
 function formatHeaders(headers) {
