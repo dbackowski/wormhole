@@ -174,8 +174,13 @@ func (c *Client) HandleConnection() {
 	)
 }
 
+// Shutdown holds writeMu throughout, since Reconnect may swap Conn from the
+// reconnect goroutine at the same time.
 func (c *Client) Shutdown() error {
-	if err := c.safeCloseWebsocket(); err != nil {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	if err := closeWebsocket(c.Conn); err != nil {
 		c.Logger.Error("Failed to send close frame", "error", err)
 	}
 
@@ -189,12 +194,6 @@ func (c *Client) safeWriteJSON(v any) error {
 		return err
 	}
 	return c.Conn.WriteJSON(v)
-}
-
-func (c *Client) safeCloseWebsocket() error {
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	return closeWebsocket(c.Conn)
 }
 
 func resolveProxyResponse(proxyResp *ProxyResponse, proxyErr error) ProxyResponse {

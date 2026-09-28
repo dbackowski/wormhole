@@ -667,3 +667,32 @@ func TestReconnectWithBackoff_GivesUpWhenCancelled(t *testing.T) {
 		t.Error("ReconnectWithBackoff() = true, want false when cancelled")
 	}
 }
+
+// Quitting while a reconnect is completing must not race on Conn: Reconnect
+// swaps it from the reconnect goroutine while Shutdown runs on main.
+func TestShutdown_ConcurrentWithReconnect(t *testing.T) {
+	_, wsURL, _ := reconnectTestServer(t)
+
+	conn, err := dialAndRegister(wsURL, nil)
+	if err != nil {
+		t.Fatalf("initial dial: %v", err)
+	}
+
+	c := &Client{
+		Conn:   conn,
+		Logger: common.NewLogger(common.LevelError, "text"),
+		wsURL:  wsURL,
+	}
+
+	reconnected := make(chan error, 1)
+	go func() { reconnected <- c.Reconnect() }()
+
+	c.Shutdown()
+
+	if err := <-reconnected; err != nil {
+		t.Fatalf("Reconnect() error = %v", err)
+	}
+	c.writeMu.Lock()
+	c.Conn.Close()
+	c.writeMu.Unlock()
+}
