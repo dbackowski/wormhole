@@ -23,10 +23,13 @@ type RequestLog struct {
 	URL             string
 	StatusCode      int
 	RequestHeaders  map[string][]string
-	RequestBody     []byte
+	RequestBody     []byte // at most MaxStoredBodySize bytes, see RequestBodySize
 	ResponseHeaders map[string][]string
-	ResponseBody    []byte
+	ResponseBody    []byte // at most MaxStoredBodySize bytes, see ResponseBodySize
 	Error           string // reason the local forward failed, empty on success
+
+	RequestBodySize  int // full size before truncation
+	ResponseBodySize int
 }
 
 type Client struct {

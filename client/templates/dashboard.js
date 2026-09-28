@@ -37,17 +37,23 @@ function formatHeaders(headers) {
     ).join('');
 }
 
-function formatBody(body) {
+function formatBody(body, size) {
     if (!body || body.length === 0) {
         return '<span class="no-content">No body</span>';
     }
     const decoded = atob(body);
+    let text;
     try {
-        const json = JSON.parse(decoded);
-        return escapeHtml(JSON.stringify(json, null, 2));
+        text = JSON.stringify(JSON.parse(decoded), null, 2);
     } catch {
-        return escapeHtml(decoded);
+        text = decoded;
     }
+    let html = escapeHtml(text);
+    if (size > decoded.length) {
+        html += '\n\n<span class="no-content">Truncated: showing first ' +
+            decoded.length.toLocaleString() + ' of ' + size.toLocaleString() + ' bytes</span>';
+    }
+    return html;
 }
 
 function matchesFilter(req, query) {
@@ -118,8 +124,8 @@ function renderDetails() {
 
     document.getElementById('requestHeaders').innerHTML = formatHeaders(req.RequestHeaders);
     document.getElementById('responseHeaders').innerHTML = formatHeaders(req.ResponseHeaders);
-    document.getElementById('requestBody').innerHTML = formatBody(req.RequestBody);
-    document.getElementById('responseBody').innerHTML = formatBody(req.ResponseBody);
+    document.getElementById('requestBody').innerHTML = formatBody(req.RequestBody, req.RequestBodySize);
+    document.getElementById('responseBody').innerHTML = formatBody(req.ResponseBody, req.ResponseBodySize);
 
     document.getElementById('detailsPanel').classList.add('visible');
     document.getElementById('detailsEmpty').classList.add('hidden');
