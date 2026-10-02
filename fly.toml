@@ -9,7 +9,7 @@ primary_region = 'fra'
 [build]
 
 [env]
-  HOST = "wormhole.tools"
+  WORMHOLE_HOST = "wormhole.tools"
 
 [http_service]
   internal_port = 8080

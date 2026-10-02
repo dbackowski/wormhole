@@ -147,7 +147,7 @@ func (s *Server) extractDomain(host string) (string, error) {
 }
 
 func (s *Server) Start() error {
-	s.Logger.Info("Starting WebSocket server", "addr", s.httpServer.Addr)
+	s.Logger.Info("Starting WebSocket server", "addr", s.httpServer.Addr, "host", s.host)
 
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("server failed: %w", err)

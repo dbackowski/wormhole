@@ -10,7 +10,7 @@ COPY . .
 RUN cd cmd/server && CGO_ENABLED=0 GOOS=linux go build -v -o /run-app .
 
 # distroless static: no shell, no package manager, ships a nonroot user.
-# The server reads AUTH_TOKEN and HOST from the environment (see server/config.go),
+# The server reads AUTH_TOKEN and WORMHOLE_HOST from the environment (see server/config.go),
 # so no shell-form CMD is needed for variable expansion.
 FROM gcr.io/distroless/static-debian12:nonroot
 

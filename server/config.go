@@ -40,7 +40,7 @@ func ParseFlags(version string) *Config {
 	}
 
 	if cfg.Host == "" {
-		cfg.Host = os.Getenv("HOST")
+		cfg.Host = os.Getenv("WORMHOLE_HOST")
 	}
 
 	if cfg.AuthToken == "" {

@@ -81,7 +81,7 @@ func TestParseFlags_EnvFallback(t *testing.T) {
 
 	os.Args = []string{"cmd"}
 	t.Setenv("AUTH_TOKEN", "env-token")
-	t.Setenv("HOST", "wormhole.example")
+	t.Setenv("WORMHOLE_HOST", "wormhole.example")
 
 	cfg := ParseFlags("test")
 
@@ -93,6 +93,24 @@ func TestParseFlags_EnvFallback(t *testing.T) {
 	}
 }
 
+// HOST is set by tcsh and commonly by Node dev setups, so it must not configure
+// the server: a stray value silently breaks /health and forces X-Forwarded-Proto.
+func TestParseFlags_IgnoresPlainHOST(t *testing.T) {
+	resetFlags()
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	os.Args = []string{"cmd"}
+	t.Setenv("HOST", "0.0.0.0")
+	t.Setenv("WORMHOLE_HOST", "")
+
+	cfg := ParseFlags("test")
+
+	if cfg.Host != "" {
+		t.Errorf("Host = %q, want empty (HOST must be ignored)", cfg.Host)
+	}
+}
+
 func TestParseFlags_FlagOverridesEnv(t *testing.T) {
 	resetFlags()
 	oldArgs := os.Args
@@ -100,7 +118,7 @@ func TestParseFlags_FlagOverridesEnv(t *testing.T) {
 
 	os.Args = []string{"cmd", "-auth-token", "flag-token", "-host", "flag.example"}
 	t.Setenv("AUTH_TOKEN", "env-token")
-	t.Setenv("HOST", "env.example")
+	t.Setenv("WORMHOLE_HOST", "env.example")
 
 	cfg := ParseFlags("test")
 
