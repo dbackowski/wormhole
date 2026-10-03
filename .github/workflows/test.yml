@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -20,3 +23,21 @@ jobs:
 
       - name: Run tests
         run: go test -race ./...
+
+  # Lives here rather than in its own workflow so `needs: test` can gate it:
+  # a push to main only reaches production once the tests pass.
+  # See https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/
+  deploy:
+    name: Deploy app
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency: deploy-group
+    steps:
+      - uses: actions/checkout@v4
+      # Pinned to a commit: this action installs the flyctl binary that then
+      # runs with FLY_API_TOKEN.
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
