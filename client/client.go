@@ -3,6 +3,7 @@ package client
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -14,7 +15,12 @@ import (
 
 const MaxConcurrentRequests = 64
 
-var ErrDomainTaken = errors.New("domain is already taken")
+var (
+	ErrDomainTaken  = errors.New("domain is already taken")
+	ErrUnauthorized = errors.New("authentication failed: invalid or missing auth token")
+
+	errReconnectCancelled = errors.New("reconnect cancelled")
+)
 
 type RequestLog struct {
 	UUID            string
@@ -81,7 +87,9 @@ func NewClient(cfg *Config) (*Client, error) {
 		return nil, err
 	}
 
-	logger := common.NewLogger(common.LevelError, "text")
+	// Discarded: anything written to the terminal is wiped by the next refresh
+	// of the alt screen. Errors worth seeing go to the status line instead.
+	logger := &common.Logger{Logger: slog.New(slog.DiscardHandler)}
 
 	tunnelURL := common.BuildSubdomainURL(serverConfig.HTTPScheme, cfg.Domain, serverConfig.Host)
 
@@ -108,7 +116,7 @@ func dialAndRegister(wsURL string, headers http.Header) (*websocket.Conn, error)
 	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, headers)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
-			return nil, fmt.Errorf("authentication failed: invalid or missing auth token")
+			return nil, ErrUnauthorized
 		}
 		return nil, fmt.Errorf("failed to connect to %s: %w", wsURL, err)
 	}
@@ -137,26 +145,36 @@ func (c *Client) Reconnect() error {
 	return nil
 }
 
-func (c *Client) ReconnectWithBackoff(cancel <-chan struct{}) bool {
+// ReconnectWithBackoff returns nil once reconnected. Otherwise it returns the
+// last dial error, which is shown in the status line between attempts. An auth
+// failure is returned at once since retrying cannot fix it; a taken domain is
+// retried, as the server holds a dropped connection until its heartbeat expires.
+func (c *Client) ReconnectWithBackoff(cancel <-chan struct{}) error {
 	deadline := time.Now().Add(reconnectMaxElapsed)
 	delay := reconnectInitialDelay
+	var lastErr error
 
 	for attempt := 1; ; attempt++ {
-		c.setStatus(fmt.Sprintf("reconnecting... (attempt %d)", attempt))
+		status := fmt.Sprintf("reconnecting... (attempt %d)", attempt)
+		if lastErr != nil {
+			status += ": " + lastErr.Error()
+		}
+		c.setStatus(status)
 
 		select {
 		case <-cancel:
-			return false
+			return errReconnectCancelled
 		case <-time.After(delay):
 		}
 
-		if err := c.Reconnect(); err == nil {
+		lastErr = c.Reconnect()
+		if lastErr == nil {
 			c.setStatus("")
-			return true
+			return nil
 		}
 
-		if time.Now().After(deadline) {
-			return false
+		if errors.Is(lastErr, ErrUnauthorized) || time.Now().After(deadline) {
+			return lastErr
 		}
 
 		delay = min(delay*2, reconnectMaxDelay)

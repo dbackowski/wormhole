@@ -633,8 +633,8 @@ func TestReconnectWithBackoff_RestoresDroppedConnection(t *testing.T) {
 	// Simulate the tunnel dropping out from under the client.
 	conn.Close()
 
-	if !c.ReconnectWithBackoff(nil) {
-		t.Fatal("ReconnectWithBackoff() = false, want true")
+	if err := c.ReconnectWithBackoff(nil); err != nil {
+		t.Fatalf("ReconnectWithBackoff() error = %v, want nil", err)
 	}
 	if c.Conn == conn {
 		t.Error("Conn was not swapped for the new connection")
@@ -663,8 +663,33 @@ func TestReconnectWithBackoff_GivesUpWhenCancelled(t *testing.T) {
 	cancel := make(chan struct{})
 	close(cancel)
 
-	if c.ReconnectWithBackoff(cancel) {
-		t.Error("ReconnectWithBackoff() = true, want false when cancelled")
+	if err := c.ReconnectWithBackoff(cancel); err == nil {
+		t.Error("ReconnectWithBackoff() error = nil, want an error when cancelled")
+	}
+}
+
+// A rejected token cannot start working on retry, so the client must give up
+// after the first attempt instead of retrying for reconnectMaxElapsed.
+func TestReconnectWithBackoff_GivesUpOnAuthFailure(t *testing.T) {
+	var dials int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&dials, 1)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	}))
+	t.Cleanup(server.Close)
+
+	c := &Client{
+		tunnelURL: "https://test.example.com",
+		history:   NewRequestHistory(10),
+		display:   &mockDisplay{},
+		wsURL:     "ws" + server.URL[len("http"):],
+	}
+
+	if err := c.ReconnectWithBackoff(nil); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("ReconnectWithBackoff() error = %v, want ErrUnauthorized", err)
+	}
+	if got := atomic.LoadInt32(&dials); got != 1 {
+		t.Errorf("server saw %d dials, want 1", got)
 	}
 }
 

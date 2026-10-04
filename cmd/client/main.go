@@ -41,10 +41,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	connectionLost := false
+	// Printed after the alt screen is left (defers run in reverse), so it stays
+	// visible.
+	var lostErr error
 	defer func() {
-		if connectionLost {
-			fmt.Println("Connection to the server was lost. Exiting.")
+		if lostErr != nil {
+			fmt.Printf("Connection to the server was lost: %v. Exiting.\n", lostErr)
 		}
 	}()
 
@@ -59,12 +61,12 @@ func main() {
 	quitCh := make(chan struct{})
 	go client.WaitForInput(quitCh, c.ClearHistory)
 
-	disconnectedCh := make(chan struct{})
+	disconnectedCh := make(chan error, 1)
 	go func() {
-		defer close(disconnectedCh)
 		for {
 			c.HandleConnection()
-			if !c.ReconnectWithBackoff(quitCh) {
+			if err := c.ReconnectWithBackoff(quitCh); err != nil {
+				disconnectedCh <- err
 				return
 			}
 		}
@@ -73,8 +75,7 @@ func main() {
 	select {
 	case <-sigCh:
 	case <-quitCh:
-	case <-disconnectedCh:
-		connectionLost = true
+	case lostErr = <-disconnectedCh:
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), common.ClientShutdownTimeout)
