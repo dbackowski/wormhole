@@ -1,3 +1,5 @@
+//go:build darwin || freebsd || openbsd || netbsd || dragonfly
+
 package client
 
 import "golang.org/x/sys/unix"

@@ -34,7 +34,9 @@ Your local server is now available at: `http://myapp.localhost:8080`
 
 ### Download Pre-built Binaries
 
-Download the latest release for your platform from the [Releases](https://github.com/dbackowski/wormhole/releases) page.
+Download the latest release for your platform from the [Releases](https://github.com/dbackowski/wormhole/releases) page. Pre-built binaries are provided for Linux and macOS (amd64 and arm64).
+
+**Other platforms:** The client also builds from source on FreeBSD, OpenBSD, NetBSD and DragonFly BSD. Windows is not supported natively; run the Linux binary under [WSL](https://learn.microsoft.com/windows/wsl/) instead. The server builds on any platform Go supports.
 
 **Linux:**
 ```bash
