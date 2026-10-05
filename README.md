@@ -246,7 +246,7 @@ The repository includes a `fly.toml` for deployment to Fly.io. Set your `FLY_API
 - **64 concurrent requests per tunnel** - Beyond that the client returns `503 Service Unavailable` until a slot frees up
 - **Redirects are passed through unchanged** - The client does not follow redirects from your local server. A `Location` header pointing at `http://localhost:3000` is sent to the browser as-is, taking it off the tunnel. Configure your app to emit relative redirects, or to build absolute URLs from the `X-Forwarded-Host` and `X-Forwarded-Proto` headers
 - **Reconnect is time-limited** - If the connection drops, the client retries with exponential backoff (500 ms up to 30 s) for 5 minutes, then exits. Requests in flight when the connection drops fail with `502 Bad Gateway`
-- **Reconnect can be delayed after an unclean drop** - If the connection dies without closing cleanly (laptop sleep, Wi-Fi drop), the server only notices when its heartbeat times out, up to 60 seconds later. Until then the subdomain is still held by the stale connection and reconnect attempts fail as already taken. The client keeps retrying, so it recovers on its own
+- **Older clients can be delayed reconnecting after an unclean drop** - If the connection dies without closing cleanly (laptop sleep, Wi-Fi drop), the server only notices when its heartbeat times out, up to 30 seconds later. Current clients reclaim their own subdomain immediately: each client process sends a random session secret on every dial, and the server replaces a stale connection registered with the same secret. Clients without it (up to the release before this change) see the subdomain as taken until the timeout and keep retrying, so they recover on their own
 
 ## Requirements
 

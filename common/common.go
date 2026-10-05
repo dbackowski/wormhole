@@ -28,7 +28,7 @@ const (
 	ServerWriteTimeout       = 60 * time.Second
 	MaxRequestBodySize       = 10 << 20 // 10 MB
 	MaxWebSocketMessageSize  = 16 << 20 // 16 MB
-	PongWait                 = 60 * time.Second
+	PongWait                 = 30 * time.Second
 	PingPeriod               = (PongWait * 9) / 10
 	WriteWait                = 10 * time.Second
 )
@@ -51,6 +51,13 @@ func DefaultHeartbeat() Heartbeat {
 // than a browser opening a socket against a tunneled app. Browsers cannot set a
 // request header on a WebSocket, so only a real client can send it.
 const ClientHeader = "X-Wormhole-Client"
+
+// SessionHeader carries a random secret a client generates once per process and
+// sends on every dial. When a reconnect finds its domain still held by a
+// connection registered with the same secret, that connection is a stale one
+// from the same client (dropped uncleanly, heartbeat not yet expired), and the
+// server replaces it instead of reporting the domain as taken.
+const SessionHeader = "X-Wormhole-Session"
 
 type MessageType string
 

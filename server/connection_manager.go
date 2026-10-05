@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"sync"
 
@@ -18,19 +19,26 @@ func NewConnectionManager() *ConnectionManager {
 	}
 }
 
-func (cm *ConnectionManager) AddConnection(domain string, conn *websocket.Conn) (*Connection, error) {
+// AddConnection claims domain for conn. A domain held by a connection with the
+// same non-empty session is reclaimed: that connection is returned as stale for
+// the caller to close. See common.SessionHeader.
+func (cm *ConnectionManager) AddConnection(domain, session string, conn *websocket.Conn) (connection, stale *Connection, err error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	_, exists := cm.connections[domain]
-	if exists {
-		return nil, fmt.Errorf("domain %s is already taken", domain)
+	existing, exists := cm.connections[domain]
+	if exists && !sameSession(existing.session, session) {
+		return nil, nil, fmt.Errorf("domain %s is already taken", domain)
 	}
 
-	connection := newConnection(conn)
+	connection = newConnection(conn, session)
 	cm.connections[domain] = connection
 
-	return connection, nil
+	return connection, existing, nil
+}
+
+func sameSession(held, offered string) bool {
+	return offered != "" && subtle.ConstantTimeCompare([]byte(held), []byte(offered)) == 1
 }
 
 func (cm *ConnectionManager) ActivateConnection(domain string) {
@@ -53,10 +61,15 @@ func (cm *ConnectionManager) GetConnection(domain string) (*Connection, error) {
 	return connection, nil
 }
 
-func (cm *ConnectionManager) RemoveConnection(domain string) {
+// RemoveConnection releases domain only if connection still holds it. A stale
+// connection replaced by a reconnect must not remove its replacement when its
+// read loop finally fails.
+func (cm *ConnectionManager) RemoveConnection(domain string, connection *Connection) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	delete(cm.connections, domain)
+	if cm.connections[domain] == connection {
+		delete(cm.connections, domain)
+	}
 }
 
 func (cm *ConnectionManager) CloseAll() {

@@ -18,7 +18,7 @@ func main() {
 	srv, err := server.NewServer(cfg)
 
 	if err != nil {
-		fmt.Printf("Failed to create server: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to create server: %v\n", err)
 		os.Exit(1)
 	}
 

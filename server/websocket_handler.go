@@ -35,7 +35,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	connection, err := s.registerClient(conn, domain)
+	connection, err := s.registerClient(conn, domain, r.Header.Get(common.SessionHeader))
 
 	if err != nil {
 		s.Logger.Error("Client registration failed", "error", err, "domain", domain)
@@ -62,16 +62,21 @@ func (s *Server) upgradeAndExtractDomain(w http.ResponseWriter, r *http.Request)
 	return conn, domain, nil
 }
 
-func (s *Server) registerClient(conn *websocket.Conn, domain string) (*Connection, error) {
-	connection, err := s.connManager.AddConnection(domain, conn)
+func (s *Server) registerClient(conn *websocket.Conn, domain, session string) (*Connection, error) {
+	connection, stale, err := s.connManager.AddConnection(domain, session, conn)
 	if err != nil {
 		conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
 		conn.Close()
 		return nil, fmt.Errorf("registering domain: %w", err)
 	}
 
+	if stale != nil {
+		s.Logger.Info("Client reconnected, replacing stale connection", "domain", domain)
+		stale.Close()
+	}
+
 	if err := connection.SendMessage(&common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
-		s.connManager.RemoveConnection(domain)
+		s.connManager.RemoveConnection(domain, connection)
 		connection.Close()
 		return nil, fmt.Errorf("failed to send registration confirmation: %w", err)
 	}
@@ -116,7 +121,7 @@ func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, con
 	common.RunMessageLoop(conn, s.newTunnelDispatcher(domain, connection), s.heartbeat,
 		func(err error) {
 			s.requestLogger.LogClientDisconnected(domain, remoteAddr, disconnectReason(err))
-			s.connManager.RemoveConnection(domain)
+			s.connManager.RemoveConnection(domain, connection)
 			connection.Close()
 		},
 		func(msg *common.Message, err error) {

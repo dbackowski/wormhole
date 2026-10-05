@@ -1,6 +1,7 @@
 package client
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -78,6 +79,7 @@ func NewClient(cfg *Config) (*Client, error) {
 
 	dialHeaders := http.Header{}
 	dialHeaders.Set(common.ClientHeader, "1")
+	dialHeaders.Set(common.SessionHeader, rand.Text())
 	if cfg.AuthToken != "" {
 		dialHeaders.Set("Authorization", "Bearer "+cfg.AuthToken)
 	}

@@ -20,16 +20,16 @@ func main() {
 
 	if err != nil {
 		if errors.Is(err, client.ErrDomainTaken) {
-			fmt.Printf("Domain %q is already taken. Please choose another one with -domain.\n", clientCfg.Domain)
+			fmt.Fprintf(os.Stderr, "Domain %q is already taken. Please choose another one with -domain.\n", clientCfg.Domain)
 		} else {
-			fmt.Printf("Error creating client: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error creating client: %v\n", err)
 		}
 		os.Exit(1)
 	}
 
 	webUI, err := client.NewWebUI(c, clientCfg.WebUIPort)
 	if err != nil {
-		fmt.Printf("Error creating web UI: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error creating web UI: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -37,16 +37,18 @@ func main() {
 	// the next refresh and discarded on exit.
 	if err := webUI.Start(); err != nil {
 		c.Shutdown()
-		fmt.Printf("Web UI could not start on port %d: %v. Choose another with -webui-port.\n", clientCfg.WebUIPort, err)
+		fmt.Fprintf(os.Stderr, "Web UI could not start on port %d: %v. Choose another with -webui-port.\n", clientCfg.WebUIPort, err)
 		os.Exit(1)
 	}
 
 	// Printed after the alt screen is left (defers run in reverse), so it stays
-	// visible.
+	// visible. Registered first so it runs last: os.Exit skips no other cleanup,
+	// and the non-zero status lets a supervisor restart the client.
 	var lostErr error
 	defer func() {
 		if lostErr != nil {
-			fmt.Printf("Connection to the server was lost: %v. Exiting.\n", lostErr)
+			fmt.Fprintf(os.Stderr, "Connection to the server was lost: %v. Exiting.\n", lostErr)
+			os.Exit(1)
 		}
 	}()
 

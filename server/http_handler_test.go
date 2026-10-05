@@ -300,7 +300,7 @@ func TestTunnelRequest_WebSocketUpgradeRejectedWithLiveTunnel(t *testing.T) {
 	defer cleanup()
 	defer dialer.Close()
 
-	if _, err := s.connManager.AddConnection("live", acceptor); err != nil {
+	if _, _, err := s.connManager.AddConnection("live", "", acceptor); err != nil {
 		t.Fatalf("AddConnection() error = %v", err)
 	}
 	s.connManager.ActivateConnection("live")
@@ -374,7 +374,7 @@ func TestHandleResponse_MessageReceived(t *testing.T) {
 	ch := make(chan *common.Message, 1)
 	ch <- &common.Message{Status: http.StatusOK, Body: []byte("ok")}
 
-	s.handleResponse(context.Background(), w, newConnection(nil), ch)
+	s.handleResponse(context.Background(), w, newConnection(nil, ""), ch)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
@@ -387,7 +387,7 @@ func TestHandleResponse_ChannelClosed(t *testing.T) {
 	ch := make(chan *common.Message)
 	close(ch)
 
-	s.handleResponse(context.Background(), w, newConnection(nil), ch)
+	s.handleResponse(context.Background(), w, newConnection(nil, ""), ch)
 
 	if w.Code != http.StatusGatewayTimeout {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusGatewayTimeout)
@@ -401,7 +401,7 @@ func TestHandleResponse_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	s.handleResponse(ctx, w, newConnection(nil), ch)
+	s.handleResponse(ctx, w, newConnection(nil, ""), ch)
 
 	if w.Code != http.StatusGatewayTimeout {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusGatewayTimeout)
@@ -414,7 +414,7 @@ func TestHandleResponse_NilMessage(t *testing.T) {
 	ch := make(chan *common.Message, 1)
 	ch <- nil
 
-	s.handleResponse(context.Background(), w, newConnection(nil), ch)
+	s.handleResponse(context.Background(), w, newConnection(nil, ""), ch)
 
 	if w.Code != http.StatusGatewayTimeout {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusGatewayTimeout)
@@ -427,7 +427,7 @@ func TestForwardAndWaitForResponse_SendFails(t *testing.T) {
 	ws.Close()
 	cleanup()
 
-	conn := newConnection(ws)
+	conn := newConnection(ws, "")
 	msg := &common.Message{UUID: "u1", Type: common.MessageTypeHTTPRequest}
 	w := httptest.NewRecorder()
 
@@ -472,7 +472,7 @@ func TestTunnelRequest_WebSocketUpgradeRejected(t *testing.T) {
 	defer cleanup()
 
 	s := newTestServer(t)
-	s.connManager.AddConnection("foo", dialer) //nolint:errcheck
+	s.connManager.AddConnection("foo", "", dialer) //nolint:errcheck
 	s.connManager.ActivateConnection("foo")
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -493,7 +493,7 @@ func TestTunnelRequest_BodyTooLarge(t *testing.T) {
 	defer cleanup()
 
 	s := newTestServer(t)
-	s.connManager.AddConnection("foo", dialer) //nolint:errcheck
+	s.connManager.AddConnection("foo", "", dialer) //nolint:errcheck
 	s.connManager.ActivateConnection("foo")
 
 	body := bytes.Repeat([]byte("a"), common.MaxRequestBodySize+1)
@@ -513,7 +513,7 @@ func TestTunnelRequest_Success(t *testing.T) {
 	defer cleanup()
 
 	s := newTestServer(t)
-	s.connManager.AddConnection("foo", dialer) //nolint:errcheck
+	s.connManager.AddConnection("foo", "", dialer) //nolint:errcheck
 	s.connManager.ActivateConnection("foo")
 
 	go func() {
@@ -591,7 +591,7 @@ func TestWriteSuccessResponse_ValidStatusBoundaries(t *testing.T) {
 func TestHandleResponse_ConnectionClosed(t *testing.T) {
 	s := newTestServer(t)
 	w := httptest.NewRecorder()
-	conn := newConnection(nil)
+	conn := newConnection(nil, "")
 	conn.closeOnce.Do(func() { close(conn.done) })
 
 	done := make(chan time.Duration, 1)
@@ -618,7 +618,7 @@ func TestHandleResponse_ConnectionClosed(t *testing.T) {
 // A response delivered just before the tunnel closes must win over the 502.
 func TestHandleResponse_ClosedConnectionPrefersBufferedResponse(t *testing.T) {
 	s := newTestServer(t)
-	conn := newConnection(nil)
+	conn := newConnection(nil, "")
 	conn.closeOnce.Do(func() { close(conn.done) })
 
 	for range 50 {
@@ -641,7 +641,7 @@ func TestForwardAndWaitForResponse_ClientDisconnects(t *testing.T) {
 	defer cleanup()
 
 	s := newTestServer(t)
-	connection, err := s.connManager.AddConnection("foo", dialer)
+	connection, _, err := s.connManager.AddConnection("foo", "", dialer)
 	if err != nil {
 		t.Fatalf("AddConnection() error = %v", err)
 	}
@@ -663,7 +663,7 @@ func TestForwardAndWaitForResponse_ClientDisconnects(t *testing.T) {
 
 	// What the disconnect callback in handleWebSocketConnection does.
 	acceptor.Close()
-	s.connManager.RemoveConnection("foo")
+	s.connManager.RemoveConnection("foo", connection)
 	connection.Close()
 
 	select {

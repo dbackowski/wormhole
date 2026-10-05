@@ -57,7 +57,7 @@ func TestAddConnection(t *testing.T) {
 			cm := NewConnectionManager()
 			var err error
 			for _, d := range tc.domains {
-				_, err = cm.AddConnection(d, nil)
+				_, _, err = cm.AddConnection(d, "", nil)
 			}
 			if (err != nil) != tc.wantErr {
 				t.Errorf("AddConnection() error = %v, wantErr %v", err, tc.wantErr)
@@ -83,7 +83,7 @@ func TestGetConnection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cm := NewConnectionManager()
 			for _, d := range tc.setup {
-				cm.AddConnection(d, nil) //nolint:errcheck
+				cm.AddConnection(d, "", nil) //nolint:errcheck
 				cm.ActivateConnection(d)
 			}
 			conn, err := cm.GetConnection(tc.domain)
@@ -99,8 +99,8 @@ func TestGetConnection(t *testing.T) {
 
 func TestRemoveConnection(t *testing.T) {
 	cm := NewConnectionManager()
-	cm.AddConnection("example.com", nil) //nolint:errcheck
-	cm.RemoveConnection("example.com")
+	c, _, _ := cm.AddConnection("example.com", "", nil)
+	cm.RemoveConnection("example.com", c)
 	if cm.Count() != 0 {
 		t.Errorf("Count() = %d, want 0 after remove", cm.Count())
 	}
@@ -113,7 +113,7 @@ func TestRemoveConnection(t *testing.T) {
 func TestRemoveConnection_NonExistent(t *testing.T) {
 	cm := NewConnectionManager()
 	// should not panic
-	cm.RemoveConnection("missing.com")
+	cm.RemoveConnection("missing.com", nil)
 }
 
 func TestCount(t *testing.T) {
@@ -121,15 +121,15 @@ func TestCount(t *testing.T) {
 	if cm.Count() != 0 {
 		t.Errorf("Count() = %d, want 0", cm.Count())
 	}
-	cm.AddConnection("a.com", nil) //nolint:errcheck
+	a, _, _ := cm.AddConnection("a.com", "", nil)
 	if cm.Count() != 1 {
 		t.Errorf("Count() = %d, want 1", cm.Count())
 	}
-	cm.AddConnection("b.com", nil) //nolint:errcheck
+	cm.AddConnection("b.com", "", nil) //nolint:errcheck
 	if cm.Count() != 2 {
 		t.Errorf("Count() = %d, want 2", cm.Count())
 	}
-	cm.RemoveConnection("a.com")
+	cm.RemoveConnection("a.com", a)
 	if cm.Count() != 1 {
 		t.Errorf("Count() = %d, want 1 after remove", cm.Count())
 	}
@@ -142,8 +142,8 @@ func TestCloseAll(t *testing.T) {
 	defer cleanup2()
 
 	cm := NewConnectionManager()
-	cm.AddConnection("a.com", ws1) //nolint:errcheck
-	cm.AddConnection("b.com", ws2) //nolint:errcheck
+	cm.AddConnection("a.com", "", ws1) //nolint:errcheck
+	cm.AddConnection("b.com", "", ws2) //nolint:errcheck
 
 	cm.CloseAll()
 
@@ -161,10 +161,50 @@ func TestConnectionManager_ConcurrentAccess(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			domain := strings.Repeat("x", i+1) + ".com"
-			cm.AddConnection(domain, nil) //nolint:errcheck
-			cm.GetConnection(domain)      //nolint:errcheck
+			cm.AddConnection(domain, "", nil) //nolint:errcheck
+			cm.GetConnection(domain)          //nolint:errcheck
 			cm.Count()
 		}(i)
 	}
 	wg.Wait()
+}
+
+func TestAddConnection_ReclaimsSameSession(t *testing.T) {
+	cm := NewConnectionManager()
+	first, _, err := cm.AddConnection("a.com", "secret", nil)
+	if err != nil {
+		t.Fatalf("first AddConnection() error = %v", err)
+	}
+
+	if _, _, err := cm.AddConnection("a.com", "other", nil); err == nil {
+		t.Error("AddConnection() with a different session succeeded, want domain taken")
+	}
+	if _, _, err := cm.AddConnection("a.com", "", nil); err == nil {
+		t.Error("AddConnection() with no session succeeded, want domain taken")
+	}
+
+	second, stale, err := cm.AddConnection("a.com", "secret", nil)
+	if err != nil {
+		t.Fatalf("AddConnection() with the same session error = %v", err)
+	}
+	if stale != first {
+		t.Error("stale connection is not the one being replaced")
+	}
+
+	// The replaced connection's read loop fails later; it must not release
+	// the domain its replacement now holds.
+	cm.RemoveConnection("a.com", first)
+	cm.ActivateConnection("a.com")
+	if got, err := cm.GetConnection("a.com"); err != nil || got != second {
+		t.Errorf("GetConnection() = %v, %v; want the replacement", got, err)
+	}
+}
+
+// Clients that predate the session header must not reclaim each other.
+func TestAddConnection_EmptySessionsDoNotMatch(t *testing.T) {
+	cm := NewConnectionManager()
+	cm.AddConnection("a.com", "", nil) //nolint:errcheck
+	if _, _, err := cm.AddConnection("a.com", "", nil); err == nil {
+		t.Error("second AddConnection() without a session succeeded, want domain taken")
+	}
 }

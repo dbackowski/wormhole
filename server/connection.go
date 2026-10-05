@@ -11,6 +11,7 @@ import (
 
 type Connection struct {
 	conn      *websocket.Conn
+	session   string
 	requests  *PendingRequests
 	mu        sync.Mutex
 	ready     bool // guarded by ConnectionManager.mu
@@ -18,9 +19,10 @@ type Connection struct {
 	closeOnce sync.Once
 }
 
-func newConnection(conn *websocket.Conn) *Connection {
+func newConnection(conn *websocket.Conn, session string) *Connection {
 	return &Connection{
 		conn:     conn,
+		session:  session,
 		requests: NewPendingRequests(),
 		done:     make(chan struct{}),
 	}

@@ -121,7 +121,7 @@ func TestHandleMetrics_WithConnections(t *testing.T) {
 	defer cleanup()
 
 	s := newTestServer(t)
-	s.connManager.AddConnection("test", ws) //nolint:errcheck
+	s.connManager.AddConnection("test", "", ws) //nolint:errcheck
 
 	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	w := httptest.NewRecorder()
@@ -235,7 +235,7 @@ func TestTunnelRequest_SlowBodyIsCutOff(t *testing.T) {
 
 	_, acceptor, cleanupWS := newWSPair(t)
 	defer cleanupWS()
-	if _, err := s.connManager.AddConnection("foo", acceptor); err != nil {
+	if _, _, err := s.connManager.AddConnection("foo", "", acceptor); err != nil {
 		t.Fatalf("AddConnection() error = %v", err)
 	}
 	s.connManager.ActivateConnection("foo")

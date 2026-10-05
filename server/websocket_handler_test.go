@@ -298,7 +298,7 @@ func TestRegisterClient_Success(t *testing.T) {
 	dialer, _, cleanup := newWSPair(t)
 	defer cleanup()
 
-	_, err := s.registerClient(dialer, "regtest.com")
+	_, err := s.registerClient(dialer, "regtest.com", "")
 	if err != nil {
 		t.Fatalf("registerClient() error = %v", err)
 	}
@@ -315,9 +315,9 @@ func TestRegisterClient_DuplicateDomain(t *testing.T) {
 	dialer, _, cleanup2 := newWSPair(t)
 	defer cleanup2()
 
-	s.connManager.AddConnection("dup.com", ws1) //nolint:errcheck
+	s.connManager.AddConnection("dup.com", "", ws1) //nolint:errcheck
 
-	_, err := s.registerClient(dialer, "dup.com")
+	_, err := s.registerClient(dialer, "dup.com", "")
 	if err == nil {
 		t.Error("expected error for duplicate domain, got nil")
 	}
@@ -415,7 +415,7 @@ func TestRegisterClient_WriteConfirmationFails(t *testing.T) {
 	ws, cleanup := newTestWSPair(t)
 	cleanup() // close immediately so WriteJSON fails
 
-	_, err := s.registerClient(ws, "writefail.com")
+	_, err := s.registerClient(ws, "writefail.com", "")
 	if err == nil {
 		t.Error("expected error when write fails, got nil")
 	}
@@ -535,5 +535,63 @@ func TestServeWebSocket_UnmarkedUpgradeDoesNotRegister(t *testing.T) {
 	}
 	if count := s.connManager.Count(); count != 0 {
 		t.Errorf("active connections = %d, want 0", count)
+	}
+}
+
+// A reconnect carrying the same session secret takes over a domain still held
+// by its own stale connection, instead of waiting for the heartbeat timeout.
+func TestServeWebSocket_SameSessionReclaimsDomain(t *testing.T) {
+	s := newTestServer(t)
+	srv := httptest.NewServer(s.mux)
+	defer srv.Close()
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+
+	dial := func(session string) (*websocket.Conn, common.MessageType) {
+		t.Helper()
+		header := http.Header{}
+		header.Set(common.ClientHeader, "1")
+		header.Set(common.SessionHeader, session)
+		header.Set("Host", "reclaim.localhost")
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
+		if err != nil {
+			t.Fatalf("dial websocket: %v", err)
+		}
+		var msg common.Message
+		if err := conn.ReadJSON(&msg); err != nil {
+			t.Fatalf("read registration: %v", err)
+		}
+		return conn, msg.Type
+	}
+
+	// The first connection stays open but unread, like one whose client has
+	// vanished without closing it.
+	stale, typ := dial("secret")
+	defer stale.Close()
+	if typ != common.MessageTypeDomainRegistered {
+		t.Fatalf("first dial: type = %q, want %q", typ, common.MessageTypeDomainRegistered)
+	}
+
+	other, typ := dial("someone-else")
+	other.Close()
+	if typ != common.MessageTypeDomainTaken {
+		t.Errorf("dial with another session: type = %q, want %q", typ, common.MessageTypeDomainTaken)
+	}
+
+	fresh, typ := dial("secret")
+	defer fresh.Close()
+	if typ != common.MessageTypeDomainRegistered {
+		t.Fatalf("reconnect: type = %q, want %q", typ, common.MessageTypeDomainRegistered)
+	}
+
+	// The server closes the stale connection.
+	stale.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, _, err := stale.ReadMessage(); err == nil {
+		t.Error("stale connection still open after reclaim")
+	}
+
+	// Its failing read loop must not release the domain from the replacement.
+	time.Sleep(50 * time.Millisecond)
+	if _, err := s.connManager.GetConnection("reclaim"); err != nil {
+		t.Errorf("domain not held after reclaim: %v", err)
 	}
 }
