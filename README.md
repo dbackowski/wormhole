@@ -34,7 +34,7 @@ Your local server is now available at: `http://myapp.localhost:8080`
 
 ### Download Pre-built Binaries
 
-Download the latest release for your platform from the [Releases](https://github.com/dbackowski/wormhole/releases) page. Pre-built binaries are provided for Linux and macOS (amd64 and arm64).
+Download the latest release for your platform from the [Releases](https://github.com/dbackowski/wormhole/releases) page. Pre-built binaries are provided for Linux and macOS (amd64 and arm64). Archives are named `wormhole-<client|server>-<linux|darwin>-<amd64|arm64>.tar.gz`; the client archive contains `wormhole`, the server archive `wormhole-server`.
 
 **Other platforms:** The client also builds from source on FreeBSD, OpenBSD, NetBSD and DragonFly BSD. Windows is not supported natively; run the Linux binary under [WSL](https://learn.microsoft.com/windows/wsl/) instead. The server builds on any platform Go supports.
 
@@ -67,7 +67,7 @@ go mod download
 make build
 ```
 
-This produces `bin/client/wormhole` and `bin/server/wormhole`.
+This produces `bin/client/wormhole` and `bin/server/wormhole-server`.
 
 To run the test suite:
 
@@ -221,6 +221,8 @@ To run your own Wormhole server, you need:
    ./wormhole-server -port=8080 -host=yourdomain.com
    ```
 
+> **Shared servers and cookies:** All tunnels on your server are subdomains of one domain, so unless that domain is on the [Public Suffix List](https://publicsuffix.org/), browsers treat them as one site. Any tunnel can then set cookies (via `Set-Cookie` or JavaScript) that every other tunnel receives, enabling session fixation and CSRF-token overwrites, and `SameSite` does not separate them. This does not matter if only you or your team use the server. If untrusted users share it, [submit your domain to the list](https://github.com/publicsuffix/list/wiki/Guidelines) (private section).
+
 > **Forwarded headers behind TLS termination:** The server adds `X-Forwarded-Proto` to each tunneled request. Because TLS is terminated by your reverse proxy, an inbound `X-Forwarded-Proto` (set by Caddy/nginx) is always honored; when absent, the value defaults to `https` if `-host` is set and `http` otherwise. `X-Forwarded-For` appends the incoming peer to any existing chain, so configure your proxy to forward the real client IP.
 
 ### Docker
@@ -245,8 +247,8 @@ The repository includes a `fly.toml` for deployment to Fly.io. Set your `FLY_API
 - **10 second request timeout** - The client gives up on your local server after 10 seconds and returns `502 Bad Gateway`. The server independently stops waiting after 15 seconds and returns `504 Gateway Timeout`
 - **64 concurrent requests per tunnel** - Beyond that the client returns `503 Service Unavailable` until a slot frees up
 - **Redirects are passed through unchanged** - The client does not follow redirects from your local server. A `Location` header pointing at `http://localhost:3000` is sent to the browser as-is, taking it off the tunnel. Configure your app to emit relative redirects, or to build absolute URLs from the `X-Forwarded-Host` and `X-Forwarded-Proto` headers
-- **Reconnect is time-limited** - If the connection drops, the client retries with exponential backoff (500 ms up to 30 s) for 5 minutes, then exits. Requests in flight when the connection drops fail with `502 Bad Gateway`
-- **Older clients can be delayed reconnecting after an unclean drop** - If the connection dies without closing cleanly (laptop sleep, Wi-Fi drop), the server only notices when its heartbeat times out, up to 30 seconds later. Current clients reclaim their own subdomain immediately: each client process sends a random session secret on every dial, and the server replaces a stale connection registered with the same secret. Clients without it (up to the release before this change) see the subdomain as taken until the timeout and keep retrying, so they recover on their own
+- **Reconnect is time-limited** - If the connection drops, the client retries with exponential backoff (500 ms up to 30 s) for 5 minutes, then exits with status 1, so a supervisor such as systemd `Restart=on-failure` can restart it. If the server rejects the auth token, the client stops retrying immediately. Requests in flight when the connection drops fail with `502 Bad Gateway`
+- **Older clients can be delayed reconnecting after an unclean drop** - If the connection dies without closing cleanly (laptop sleep, Wi-Fi drop), the server only notices when its heartbeat times out, up to 30 seconds later. Current clients reclaim their own subdomain immediately: each client process sends a random session secret on every dial, and the server replaces a stale connection registered with the same secret. Clients up to `v1.0.5` do not send it, so they see the subdomain as taken until the timeout and keep retrying, so they recover on their own
 
 ## Requirements
 

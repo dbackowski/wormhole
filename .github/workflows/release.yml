@@ -26,6 +26,8 @@ jobs:
   build-linux:
     needs: test
     runs-on: ubuntu-latest
+    env:
+      BIN: ${{ matrix.component == 'server' && 'wormhole-server' || 'wormhole' }}
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -45,11 +47,11 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 0
         run: |
-          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o wormhole cmd/${{ matrix.component }}/main.go
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o $BIN cmd/${{ matrix.component }}/main.go
 
       - name: Create archive
         run: |
-          tar -czvf wormhole-${{ matrix.component }}-linux-${{ matrix.arch }}.tar.gz wormhole
+          tar -czvf wormhole-${{ matrix.component }}-linux-${{ matrix.arch }}.tar.gz $BIN
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -60,6 +62,8 @@ jobs:
   build-macos:
     needs: test
     runs-on: macos-latest
+    env:
+      BIN: ${{ matrix.component == 'server' && 'wormhole-server' || 'wormhole' }}
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -79,25 +83,17 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 0
         run: |
-          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o wormhole cmd/${{ matrix.component }}/main.go
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o $BIN cmd/${{ matrix.component }}/main.go
 
       - name: Create archive
         run: |
-          # Map architecture names for release
-          ARCH_NAME=${{ matrix.arch }}
-          if [ "$ARCH_NAME" = "amd64" ]; then
-            ARCH_NAME="x86_64"
-          elif [ "$ARCH_NAME" = "arm64" ]; then
-            ARCH_NAME="arm64"
-          fi
-
-          tar -czvf wormhole-${{ matrix.component }}-darwin-${ARCH_NAME}.tar.gz wormhole
+          tar -czvf wormhole-${{ matrix.component }}-darwin-${{ matrix.arch }}.tar.gz $BIN
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: wormhole-${{ matrix.component }}-darwin-${{ matrix.arch }}
-          path: wormhole-*-darwin-*.tar.gz
+          path: wormhole-${{ matrix.component }}-darwin-${{ matrix.arch }}.tar.gz
 
   release:
     needs: [build-linux, build-macos]
