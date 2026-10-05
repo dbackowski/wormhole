@@ -8,35 +8,30 @@ import (
 	"github.com/dbackowski/wormhole/common"
 )
 
-type pendingRequest struct {
-	ch   chan *common.Message
-	once sync.Once
-}
-
 type PendingRequests struct {
-	pending map[string]*pendingRequest
-	mu      sync.RWMutex
+	pending map[string]chan *common.Message
+	mu      sync.Mutex
 }
 
 func NewPendingRequests() *PendingRequests {
 	return &PendingRequests{
-		pending: make(map[string]*pendingRequest),
+		pending: make(map[string]chan *common.Message),
 	}
 }
 
 func (pr *PendingRequests) Register(ctx context.Context, uuid string) (chan *common.Message, context.CancelFunc) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, common.RequestTimeoutBuffer)
 
-	req := &pendingRequest{ch: make(chan *common.Message, 1)}
+	ch := make(chan *common.Message, 1)
 	pr.mu.Lock()
-	pr.pending[uuid] = req
+	pr.pending[uuid] = ch
 	pr.mu.Unlock()
 
 	context.AfterFunc(timeoutCtx, func() {
 		pr.Cleanup(uuid)
 	})
 
-	return req.ch, func() {
+	return ch, func() {
 		cancel()
 		pr.Cleanup(uuid)
 	}
@@ -46,25 +41,27 @@ func (pr *PendingRequests) Deliver(message *common.Message) error {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 
-	req, exists := pr.pending[message.UUID]
+	ch, exists := pr.pending[message.UUID]
 	if !exists {
 		return fmt.Errorf("no pending request for UUID %s", message.UUID)
 	}
 
 	select {
-	case req.ch <- message:
+	case ch <- message:
 		return nil
 	default:
 		return fmt.Errorf("failed to deliver message %s, channel full", message.UUID)
 	}
 }
 
+// Cleanup runs twice per request (deferred cleanup and timeout). The lookup,
+// delete and close share one lock, so only the first call closes the channel.
 func (pr *PendingRequests) Cleanup(uuid string) {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 
-	if req, exists := pr.pending[uuid]; exists {
+	if ch, exists := pr.pending[uuid]; exists {
 		delete(pr.pending, uuid)
-		req.once.Do(func() { close(req.ch) })
+		close(ch)
 	}
 }
