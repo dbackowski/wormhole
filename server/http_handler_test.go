@@ -110,7 +110,7 @@ func TestRouteRequest_PlainWSPathIsTunneled(t *testing.T) {
 	}
 }
 
-func TestTunnelRequest_UpgradeRejectedWithoutTunnel(t *testing.T) {
+func TestTunnelRequest_UpgradeWithoutTunnel(t *testing.T) {
 	s := newTestServer(t)
 	r := httptest.NewRequest(http.MethodGet, "/socket", nil)
 	r.Host = "myapp.wormhole.tools"
@@ -120,8 +120,8 @@ func TestTunnelRequest_UpgradeRejectedWithoutTunnel(t *testing.T) {
 
 	s.routeRequest(w, r)
 
-	if w.Code != http.StatusNotImplemented {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotImplemented)
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
 	}
 }
 
@@ -292,32 +292,6 @@ func TestBuildRequestMessage_Normal(t *testing.T) {
 	}
 }
 
-// Passthrough is rejected in tunnelRequest, ahead of the tunnel lookup, so the
-// answer is the same whether or not a client happens to be connected.
-func TestTunnelRequest_WebSocketUpgradeRejectedWithLiveTunnel(t *testing.T) {
-	s := newTestServer(t)
-	dialer, acceptor, cleanup := newWSPair(t)
-	defer cleanup()
-	defer dialer.Close()
-
-	if _, _, err := s.connManager.AddConnection("live", "", acceptor); err != nil {
-		t.Fatalf("AddConnection() error = %v", err)
-	}
-	s.connManager.ActivateConnection("live")
-
-	r := httptest.NewRequest(http.MethodGet, "/socket", nil)
-	r.Host = "live.localhost"
-	r.Header.Set("Connection", "upgrade")
-	r.Header.Set("Upgrade", "websocket")
-	w := httptest.NewRecorder()
-
-	s.tunnelRequest(w, r)
-
-	if w.Code != http.StatusNotImplemented {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotImplemented)
-	}
-}
-
 func TestWriteResponse(t *testing.T) {
 	s := newTestServer(t)
 	w := httptest.NewRecorder()
@@ -464,27 +438,6 @@ func TestTunnelRequest_DomainNotFound(t *testing.T) {
 
 	if w.Code != http.StatusBadGateway {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
-	}
-}
-
-func TestTunnelRequest_WebSocketUpgradeRejected(t *testing.T) {
-	dialer, _, cleanup := newWSPair(t)
-	defer cleanup()
-
-	s := newTestServer(t)
-	s.connManager.AddConnection("foo", "", dialer) //nolint:errcheck
-	s.connManager.ActivateConnection("foo")
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Host = "foo.localhost"
-	r.Header.Set("Connection", "upgrade")
-	r.Header.Set("Upgrade", "websocket")
-	w := httptest.NewRecorder()
-
-	s.tunnelRequest(w, r)
-
-	if w.Code != http.StatusNotImplemented {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotImplemented)
 	}
 }
 

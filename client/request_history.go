@@ -11,6 +11,12 @@ import (
 // the head is kept, enough for typical JSON and webhook payloads.
 const MaxStoredBodySize = 64 << 10
 
+// Per WebSocket, the most recent messages are kept, each cut to its head.
+const (
+	MaxStoredMessages    = 100
+	MaxStoredMessageSize = 4 << 10
+)
+
 type RequestHistory struct {
 	logs    []RequestLog
 	mutex   sync.RWMutex
@@ -50,6 +56,31 @@ func (rh *RequestHistory) Add(log RequestLog) {
 	}
 }
 
+// Update applies fn to the entry for uuid, if it is still in the history.
+func (rh *RequestHistory) Update(uuid string, fn func(*RequestLog)) {
+	rh.mutex.Lock()
+	defer rh.mutex.Unlock()
+
+	for i := range rh.logs {
+		if rh.logs[i].UUID == uuid {
+			fn(&rh.logs[i])
+			return
+		}
+	}
+}
+
+func (rh *RequestHistory) GetMessages(uuid string) ([]WSMessage, bool) {
+	rh.mutex.RLock()
+	defer rh.mutex.RUnlock()
+
+	for _, log := range rh.logs {
+		if log.UUID == uuid {
+			return slices.Clone(log.Messages), true
+		}
+	}
+	return nil, false
+}
+
 func (rh *RequestHistory) Clear() {
 	rh.mutex.Lock()
 	defer rh.mutex.Unlock()
@@ -70,5 +101,9 @@ func (rh *RequestHistory) GetRecent(n int) []RequestLog {
 	slice := rh.logs[start:]
 	result := make([]RequestLog, len(slice))
 	copy(result, slice)
+	// Update trims Messages in place, so copies must not share them.
+	for i := range result {
+		result[i].Messages = nil
+	}
 	return result
 }

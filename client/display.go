@@ -130,6 +130,12 @@ func (td *TerminalDisplay) ShowRequestHistory(logs []RequestLog) {
 		fmt.Fprintf(&b, "  %s%s%s  %-7s %-30s %s",
 			ansiDim, FormatTime(rl.Timestamp), ansiReset,
 			rl.Method, rl.URL, colorStatus(rl.StatusCode))
+		switch {
+		case rl.Stream.Open:
+			fmt.Fprintf(&b, "  %swebsocket open%s", ansiGreen, ansiReset)
+		case !rl.Stream.ClosedAt.IsZero():
+			fmt.Fprintf(&b, "  %swebsocket closed%s", ansiDim, ansiReset)
+		}
 		if rl.Error != "" {
 			fmt.Fprintf(&b, "  %s%s%s", ansiRed, rl.Error, ansiReset)
 		}

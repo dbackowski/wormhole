@@ -111,6 +111,16 @@ func (s *Server) newTunnelDispatcher(domain string, connection *Connection) *com
 		return nil
 	})
 
+	dispatcher.Register(common.MessageTypeStreamData, func(msg *common.Message) error {
+		connection.streams.Deliver(msg.UUID, msg.Body)
+		return nil
+	})
+
+	dispatcher.Register(common.MessageTypeStreamClose, func(msg *common.Message) error {
+		connection.streams.Finish(msg.UUID)
+		return nil
+	})
+
 	return dispatcher
 }
 

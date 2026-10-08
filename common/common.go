@@ -66,6 +66,13 @@ const (
 	MessageTypeHTTPResponse     MessageType = "http_response"
 	MessageTypeDomainTaken      MessageType = "domain_taken"
 	MessageTypeDomainRegistered MessageType = "domain_registered"
+
+	// A WebSocket handshake. The client answers with an http_response; on 101
+	// both sides then carry the raw connection as stream_data until one of them
+	// sends stream_close. See Streams.
+	MessageTypeUpgradeRequest MessageType = "upgrade_request"
+	MessageTypeStreamData     MessageType = "stream_data"
+	MessageTypeStreamClose    MessageType = "stream_close"
 )
 
 type Message struct {

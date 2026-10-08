@@ -112,6 +112,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 
 ✅ **Custom Subdomains** - Choose your own subdomain name  
 ✅ **Real-time Tunneling** - Instant request forwarding via WebSockets  
+✅ **WebSocket Passthrough** - WebSockets your app serves work through the tunnel, with their messages shown in the Web UI  
 ✅ **Header Forwarding** - End-to-end headers are forwarded; hop-by-hop headers are stripped, `Host` is set to the tunnel host, and `X-Forwarded-For`/`-Proto`/`-Host` are added so your local app sees the original client IP and public URL (standard proxy behavior)  
 ✅ **Multiple Clients** - Support for multiple simultaneous tunnels  
 ✅ **Automatic Cleanup** - Domains are released when clients disconnect  
@@ -133,6 +134,7 @@ When the client is running, a dashboard is available at `http://localhost:4040` 
 - See the active tunnel URL
 - View recent requests with method, path, status code, and timestamp
 - Inspect request/response headers and bodies
+- For WebSockets: see whether each socket is open, the bytes and message counts in each direction, and its recent messages (text, JSON, binary as hex, close codes)
 - Clear the request history with the **Clear** button (also clears the terminal view)
 
 ![Dashboard with request list](https://i.imgur.com/dKNxqI4.png)
@@ -186,6 +188,7 @@ graph TD
 2. Clients connect via WebSocket and claim a subdomain
 3. HTTP requests to `subdomain.server:port` are forwarded to the client over WebSocket
 4. The client forwards requests to your local server and returns responses
+5. A WebSocket handshake is forwarded the same way. Once your local server accepts it, the raw connection is relayed in both directions over the same tunnel until either side closes it
 
 ## Server Endpoints
 
@@ -205,9 +208,8 @@ Statuses the server returns for tunneled requests, rather than passing through f
 |--------|---------|
 | `400 Bad Request` | The `Host` header has no subdomain to route on |
 | `413 Request Entity Too Large` | Request body exceeds 10 MB |
-| `501 Not Implemented` | WebSocket upgrade request (see [Limitations](#limitations)) |
 | `502 Bad Gateway` | No client is connected for the subdomain, the tunnel dropped mid-request, or the local server was unreachable, too slow, or returned a body over 10 MB |
-| `503 Service Unavailable` | The client is already handling 64 concurrent requests |
+| `503 Service Unavailable` | The client is already handling 64 concurrent requests, or the tunnel already has 100 open WebSockets |
 | `504 Gateway Timeout` | No response from the client within 15 seconds |
 
 ## Self-Hosting
@@ -240,7 +242,10 @@ The repository includes a `fly.toml` for deployment to Fly.io. Set your `FLY_API
 
 ## Limitations
 
-- **No WebSocket passthrough** - WebSocket upgrade requests to tunneled services are rejected with `501 Not Implemented`
+- **WebSockets are uncompressed** - The client removes `Sec-WebSocket-Extensions` from the handshake so that `permessage-deflate` is never negotiated, which lets the Web UI read the messages. Your app sees no compression offered
+- **100 open WebSockets per tunnel** - Beyond that the server returns `503 Service Unavailable`
+- **Slow WebSocket readers are disconnected** - The tunnel has no per-socket flow control. If one side of a socket stops reading while about 2 MB is waiting for it, that socket is closed so it cannot stall the rest of the tunnel
+- **WebSockets end when the tunnel drops** - If the client loses its connection to the server, its open sockets are closed; your app's own reconnect logic takes over from there
 - **No built-in TLS** - Requires a reverse proxy for HTTPS
 - **10 MB request body limit** - Requests larger than 10 MB are rejected with `413 Request Entity Too Large`
 - **10 MB response body limit** - Responses larger than 10 MB from your local server are rejected with `502 Bad Gateway`. Bodies travel base64-encoded inside a WebSocket frame capped at 16 MB, which is what sets both limits
@@ -253,7 +258,7 @@ The repository includes a `fly.toml` for deployment to Fly.io. Set your `FLY_API
 ## Requirements
 
 - Go 1.25 or later
-- A client and server from the same release line. Clients up to `v1.0.5` identified themselves by connecting to `/ws`; the server now requires the `X-Wormhole-Client` header, so those clients cannot register and fail with `websocket: bad handshake`. Upgrade the client
+- A client and server from the same release line. A client older than the server's WebSocket support does not answer WebSocket handshakes, so they fail with `504 Gateway Timeout` after 15 seconds. Clients up to `v1.0.5` identified themselves by connecting to `/ws`; the server now requires the `X-Wormhole-Client` header, so those clients cannot register and fail with `websocket: bad handshake`. Upgrade the client
 - Available port for the server (default: 8080)
 - Local development server to tunnel
 

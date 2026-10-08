@@ -26,19 +26,15 @@ func (s *Server) tunnelRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Checked before the tunnel lookup so passthrough always reports itself as
-	// unsupported, rather than as a missing tunnel when no client is connected.
-	if websocket.IsWebSocketUpgrade(r) {
-		s.Logger.Debug("Rejected WebSocket upgrade to tunnel (passthrough not supported)",
-			"domain", domain, "remote_addr", r.RemoteAddr, "url", r.URL.String())
-		http.Error(w, "WebSocket passthrough is not supported", http.StatusNotImplemented)
-		return
-	}
-
 	connection, err := s.connManager.GetConnection(domain)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	if websocket.IsWebSocketUpgrade(r) {
+		s.tunnelUpgrade(w, r, connection, domain)
 		return
 	}
 
@@ -162,28 +158,37 @@ func (s *Server) writeDisconnectedResponse(w http.ResponseWriter) {
 }
 
 func (s *Server) handleResponse(ctx context.Context, w http.ResponseWriter, connection *Connection, responseChan chan *common.Message) {
+	if responseMsg := s.awaitResponse(ctx, w, connection, responseChan); responseMsg != nil {
+		s.writeSuccessResponse(w, responseMsg)
+	}
+}
+
+// awaitResponse returns the client's response, or nil once it has answered w
+// itself with a timeout or disconnect.
+func (s *Server) awaitResponse(ctx context.Context, w http.ResponseWriter, connection *Connection, responseChan chan *common.Message) *common.Message {
 	select {
 	case responseMsg, ok := <-responseChan:
 		if !ok || responseMsg == nil {
 			s.writeTimeoutResponse(w)
-			return
+			return nil
 		}
-		s.writeSuccessResponse(w, responseMsg)
+		return responseMsg
 	case <-connection.Done():
 		// Both cases can be ready at once when a response lands just before the
 		// tunnel closes, and select would pick at random. Prefer the response.
 		select {
 		case responseMsg, ok := <-responseChan:
 			if ok && responseMsg != nil {
-				s.writeSuccessResponse(w, responseMsg)
-				return
+				return responseMsg
 			}
 		default:
 		}
 		// No response can ever arrive now. Answer with the same status a request
 		// that arrived after the disconnect would get.
 		s.writeDisconnectedResponse(w)
+		return nil
 	case <-ctx.Done():
 		s.writeTimeoutResponse(w)
+		return nil
 	}
 }

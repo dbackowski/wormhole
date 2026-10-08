@@ -153,6 +153,16 @@ body {
 
 .error-dot { color: var(--color-server-error); }
 
+.ws-badge {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 0 5px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+}
+.ws-open { color: var(--color-success); }
+.ws-closed { color: var(--color-text-light); }
+
 .empty { color: var(--color-text-light); text-align: center; padding: 30px 12px; font-size: 13px; }
 
 /* Details pane */
@@ -246,6 +256,30 @@ body {
 
 .details-section .header-value { color: #555; word-break: break-all; }
 .details-section .no-content { color: var(--color-text-light); font-style: italic; }
+
+/* WebSocket messages */
+
+.message-list { list-style: none; margin: 0; padding: 0; }
+
+.message {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--color-border-light);
+}
+
+.message-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.message-dir { font-weight: 600; width: 1em; }
+.to-app .message-dir { color: var(--color-primary); }
+.from-app .message-dir { color: var(--color-success); }
+.message-type { font-family: var(--font-mono); color: var(--color-text-muted); }
+.message-size { color: var(--color-text-light); }
+.details-section pre.message-payload { margin-top: 4px; max-height: 200px; }
+.messages-note { font-size: 12px; margin-bottom: 8px; }
 
 .error-section h4 { color: var(--color-server-error); }
 .error-section .error-reason {

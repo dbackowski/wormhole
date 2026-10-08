@@ -530,8 +530,9 @@ func TestServeWebSocket_UnmarkedUpgradeDoesNotRegister(t *testing.T) {
 		conn.Close()
 		t.Fatal("unmarked upgrade was accepted as a client registration")
 	}
-	if resp == nil || resp.StatusCode != http.StatusNotImplemented {
-		t.Fatalf("resp = %v, want %d", resp, http.StatusNotImplemented)
+	// Tunneled like any browser socket, and no tunnel holds the domain.
+	if resp == nil || resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("resp = %v, want %d", resp, http.StatusBadGateway)
 	}
 	if count := s.connManager.Count(); count != 0 {
 		t.Errorf("active connections = %d, want 0", count)

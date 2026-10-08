@@ -21,6 +21,11 @@ func (c *Client) handleHTTPRequest(msg *common.Message) error {
 		return fmt.Errorf("failed to send response for %s: %w", msg.UUID, err)
 	}
 
+	c.recordRequest(msg, resolved, forwardErr, StreamInfo{})
+	return nil
+}
+
+func (c *Client) recordRequest(msg *common.Message, resolved ProxyResponse, forwardErr error, stream StreamInfo) {
 	errText := ""
 	if forwardErr != nil {
 		errText = forwardErr.Error()
@@ -37,10 +42,10 @@ func (c *Client) handleHTTPRequest(msg *common.Message) error {
 		ResponseHeaders: resolved.Headers,
 		ResponseBody:    resolved.Body,
 		Error:           errText,
+		Stream:          stream,
 	})
 
 	c.RefreshTerminalOutput()
-	return nil
 }
 
 func (c *Client) dispatchHTTPRequest(msg *common.Message) error {
@@ -68,7 +73,19 @@ func (c *Client) setupMessageHandlers() {
 	if c.requestSem == nil {
 		c.requestSem = make(chan struct{}, MaxConcurrentRequests)
 	}
+	if c.streams == nil {
+		c.streams = common.NewStreams()
+	}
 
 	c.dispatcher.Register(common.MessageTypeDomainRegistered, c.handleDomainRegistered)
 	c.dispatcher.Register(common.MessageTypeHTTPRequest, c.dispatchHTTPRequest)
+	c.dispatcher.Register(common.MessageTypeUpgradeRequest, c.dispatchUpgradeRequest)
+	c.dispatcher.Register(common.MessageTypeStreamData, func(msg *common.Message) error {
+		c.streams.Deliver(msg.UUID, msg.Body)
+		return nil
+	})
+	c.dispatcher.Register(common.MessageTypeStreamClose, func(msg *common.Message) error {
+		c.streams.Finish(msg.UUID)
+		return nil
+	})
 }

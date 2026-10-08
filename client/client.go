@@ -37,6 +37,26 @@ type RequestLog struct {
 
 	RequestBodySize  int // full size before truncation
 	ResponseBodySize int
+
+	Stream   StreamInfo  `json:",omitzero"`
+	Messages []WSMessage `json:"-"` // served on their own, see RequestHistory.GetMessages
+}
+
+// StreamInfo describes a WebSocket; it is zero for plain HTTP requests.
+type StreamInfo struct {
+	Open         bool
+	ClosedAt     time.Time `json:",omitzero"`
+	BytesToApp   int64
+	BytesFromApp int64
+	Messages     int // total seen, including ones no longer stored
+}
+
+type WSMessage struct {
+	Timestamp time.Time
+	FromApp   bool   // sent by the local app; otherwise sent to it
+	Type      string // text, binary, close, ping or pong
+	Size      int64  // full payload size before truncation
+	Payload   []byte // at most MaxStoredMessageSize bytes
 }
 
 type Client struct {
@@ -46,6 +66,7 @@ type Client struct {
 	writeMu    sync.Mutex
 	displayMu  sync.Mutex
 	requestSem chan struct{}
+	streams    *common.Streams
 	proxy      *LocalProxy
 	history    *RequestHistory
 	display    Display
@@ -184,6 +205,10 @@ func (c *Client) ReconnectWithBackoff(cancel <-chan struct{}) error {
 }
 
 func (c *Client) HandleConnection() {
+	// Streams belong to the connection that carried them: the server has
+	// already dropped its side of each one when that connection ends.
+	defer c.streams.AbortAll()
+
 	common.RunMessageLoop(c.Conn, c.dispatcher, common.DefaultHeartbeat(),
 		func(err error) {
 			c.Logger.Error("Failed to read message", "error", err)

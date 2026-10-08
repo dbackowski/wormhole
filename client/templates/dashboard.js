@@ -9,6 +9,7 @@ let requestsData = [];
 let selectedId = null;
 let lastRequestsPayload = '';
 let lastDetailsPayload = '';
+let lastMessagesPayload = '';
 
 function getStatusClass(statusCode) {
     if (statusCode < STATUS_BOUNDARIES.SUCCESS) return 'status-2xx';
@@ -56,8 +57,114 @@ function formatBody(body, size) {
     return html;
 }
 
+function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function decodeUTF8(binary) {
+    return new TextDecoder().decode(Uint8Array.from(binary, c => c.charCodeAt(0)));
+}
+
+function formatRows(rows) {
+    return rows.map(([name, value]) =>
+        '<div class="header-row">' +
+        '<span class="header-name">' + escapeHtml(name) + ':</span>' +
+        '<span class="header-value">' + escapeHtml(value) + '</span>' +
+        '</div>'
+    ).join('');
+}
+
+function formatStream(req) {
+    const stream = req.Stream;
+    const opened = new Date(req.Timestamp);
+    const rows = [['Opened', opened.toLocaleTimeString()]];
+    if (stream.Open) {
+        rows.push(['State', 'open']);
+    } else {
+        const seconds = (new Date(stream.ClosedAt) - opened) / 1000;
+        rows.push(['State', 'closed after ' + seconds.toFixed(1) + ' s']);
+    }
+    rows.push(
+        ['Sent to app', formatBytes(stream.BytesToApp)],
+        ['Received from app', formatBytes(stream.BytesFromApp)],
+        ['Messages', String(stream.Messages)]
+    );
+    return formatRows(rows);
+}
+
+function formatPayload(msg) {
+    const raw = msg.Payload ? atob(msg.Payload) : '';
+    let text;
+    if (msg.Type === 'close') {
+        if (raw.length < 2) return '';
+        text = String((raw.charCodeAt(0) << 8) | raw.charCodeAt(1));
+        if (raw.length > 2) text += ' ' + decodeUTF8(raw.slice(2));
+    } else if (msg.Type === 'binary') {
+        text = Array.from(raw, c => c.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
+    } else {
+        text = decodeUTF8(raw);
+        try {
+            text = JSON.stringify(JSON.parse(text), null, 2);
+        } catch {}
+    }
+    if (!text) return '';
+    let html = escapeHtml(text);
+    if (msg.Size > raw.length) {
+        html += '\n\n<span class="no-content">Truncated: showing first ' +
+            raw.length.toLocaleString() + ' of ' + msg.Size.toLocaleString() + ' bytes</span>';
+    }
+    return html;
+}
+
+// Arrows follow the browser's point of view, as in its developer tools: up
+// is sent to the app, down is received from it.
+function renderMessage(msg) {
+    const payload = formatPayload(msg);
+    return '<li class="message ' + (msg.FromApp ? 'from-app' : 'to-app') + '">' +
+        '<div class="message-meta">' +
+        '<span class="message-dir" title="' + (msg.FromApp ? 'Received from app' : 'Sent to app') + '">' +
+        (msg.FromApp ? '&darr;' : '&uarr;') + '</span>' +
+        '<span class="message-type">' + escapeHtml(msg.Type) + '</span>' +
+        '<span class="message-size">' + formatBytes(msg.Size) + '</span>' +
+        '<span class="time">' + new Date(msg.Timestamp).toLocaleTimeString() + '</span>' +
+        '</div>' +
+        (payload ? '<pre class="message-payload">' + payload + '</pre>' : '') +
+        '</li>';
+}
+
+async function refreshMessages() {
+    const req = requestsData.find(r => r.UUID === selectedId);
+    if (!req || !req.Stream) return;
+
+    try {
+        const response = await fetch('/api/requests/' + encodeURIComponent(req.UUID) + '/messages');
+        if (!response.ok) return;
+        const payload = await response.text();
+        if (req.UUID !== selectedId || payload === lastMessagesPayload) return;
+        lastMessagesPayload = payload;
+
+        const messages = JSON.parse(payload) || [];
+        const list = document.getElementById('messages');
+        if (messages.length === 0) {
+            list.innerHTML = '<li class="no-content">No messages yet</li>';
+            return;
+        }
+        let note = '';
+        if (req.Stream.Messages > messages.length) {
+            note = '<li class="no-content messages-note">Showing the last ' + messages.length +
+                ' of ' + req.Stream.Messages + ' messages</li>';
+        }
+        list.innerHTML = note + messages.slice().reverse().map(renderMessage).join('');
+    } catch (err) {
+        console.error('Failed to load messages:', err);
+    }
+}
+
 function matchesFilter(req, query) {
-    return (req.Method + ' ' + req.URL + ' ' + req.StatusCode).toLowerCase().includes(query);
+    const text = req.Method + ' ' + req.URL + ' ' + req.StatusCode + (req.Stream ? ' websocket' : '');
+    return text.toLowerCase().includes(query);
 }
 
 function renderList() {
@@ -78,6 +185,12 @@ function renderRequestItem(req) {
     const time = new Date(req.Timestamp).toLocaleTimeString();
     const selected = req.UUID === selectedId ? ' selected' : '';
     const errorDot = req.Error ? '<span class="error-dot" title="Forwarding failed">&bull;</span>' : '';
+    let wsBadge = '';
+    if (req.Stream) {
+        wsBadge = req.Stream.Open
+            ? '<span class="ws-badge ws-open" title="WebSocket open">ws</span>'
+            : '<span class="ws-badge ws-closed" title="WebSocket closed">ws</span>';
+    }
 
     return '<li class="request-item' + selected + '" data-id="' + req.UUID + '"' +
         ' title="' + escapeHtml(req.URL) + '" onclick="selectRequest(\'' + req.UUID + '\')">' +
@@ -85,6 +198,7 @@ function renderRequestItem(req) {
         '<div class="request-meta">' +
         '<span class="status ' + getStatusClass(req.StatusCode) + '">' + req.StatusCode + '</span>' +
         '<span class="method">' + escapeHtml(req.Method) + '</span>' +
+        wsBadge +
         errorDot +
         '<span class="time">' + time + '</span>' +
         '</div>' +
@@ -92,11 +206,16 @@ function renderRequestItem(req) {
 }
 
 function selectRequest(id) {
+    if (id !== selectedId) {
+        lastMessagesPayload = '';
+        document.getElementById('messages').innerHTML = '';
+    }
     selectedId = id;
     document.querySelectorAll('.request-item').forEach(item => {
         item.classList.toggle('selected', item.dataset.id === id);
     });
     renderDetails();
+    refreshMessages();
 }
 
 // Re-renders only when the selected request actually changed, so polling does not
@@ -122,6 +241,15 @@ function renderDetails() {
         errorSection.classList.add('hidden');
     }
 
+    const isStream = Boolean(req.Stream);
+    document.getElementById('streamSection').classList.toggle('hidden', !isStream);
+    document.getElementById('messagesSection').classList.toggle('hidden', !isStream);
+    document.getElementById('requestBodySection').classList.toggle('hidden', isStream);
+    document.getElementById('responseBodySection').classList.toggle('hidden', isStream);
+    if (isStream) {
+        document.getElementById('streamInfo').innerHTML = formatStream(req);
+    }
+
     document.getElementById('requestHeaders').innerHTML = formatHeaders(req.RequestHeaders);
     document.getElementById('responseHeaders').innerHTML = formatHeaders(req.ResponseHeaders);
     document.getElementById('requestBody').innerHTML = formatBody(req.RequestBody, req.RequestBodySize);
@@ -134,6 +262,8 @@ function renderDetails() {
 function closeDetails() {
     selectedId = null;
     lastDetailsPayload = '';
+    lastMessagesPayload = '';
+    document.getElementById('messages').innerHTML = '';
     document.querySelectorAll('.request-item').forEach(item => item.classList.remove('selected'));
     document.getElementById('detailsPanel').classList.remove('visible');
     document.getElementById('detailsEmpty').classList.remove('hidden');
@@ -162,6 +292,7 @@ async function refresh() {
         requestsData = JSON.parse(payload) || [];
         renderList();
         renderDetails();
+        await refreshMessages();
     } catch (err) {
         console.error('Failed to refresh:', err);
     }

@@ -299,3 +299,46 @@ func TestWebUIStart_PortInUse(t *testing.T) {
 		t.Fatal("Start() on a port in use returned nil, want error")
 	}
 }
+
+// Messages are served per socket, never in the list the dashboard polls.
+func TestHandleMessages(t *testing.T) {
+	history := NewRequestHistory(100)
+	history.Add(RequestLog{
+		UUID:       "ws-1",
+		Method:     "GET",
+		URL:        "/socket",
+		StatusCode: 101,
+		Stream:     StreamInfo{Open: true, Messages: 1},
+		Messages:   []WSMessage{{Type: "text", Size: 2, Payload: []byte("hi")}},
+	})
+
+	ui, err := NewWebUI(&Client{history: history}, 0)
+	if err != nil {
+		t.Fatalf("NewWebUI() error = %v", err)
+	}
+	get := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Host = "localhost"
+		w := httptest.NewRecorder()
+		ui.server.Handler.ServeHTTP(w, req)
+		return w
+	}
+
+	w := get("/api/requests/ws-1/messages")
+	var messages []WSMessage
+	if err := json.NewDecoder(w.Body).Decode(&messages); err != nil {
+		t.Fatalf("decode messages: %v", err)
+	}
+	if len(messages) != 1 || string(messages[0].Payload) != "hi" {
+		t.Errorf("messages = %+v, want one %q", messages, "hi")
+	}
+
+	if w := get("/api/requests/unknown/messages"); w.Code != http.StatusNotFound {
+		t.Errorf("unknown id status = %d, want 404", w.Code)
+	}
+
+	list := get("/api/requests").Body.String()
+	if strings.Contains(list, `"Messages":[`) || !strings.Contains(list, `"Stream":{"Open":true`) {
+		t.Errorf("list = %s, want Stream without the messages", list)
+	}
+}

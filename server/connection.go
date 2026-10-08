@@ -13,6 +13,7 @@ type Connection struct {
 	conn      *websocket.Conn
 	session   string
 	requests  *PendingRequests
+	streams   *common.Streams
 	mu        sync.Mutex
 	ready     bool // guarded by ConnectionManager.mu
 	done      chan struct{}
@@ -24,6 +25,7 @@ func newConnection(conn *websocket.Conn, session string) *Connection {
 		conn:     conn,
 		session:  session,
 		requests: NewPendingRequests(),
+		streams:  common.NewStreams(),
 		done:     make(chan struct{}),
 	}
 }
@@ -50,6 +52,9 @@ func (c *Connection) DeliverResponse(msg *common.Message) error {
 }
 
 func (c *Connection) Close() error {
-	c.closeOnce.Do(func() { close(c.done) })
+	c.closeOnce.Do(func() {
+		close(c.done)
+		c.streams.AbortAll()
+	})
 	return c.conn.Close()
 }

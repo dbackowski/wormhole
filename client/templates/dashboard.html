@@ -28,6 +28,10 @@
                         <h4>Error</h4>
                         <pre id="errorReason" class="error-reason"></pre>
                     </div>
+                    <div id="streamSection" class="details-section hidden">
+                        <h4>WebSocket</h4>
+                        <div id="streamInfo" class="headers"></div>
+                    </div>
                     <div class="details-section">
                         <h4>Request Headers</h4>
                         <div id="requestHeaders" class="headers"></div>
@@ -36,11 +40,15 @@
                         <h4>Response Headers</h4>
                         <div id="responseHeaders" class="headers"></div>
                     </div>
-                    <div class="details-section">
+                    <div id="messagesSection" class="details-section hidden">
+                        <h4>Messages</h4>
+                        <ul id="messages" class="message-list"></ul>
+                    </div>
+                    <div id="requestBodySection" class="details-section">
                         <h4>Request Body</h4>
                         <pre id="requestBody"></pre>
                     </div>
-                    <div class="details-section">
+                    <div id="responseBodySection" class="details-section">
                         <h4>Response Body</h4>
                         <pre id="responseBody"></pre>
                     </div>

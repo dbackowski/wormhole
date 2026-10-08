@@ -34,6 +34,7 @@ func NewWebUI(client *Client, port int) (*WebUI, error) {
 	mux.HandleFunc("/", ui.handleDashboard)
 	mux.HandleFunc("/api/status", ui.handleStatus)
 	mux.HandleFunc("/api/requests", ui.handleRequests)
+	mux.HandleFunc("GET /api/requests/{id}/messages", ui.handleMessages)
 
 	ui.server = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
@@ -128,6 +129,15 @@ func (ui *WebUI) handleRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, ui.client.history.GetRecent(common.ClientRequestHistorySize))
+}
+
+func (ui *WebUI) handleMessages(w http.ResponseWriter, r *http.Request) {
+	messages, ok := ui.client.history.GetMessages(r.PathValue("id"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, messages)
 }
 
 func (ui *WebUI) handleDashboard(w http.ResponseWriter, r *http.Request) {
