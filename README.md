@@ -84,7 +84,7 @@ go run cmd/server/main.go -port=8080
 
 **Optional flags:**
 - `-port`: Port to run the server on (default: 8080)
-- `-host`: Public hostname of this server (e.g. `wormhole.tools`). When set, `/health` and `/metrics` are only served on this host; requests to subdomains are tunneled to the matching client. **Required for any deployment on a real domain** — see the note below.
+- `-host`: Public hostname of this server (e.g. `wormhole.tools`). When set, `/health` and `/metrics` are only served on this host; requests to `<name>.<host>` are tunneled to the matching client, and any other `Host` (a foreign domain, a nested subdomain) is rejected with `400`. **Required for any deployment on a real domain** — see the note below.
 - `-auth-token`: Authentication token required for client connections
 - `-debug`: Enable debug mode
 - `-version`: Print version and exit

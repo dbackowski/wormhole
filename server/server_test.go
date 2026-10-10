@@ -88,6 +88,35 @@ func TestExtractDomain(t *testing.T) {
 	}
 }
 
+func TestExtractDomain_WithHost(t *testing.T) {
+	tests := []struct {
+		host       string
+		wantDomain string
+		wantErr    bool
+	}{
+		{"myapp.wormhole.tools", "myapp", false},
+		{"MyApp.Wormhole.Tools:443", "myapp", false},
+		{"myapp.evil.com", "", true},
+		{"myapp.wormhole.tools.evil.com", "", true},
+		{"a.b.wormhole.tools", "", true},
+		{"10.0.0.1", "", true},
+	}
+
+	s := newTestServer(t)
+	s.host = "wormhole.tools"
+	for _, tc := range tests {
+		t.Run(tc.host, func(t *testing.T) {
+			domain, err := s.extractDomain(tc.host)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("extractDomain(%q) error = %v, wantErr %v", tc.host, err, tc.wantErr)
+			}
+			if !tc.wantErr && domain != tc.wantDomain {
+				t.Errorf("extractDomain(%q) = %q, want %q", tc.host, domain, tc.wantDomain)
+			}
+		})
+	}
+}
+
 func TestHandleHealth(t *testing.T) {
 	s := newTestServer(t)
 	r := httptest.NewRequest(http.MethodGet, "/health", nil)

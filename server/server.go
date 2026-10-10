@@ -137,13 +137,19 @@ func (s *Server) authenticateRequest(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(token), []byte(s.authToken)) == 1
 }
 
+// extractDomain returns the tunnel subdomain of host. With -host set, only
+// <name>.<host> qualifies: any other suffix would let a visitor pick the Host
+// (and X-Forwarded-Host) the local app sees, e.g. to poison reset links.
 func (s *Server) extractDomain(host string) (string, error) {
-	parts := strings.SplitN(host, ".", 2)
-
-	if len(parts) < 2 || parts[0] == "" {
+	h, _, err := net.SplitHostPort(host)
+	if err != nil {
+		h = host
+	}
+	label, rest, ok := strings.Cut(h, ".")
+	if !ok || label == "" || (s.host != "" && !strings.EqualFold(rest, s.host)) {
 		return "", fmt.Errorf("invalid host: %s", host)
 	}
-	return strings.ToLower(parts[0]), nil
+	return strings.ToLower(label), nil
 }
 
 func (s *Server) Start() error {
