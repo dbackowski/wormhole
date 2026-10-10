@@ -1,10 +1,12 @@
 package common
 
+import "log/slog"
+
 type RequestLogger struct {
-	logger *Logger
+	logger *slog.Logger
 }
 
-func NewRequestLogger(logger *Logger) *RequestLogger {
+func NewRequestLogger(logger *slog.Logger) *RequestLogger {
 	return &RequestLogger{logger: logger}
 }
 
@@ -41,4 +43,3 @@ func (rl *RequestLogger) LogClientDisconnected(domain, remoteAddr, reason string
 		"reason", reason,
 	)
 }
-

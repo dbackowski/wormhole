@@ -70,7 +70,7 @@ type Client struct {
 	proxy      *LocalProxy
 	history    *RequestHistory
 	display    Display
-	Logger     *common.Logger
+	Logger     *slog.Logger
 	dispatcher *common.MessageDispatcher
 	WebUIPort  int
 
@@ -112,7 +112,7 @@ func NewClient(cfg *Config) (*Client, error) {
 
 	// Discarded: anything written to the terminal is wiped by the next refresh
 	// of the alt screen. Errors worth seeing go to the status line instead.
-	logger := &common.Logger{Logger: slog.New(slog.DiscardHandler)}
+	logger := slog.New(slog.DiscardHandler)
 
 	tunnelURL := common.BuildSubdomainURL(serverConfig.HTTPScheme, cfg.Domain, serverConfig.Host)
 

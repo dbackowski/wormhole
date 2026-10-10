@@ -3,6 +3,7 @@ package client
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -237,7 +238,7 @@ func TestShutdown(t *testing.T) {
 
 	client := &Client{
 		Conn:   clientConn,
-		Logger: common.NewLogger(common.LevelError, "text"),
+		Logger: slog.New(slog.DiscardHandler),
 	}
 
 	err := client.Shutdown()
@@ -259,7 +260,7 @@ func TestShutdown_AlreadyClosed(t *testing.T) {
 
 	client := &Client{
 		Conn:   clientConn,
-		Logger: common.NewLogger(common.LevelError, "text"),
+		Logger: slog.New(slog.DiscardHandler),
 	}
 
 	clientConn.Close()
@@ -425,7 +426,7 @@ func TestHandleConnection_ReturnsOnClose(t *testing.T) {
 
 	client := &Client{
 		Conn:   clientConn,
-		Logger: common.NewLogger(common.LevelError, "text"),
+		Logger: slog.New(slog.DiscardHandler),
 	}
 	client.setupMessageHandlers()
 
@@ -473,7 +474,7 @@ func TestHandleConnection_RequestsRunConcurrently(t *testing.T) {
 	defer client.Conn.Close()
 	defer serverConn.Close()
 
-	client.Logger = common.NewLogger(common.LevelError, "text")
+	client.Logger = slog.New(slog.DiscardHandler)
 	client.setupMessageHandlers()
 
 	done := make(chan struct{})
@@ -530,7 +531,7 @@ func TestHandleConnection_DispatchesMessages(t *testing.T) {
 	defer wsServer.Close()
 	defer client.Conn.Close()
 
-	client.Logger = common.NewLogger(common.LevelError, "text")
+	client.Logger = slog.New(slog.DiscardHandler)
 	client.setupMessageHandlers()
 
 	done := make(chan struct{})
@@ -705,7 +706,7 @@ func TestShutdown_ConcurrentWithReconnect(t *testing.T) {
 
 	c := &Client{
 		Conn:   conn,
-		Logger: common.NewLogger(common.LevelError, "text"),
+		Logger: slog.New(slog.DiscardHandler),
 		wsURL:  wsURL,
 	}
 

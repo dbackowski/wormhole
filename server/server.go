@@ -5,8 +5,10 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -15,7 +17,7 @@ import (
 
 type Server struct {
 	connManager     *ConnectionManager
-	Logger          *common.Logger
+	Logger          *slog.Logger
 	requestLogger   *common.RequestLogger
 	httpServer      *http.Server
 	mux             *http.ServeMux
@@ -31,12 +33,12 @@ func NewServer(cfg *Config) (*Server, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	logLvl := common.LevelInfo
+	logLvl := slog.LevelInfo
 	if cfg.Debug {
-		logLvl = common.LevelDebug
+		logLvl = slog.LevelDebug
 	}
 
-	logger := common.NewLogger(logLvl, "text")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLvl, AddSource: cfg.Debug}))
 
 	server := Server{
 		connManager:     NewConnectionManager(),

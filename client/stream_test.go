@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -44,7 +45,7 @@ func startStreamClient(t *testing.T, localURL string) (*Client, *websocket.Conn)
 	client, _, wsServer, serverConn := newTestClient(t, localURL)
 	t.Cleanup(wsServer.Close)
 	t.Cleanup(func() { client.Conn.Close() })
-	client.Logger = common.NewLogger(common.LevelError, "text")
+	client.Logger = slog.New(slog.DiscardHandler)
 	client.setupMessageHandlers()
 	go client.HandleConnection()
 	return client, serverConn

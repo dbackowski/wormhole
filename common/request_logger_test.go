@@ -62,16 +62,13 @@ func (h *mockHandler) getRecords() []logRecord {
 	return append([]logRecord{}, h.records...)
 }
 
-func newTestLogger(level slog.Level) (*Logger, *mockHandler) {
+func newTestLogger(level slog.Level) (*slog.Logger, *mockHandler) {
 	handler := newMockHandler(level)
-	return &Logger{
-		Logger: slog.New(handler),
-		level:  level,
-	}, handler
+	return slog.New(handler), handler
 }
 
 func TestNewRequestLogger(t *testing.T) {
-	logger := NewLogger(LevelInfo, "text")
+	logger := slog.New(slog.DiscardHandler)
 	rl := NewRequestLogger(logger)
 
 	if rl == nil {
@@ -288,4 +285,3 @@ func TestRequestLogger_LogClientDisconnected(t *testing.T) {
 		t.Errorf("expected reason 'client closed connection', got %v", rec.Attrs["reason"])
 	}
 }
-
