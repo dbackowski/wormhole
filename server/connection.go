@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/dbackowski/wormhole/common"
 	"github.com/gorilla/websocket"
@@ -41,10 +40,7 @@ func (c *Connection) RegisterRequest(ctx context.Context, uuid string) (chan *co
 func (c *Connection) SendMessage(msg *common.Message) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := c.conn.SetWriteDeadline(time.Now().Add(common.WriteWait)); err != nil {
-		return err
-	}
-	return c.conn.WriteJSON(msg)
+	return common.WriteJSON(c.conn, msg)
 }
 
 func (c *Connection) DeliverResponse(msg *common.Message) error {

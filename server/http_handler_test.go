@@ -214,15 +214,15 @@ func TestPrepareRequestHeaders_ForwardedHost(t *testing.T) {
 	}
 }
 
-func TestPrepareRequestHeaders_ForwardedHostPreserved(t *testing.T) {
+func TestPrepareRequestHeaders_ForwardedHostOverwritten(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Host = "foo.localhost"
-	r.Header.Set("X-Forwarded-Host", "public.example.com")
+	r.Header.Set("X-Forwarded-Host", "evil.example.com")
 
 	headers := newTestServer(t).prepareRequestHeaders(r)
 
-	if got := http.Header(headers).Get("X-Forwarded-Host"); got != "public.example.com" {
-		t.Errorf("X-Forwarded-Host = %q, want %q (inbound value must be preserved)", got, "public.example.com")
+	if got := http.Header(headers)["X-Forwarded-Host"]; len(got) != 1 || got[0] != "foo.localhost" {
+		t.Errorf("X-Forwarded-Host = %q, want [foo.localhost] (inbound value must not be trusted)", got)
 	}
 }
 

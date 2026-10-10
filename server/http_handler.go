@@ -82,7 +82,9 @@ func (s *Server) setForwardedHeaders(headers http.Header, r *http.Request) {
 		headers.Set("X-Forwarded-Proto", s.forwardedProto(r))
 	}
 
-	if headers.Get("X-Forwarded-Host") == "" && r.Host != "" {
+	// Always overwritten: routing already trusts r.Host, while an inbound value
+	// is whatever the visitor sent, and apps build absolute URLs from it.
+	if r.Host != "" {
 		headers.Set("X-Forwarded-Host", r.Host)
 	}
 }

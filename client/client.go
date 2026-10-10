@@ -238,10 +238,7 @@ func (c *Client) Shutdown() error {
 func (c *Client) safeWriteJSON(v any) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	if err := c.Conn.SetWriteDeadline(time.Now().Add(common.WriteWait)); err != nil {
-		return err
-	}
-	return c.Conn.WriteJSON(v)
+	return common.WriteJSON(c.Conn, v)
 }
 
 func resolveProxyResponse(proxyResp *ProxyResponse, proxyErr error) ProxyResponse {

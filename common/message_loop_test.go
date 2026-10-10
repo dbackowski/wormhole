@@ -415,6 +415,18 @@ func TestPingLoop_ClosesConnectionOnWriteError(t *testing.T) {
 	}
 }
 
+func TestWriteTimeout_ScalesWithSize(t *testing.T) {
+	if got := writeTimeout(0); got != WriteWait {
+		t.Errorf("writeTimeout(0) = %v, want %v", got, WriteWait)
+	}
+	// A full 10 MB body, base64 in JSON, at the minimum rate.
+	size := MaxRequestBodySize * 4 / 3
+	want := WriteWait + time.Duration(size)*time.Second/MinWriteRate
+	if got := writeTimeout(size); got != want || got < 50*time.Second {
+		t.Errorf("writeTimeout(%d) = %v, want %v", size, got, want)
+	}
+}
+
 func TestPingLoop_SurvivesWriteTimeout(t *testing.T) {
 	pair := newWSTestPair(t)
 	defer pair.cleanup()

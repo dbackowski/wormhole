@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/json"
 	"errors"
 	"net"
 	"time"
@@ -33,6 +34,31 @@ func RunMessageLoop(conn *websocket.Conn, dispatcher *MessageDispatcher, hb Hear
 			onDispatchErr(&message, err)
 		}
 	}
+}
+
+// MinWriteRate is the slowest uplink a tunnel write is allowed, in bytes per
+// second. A timed-out write leaves a gorilla connection unusable, so a flat
+// WriteWait would kill the whole tunnel whenever a large body crosses a slow
+// link.
+// ponytail: one rate for every link; measure throughput if 2 Mbit/s is too
+// generous to catch a dead peer quickly or too tight for real uplinks.
+const MinWriteRate = 256 << 10
+
+func writeTimeout(size int) time.Duration {
+	return WriteWait + time.Duration(size)*time.Second/MinWriteRate
+}
+
+// WriteJSON writes v as one text message, with a deadline sized to fit it.
+// Callers must serialize writes.
+func WriteJSON(conn *websocket.Conn, v any) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	if err := conn.SetWriteDeadline(time.Now().Add(writeTimeout(len(data)))); err != nil {
+		return err
+	}
+	return conn.WriteMessage(websocket.TextMessage, data)
 }
 
 func pingLoop(conn *websocket.Conn, hb Heartbeat, done <-chan struct{}) {
