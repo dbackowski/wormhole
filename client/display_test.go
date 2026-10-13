@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -30,98 +31,148 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
-func TestNewTerminalDisplay(t *testing.T) {
-	td := NewTerminalDisplay(10)
+var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
 
-	if td.maxLogs != 10 {
-		t.Errorf("maxLogs = %d, want 10", td.maxLogs)
-	}
+// frameLines returns what a frame shows, one string per terminal row.
+func frameLines(frame string) []string {
+	return strings.Split(ansiPattern.ReplaceAllString(frame, ""), "\n")
 }
 
-func TestShowConnectionInfo(t *testing.T) {
-	td := NewTerminalDisplay(5)
+func testLogs(n int) []RequestLog {
+	logs := make([]RequestLog, n)
+	for i := range logs {
+		logs[i] = RequestLog{Method: "GET", URL: fmt.Sprintf("/req/%d", i), StatusCode: 200}
+	}
+	return logs
+}
 
-	output := captureStdout(t, func() {
-		td.ShowConnectionInfo("https://myapp.example.com", 4040)
-	})
-
-	expectedLines := []string{
-		"Wormhole",
-		"Tunnel:  https://myapp.example.com",
-		"Web UI:  http://localhost:4040",
+func TestRenderFrame(t *testing.T) {
+	frame := Frame{
+		TunnelURL: "https://myapp.example.com",
+		LocalURL:  "http://localhost:3000",
+		WebUIPort: 4040,
+		Logs:      testLogs(3),
 	}
 
-	for _, line := range expectedLines {
-		if !strings.Contains(output, line) {
-			t.Errorf("output missing expected line %q\ngot:\n%s", line, output)
+	output := strings.Join(frameLines(renderFrame(frame, 24, 80)), "\n")
+
+	for _, want := range []string{
+		"Wormhole",
+		"Tunnel:  https://myapp.example.com → http://localhost:3000",
+		"Web UI:  http://localhost:4040",
+		"recent requests",
+		"/req/0",
+		"/req/2",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("frame missing %q\ngot:\n%s", want, output)
 		}
 	}
 }
 
-func TestShowRequestHistory(t *testing.T) {
+func TestRenderFrame_FillsTerminalHeight(t *testing.T) {
+	tests := []struct {
+		name      string
+		rows      int
+		status    string
+		wantFirst string // oldest request still shown
+	}{
+		{"small terminal", 24, "", "/req/86"},
+		{"tall terminal", 60, "", "/req/50"},
+		{"status line takes two rows", 24, "reconnecting...", "/req/88"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			frame := Frame{Status: tt.status, Logs: testLogs(100)}
+			lines := frameLines(renderFrame(frame, tt.rows, 80))
+
+			if want := tt.rows - bottomMargin; len(lines) != want {
+				t.Fatalf("frame has %d lines, want %d", len(lines), want)
+			}
+			if last := lines[len(lines)-1]; !strings.HasSuffix(last, "/req/99") {
+				t.Errorf("last line = %q, want the newest request", last)
+			}
+			joined := strings.Join(lines, "\n")
+			if !strings.Contains(joined, tt.wantFirst+"\n") {
+				t.Errorf("frame missing oldest expected request %q", tt.wantFirst)
+			}
+			if tt.status != "" && !strings.Contains(joined, tt.status) {
+				t.Errorf("frame missing status %q", tt.status)
+			}
+		})
+	}
+}
+
+func TestRenderFrame_Empty(t *testing.T) {
+	output := renderFrame(Frame{}, 24, 80)
+
+	if !strings.Contains(output, "waiting for requests") {
+		t.Errorf("empty frame missing the waiting hint\ngot:\n%s", output)
+	}
+}
+
+func TestRenderFrame_TinyTerminal(t *testing.T) {
+	for _, rows := range []int{0, 1, 5} {
+		lines := frameLines(renderFrame(Frame{Logs: testLogs(10)}, rows, 80))
+		if len(lines) > max(rows, 1) {
+			t.Errorf("rows=%d: frame has %d lines", rows, len(lines))
+		}
+	}
+}
+
+func TestRequestLine(t *testing.T) {
 	ts := time.Date(2025, 1, 15, 10, 30, 45, 0, time.UTC)
+	long := "/" + strings.Repeat("a", 300)
 
 	tests := []struct {
-		name     string
-		maxLogs  int
-		logs     []RequestLog
-		expected []string
+		name string
+		log  RequestLog
+		cols int
+		want []string
 	}{
 		{
-			name:    "single request",
-			maxLogs: 5,
-			logs: []RequestLog{
-				{Timestamp: ts, Method: "GET", URL: "/api/users", StatusCode: 200},
-			},
-			expected: []string{
-				"last 5 requests",
-				FormatTime(ts),
-				"GET",
-				"/api/users",
-				"200",
-			},
+			name: "short url",
+			log:  RequestLog{Timestamp: ts, Method: "POST", URL: "/api/data", StatusCode: 201},
+			cols: 80,
+			want: []string{"10:30:45", "POST", "201", "/api/data"},
 		},
 		{
-			name:    "multiple requests",
-			maxLogs: 10,
-			logs: []RequestLog{
-				{Timestamp: ts, Method: "GET", URL: "/", StatusCode: 200},
-				{Timestamp: ts, Method: "POST", URL: "/api/data", StatusCode: 201},
-				{Timestamp: ts, Method: "DELETE", URL: "/api/items/1", StatusCode: 404},
-			},
-			expected: []string{
-				"last 10 requests",
-				"GET",
-				"POST",
-				"DELETE",
-				"/api/data",
-				"/api/items/1",
-				"200",
-				"201",
-				"404",
-			},
+			name: "long url is cut to the terminal width",
+			log:  RequestLog{Timestamp: ts, Method: "GET", URL: long, StatusCode: 200},
+			cols: 80,
+			want: []string{"200", "/aaaa", "…"},
 		},
 		{
-			name:    "empty logs",
-			maxLogs: 5,
-			logs:    []RequestLog{},
-			expected: []string{
-				"last 5 requests",
-			},
+			name: "note survives a long url",
+			log:  RequestLog{Timestamp: ts, Method: "GET", URL: long, StatusCode: 101, Stream: StreamInfo{Open: true}},
+			cols: 80,
+			want: []string{"…  websocket open"},
+		},
+		{
+			name: "long error leaves room for the url",
+			log:  RequestLog{Timestamp: ts, Method: "GET", URL: long, StatusCode: 502, Error: strings.Repeat("e", 300)},
+			cols: 80,
+			want: []string{"/" + strings.Repeat("a", 25) + "…  eee"},
+		},
+		{
+			name: "closed websocket",
+			log:  RequestLog{Timestamp: ts, Method: "GET", URL: "/ws", StatusCode: 101, Stream: StreamInfo{ClosedAt: ts}},
+			cols: 80,
+			want: []string{"/ws  websocket closed"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			td := NewTerminalDisplay(tt.maxLogs)
+			got := ansiPattern.ReplaceAllString(requestLine(tt.log, tt.cols), "")
 
-			output := captureStdout(t, func() {
-				td.ShowRequestHistory(tt.logs)
-			})
-
-			for _, exp := range tt.expected {
-				if !strings.Contains(output, exp) {
-					t.Errorf("output missing expected string %q\ngot:\n%s", exp, output)
+			if width := len([]rune(got)); width >= tt.cols {
+				t.Errorf("line is %d columns wide, want under %d: %q", width, tt.cols, got)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("line missing %q: %q", want, got)
 				}
 			}
 		})
@@ -129,37 +180,7 @@ func TestShowRequestHistory(t *testing.T) {
 }
 
 func TestTerminalDisplayImplementsDisplayInterface(t *testing.T) {
-	var _ Display = (*TerminalDisplay)(nil)
-}
-
-func TestFormatTime(t *testing.T) {
-	testTime := time.Date(2024, 6, 15, 14, 30, 45, 0, time.UTC)
-
-	got := FormatTime(testTime)
-	want := "2024-06-15 14:30:45"
-
-	if got != want {
-		t.Errorf("FormatTime() = %q, want %q", got, want)
-	}
-}
-
-func TestClearTerminal(t *testing.T) {
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	ClearTerminal()
-
-	w.Close()
-	os.Stdout = old
-
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-
-	want := cursorHome + clearScreen
-	if got := buf.String(); got != want {
-		t.Errorf("ClearTerminal() wrote %q, want %q", got, want)
-	}
+	var _ Display = TerminalDisplay{}
 }
 
 func TestColorStatus(t *testing.T) {
@@ -192,7 +213,7 @@ func TestEnterExitAltScreen(t *testing.T) {
 	enterOutput := captureStdout(t, func() {
 		EnterAltScreen()
 	})
-	wantEnter := altScreenOn + clearScreen + cursorHome + hideCursor
+	wantEnter := altScreenOn + clearScreen + cursorHome + hideCursor + wrapOff
 	if enterOutput != wantEnter {
 		t.Errorf("EnterAltScreen() wrote %q, want %q", enterOutput, wantEnter)
 	}
@@ -200,7 +221,7 @@ func TestEnterExitAltScreen(t *testing.T) {
 	exitOutput := captureStdout(t, func() {
 		ExitAltScreen()
 	})
-	wantExit := showCursor + altScreenOff
+	wantExit := wrapOn + showCursor + altScreenOff
 	if exitOutput != wantExit {
 		t.Errorf("ExitAltScreen() wrote %q, want %q", exitOutput, wantExit)
 	}

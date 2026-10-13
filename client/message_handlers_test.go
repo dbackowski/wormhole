@@ -13,35 +13,22 @@ import (
 )
 
 type mockDisplay struct {
-	mu                       sync.Mutex
-	showConnectionInfoCalled bool
-	showRequestHistoryCalled bool
-	lastLogs                 []RequestLog
+	mu       sync.Mutex
+	rendered bool
+	lastLogs []RequestLog
 }
 
-func (m *mockDisplay) ShowConnectionInfo(tunnelURL string, webUIPort int) {
+func (m *mockDisplay) Render(f Frame) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.showConnectionInfoCalled = true
+	m.rendered = true
+	m.lastLogs = f.Logs
 }
 
-func (m *mockDisplay) ShowRequestHistory(logs []RequestLog) {
+func (m *mockDisplay) Rendered() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.showRequestHistoryCalled = true
-	m.lastLogs = logs
-}
-
-func (m *mockDisplay) ConnectionInfoCalled() bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.showConnectionInfoCalled
-}
-
-func (m *mockDisplay) RequestHistoryCalled() bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.showRequestHistoryCalled
+	return m.rendered
 }
 
 func (m *mockDisplay) LastLogs() []RequestLog {
@@ -110,11 +97,8 @@ func TestHandleDomainRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleDomainRegistered() error = %v, want nil", err)
 	}
-	if !display.ConnectionInfoCalled() {
-		t.Error("expected ShowConnectionInfo to be called")
-	}
-	if !display.RequestHistoryCalled() {
-		t.Error("expected ShowRequestHistory to be called")
+	if !display.Rendered() {
+		t.Error("expected Render to be called")
 	}
 }
 
@@ -185,11 +169,8 @@ func TestHandleHTTPRequest(t *testing.T) {
 		t.Errorf("log Error = %q, want empty on success", log.Error)
 	}
 
-	if !display.ConnectionInfoCalled() {
-		t.Error("expected ShowConnectionInfo to be called")
-	}
-	if !display.RequestHistoryCalled() {
-		t.Error("expected ShowRequestHistory to be called")
+	if !display.Rendered() {
+		t.Error("expected Render to be called")
 	}
 }
 

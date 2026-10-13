@@ -62,6 +62,7 @@ type WSMessage struct {
 type Client struct {
 	domain     string
 	tunnelURL  string
+	localURL   string
 	Conn       *websocket.Conn
 	writeMu    sync.Mutex
 	displayMu  sync.Mutex
@@ -119,10 +120,11 @@ func NewClient(cfg *Config) (*Client, error) {
 	client := &Client{
 		domain:    cfg.Domain,
 		tunnelURL: tunnelURL,
+		localURL:  localURL.String(),
 		Conn:      conn,
 		proxy:     NewLocalProxy(localURL, tunnelURL, common.RequestTimeout),
 		history:   NewRequestHistory(common.ClientRequestHistorySize),
-		display:   NewTerminalDisplay(common.ClientTerminalMaxLogs),
+		display:   TerminalDisplay{},
 		Logger:    logger,
 		WebUIPort: cfg.WebUIPort,
 
@@ -291,13 +293,14 @@ func (c *Client) setStatus(status string) {
 func (c *Client) RefreshTerminalOutput() {
 	c.displayMu.Lock()
 	defer c.displayMu.Unlock()
-	ClearTerminal()
-	recentLogs := c.history.GetRecent(common.ClientTerminalMaxLogs)
-	c.display.ShowConnectionInfo(c.tunnelURL, c.WebUIPort)
-	if c.status != "" {
-		fmt.Printf("  %s%s%s\n\n", ansiYellow, c.status, ansiReset)
-	}
-	c.display.ShowRequestHistory(recentLogs)
+	// The display picks how many of these fit the terminal.
+	c.display.Render(Frame{
+		TunnelURL: c.tunnelURL,
+		LocalURL:  c.localURL,
+		WebUIPort: c.WebUIPort,
+		Status:    c.status,
+		Logs:      c.history.GetRecent(common.ClientRequestHistorySize),
+	})
 }
 
 func closeWebsocket(c *websocket.Conn) error {

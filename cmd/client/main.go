@@ -60,6 +60,14 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
+	resizeCh := make(chan os.Signal, 1)
+	signal.Notify(resizeCh, syscall.SIGWINCH)
+	go func() {
+		for range resizeCh {
+			c.RefreshTerminalOutput()
+		}
+	}()
+
 	quitCh := make(chan struct{})
 	go client.WaitForInput(quitCh, c.ClearHistory)
 
