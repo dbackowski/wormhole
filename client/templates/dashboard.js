@@ -7,6 +7,10 @@ const STATUS_BOUNDARIES = {
 
 let requestsData = [];
 let selectedId = null;
+// Copy of the selected request, kept so that its details stay open after busy
+// traffic pushes it out of the history.
+let selectedReq = null;
+let paused = false;
 let lastRequestsPayload = '';
 let lastDetailsPayload = '';
 let lastMessagesPayload = '';
@@ -207,6 +211,7 @@ function renderRequestItem(req) {
 
 function selectRequest(id) {
     if (id !== selectedId) {
+        selectedReq = null;
         lastMessagesPayload = '';
         document.getElementById('messages').innerHTML = '';
     }
@@ -221,11 +226,14 @@ function selectRequest(id) {
 // Re-renders only when the selected request actually changed, so polling does not
 // wipe text selection or reset scroll inside the details pane.
 function renderDetails() {
-    const req = requestsData.find(r => r.UUID === selectedId);
+    const current = requestsData.find(r => r.UUID === selectedId);
+    if (current) selectedReq = current;
+    const req = selectedReq;
     if (!req) {
         closeDetails();
         return;
     }
+    document.getElementById('evictedNote').classList.toggle('hidden', Boolean(current));
 
     const payload = JSON.stringify(req);
     if (payload === lastDetailsPayload) return;
@@ -261,12 +269,23 @@ function renderDetails() {
 
 function closeDetails() {
     selectedId = null;
+    selectedReq = null;
     lastDetailsPayload = '';
     lastMessagesPayload = '';
     document.getElementById('messages').innerHTML = '';
     document.querySelectorAll('.request-item').forEach(item => item.classList.remove('selected'));
     document.getElementById('detailsPanel').classList.remove('visible');
     document.getElementById('detailsEmpty').classList.remove('hidden');
+}
+
+// Pausing freezes the list, which otherwise shifts under the cursor every
+// second while requests keep arriving.
+function togglePause() {
+    paused = !paused;
+    const button = document.getElementById('pauseButton');
+    button.textContent = paused ? 'Resume' : 'Pause';
+    button.classList.toggle('active', paused);
+    if (!paused) refresh();
 }
 
 async function clearRequests() {
@@ -299,4 +318,4 @@ async function refresh() {
 }
 
 refresh();
-setInterval(refresh, REFRESH_INTERVAL_MS);
+setInterval(() => { if (!paused) refresh(); }, REFRESH_INTERVAL_MS);

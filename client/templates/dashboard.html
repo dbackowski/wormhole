@@ -8,7 +8,8 @@
     <header class="app-header">
         <h1>Wormhole</h1>
         <a id="tunnelUrl" class="tunnel-url" href="#" target="_blank"></a>
-        <button class="clear-button" onclick="clearRequests()">Clear</button>
+        <button id="pauseButton" class="header-button" onclick="togglePause()">Pause</button>
+        <button class="header-button" onclick="clearRequests()">Clear</button>
     </header>
     <main class="app-main">
         <aside class="sidebar">
@@ -24,6 +25,9 @@
                     <button class="details-close" onclick="closeDetails()">&times;</button>
                 </div>
                 <div class="details-content">
+                    <div id="evictedNote" class="details-section hidden">
+                        <div class="headers no-content">No longer in the request history. Shown as last seen.</div>
+                    </div>
                     <div id="errorSection" class="details-section error-section">
                         <h4>Error</h4>
                         <pre id="errorReason" class="error-reason"></pre>

@@ -136,6 +136,8 @@ When the client is running, a dashboard is available at `http://localhost:4040` 
 - View recent requests with method, path, status code, and timestamp
 - Inspect request/response headers and bodies
 - For WebSockets: see whether each socket is open, the bytes and message counts in each direction, and its recent messages (text, JSON, binary as hex, close codes)
+- Freeze the list with the **Pause** button when requests arrive faster than you can click them; **Resume** catches up
+- Keep reading a selected request under busy traffic: its details stay open after it has left the history
 - Clear the request history with the **Clear** button (also clears the terminal view)
 
 ![Dashboard with request list](https://i.imgur.com/dKNxqI4.png)
