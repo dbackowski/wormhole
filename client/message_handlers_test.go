@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -15,6 +16,7 @@ import (
 type mockDisplay struct {
 	mu       sync.Mutex
 	rendered bool
+	renders  int
 	lastLogs []RequestLog
 }
 
@@ -22,7 +24,24 @@ func (m *mockDisplay) Render(f Frame) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.rendered = true
+	m.renders++
 	m.lastLogs = f.Logs
+}
+
+func (m *mockDisplay) Renders() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.renders
+}
+
+// redrawRequested reports whether c asked for a redraw, and takes the request.
+func redrawRequested(c *Client) bool {
+	select {
+	case <-c.redraw:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *mockDisplay) Rendered() bool {
@@ -80,13 +99,14 @@ func newTestClient(t *testing.T, proxyServerURL string) (*Client, *mockDisplay, 
 		history:   NewRequestHistory(100),
 		display:   display,
 		WebUIPort: 4040,
+		redraw:    make(chan struct{}, 1),
 	}
 
 	return client, display, wsServer, serverConn
 }
 
 func TestHandleDomainRegistered(t *testing.T) {
-	client, display, wsServer, _ := newTestClient(t, "http://localhost:1")
+	client, _, wsServer, _ := newTestClient(t, "http://localhost:1")
 	defer wsServer.Close()
 	defer client.Conn.Close()
 
@@ -97,8 +117,8 @@ func TestHandleDomainRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleDomainRegistered() error = %v, want nil", err)
 	}
-	if !display.Rendered() {
-		t.Error("expected Render to be called")
+	if !redrawRequested(client) {
+		t.Error("expected a redraw to be requested")
 	}
 }
 
@@ -112,7 +132,7 @@ func TestHandleHTTPRequest(t *testing.T) {
 	}))
 	defer proxyServer.Close()
 
-	client, display, wsServer, serverConn := newTestClient(t, proxyServer.URL)
+	client, _, wsServer, serverConn := newTestClient(t, proxyServer.URL)
 	defer wsServer.Close()
 	defer client.Conn.Close()
 	defer serverConn.Close()
@@ -174,8 +194,8 @@ func TestHandleHTTPRequest(t *testing.T) {
 		t.Errorf("log Duration = %v, want the app's %v delay", log.Duration, appDelay)
 	}
 
-	if !display.Rendered() {
-		t.Error("expected Render to be called")
+	if !redrawRequested(client) {
+		t.Error("expected a redraw to be requested")
 	}
 }
 
@@ -374,5 +394,101 @@ func TestSetupMessageHandlers(t *testing.T) {
 	}
 	if !contains(err.Error(), "unknown message type") {
 		t.Errorf("error = %q, want containing %q", err.Error(), "unknown message type")
+	}
+}
+
+// frozenDisplay stands in for a terminal that has stopped reading its output:
+// Render blocks until released.
+type frozenDisplay struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (d frozenDisplay) Render(Frame) {
+	select {
+	case d.entered <- struct{}{}:
+	default:
+	}
+	<-d.release
+}
+
+// A stuck terminal must not hold up the tunnel: if request handling waited on
+// the display, each request would keep its slot and, after
+// MaxConcurrentRequests of them, every further request would get a 503.
+func TestRequestsCompleteWhileTerminalIsFrozen(t *testing.T) {
+	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	}))
+	defer proxyServer.Close()
+
+	client, _, wsServer, serverConn := newTestClient(t, proxyServer.URL)
+	defer wsServer.Close()
+	defer client.Conn.Close()
+	defer serverConn.Close()
+
+	display := frozenDisplay{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	defer close(display.release)
+	client.display = display
+	client.requestSem = make(chan struct{}, MaxConcurrentRequests)
+
+	go client.RunDisplay()
+	client.requestRedraw()
+	select {
+	case <-display.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("display loop never started a frame")
+	}
+
+	for i := range 3 * MaxConcurrentRequests {
+		msg := &common.Message{
+			Type:    common.MessageTypeHTTPRequest,
+			UUID:    fmt.Sprintf("frozen-%d", i),
+			Method:  "GET",
+			URL:     "/",
+			Headers: map[string][]string{"Host": {"test.example.com"}},
+		}
+		if err := client.dispatchHTTPRequest(msg); err != nil {
+			t.Fatalf("request %d: dispatchHTTPRequest() error = %v", i, err)
+		}
+
+		serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		var resp common.Message
+		if err := serverConn.ReadJSON(&resp); err != nil {
+			t.Fatalf("request %d: failed to read response: %v", i, err)
+		}
+		if resp.Status != http.StatusOK {
+			t.Fatalf("request %d: status = %d, want %d", i, resp.Status, http.StatusOK)
+		}
+	}
+
+	if got := client.history.Total(); got != 3*MaxConcurrentRequests {
+		t.Errorf("history total = %d, want %d", got, 3*MaxConcurrentRequests)
+	}
+}
+
+// Reconnecting reports its progress through setStatus, which must not wait for
+// a frame stuck on a frozen terminal either.
+func TestSetStatusWhileTerminalIsFrozen(t *testing.T) {
+	display := frozenDisplay{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	defer close(display.release)
+	c := &Client{history: NewRequestHistory(10), display: display, redraw: make(chan struct{}, 1)}
+
+	go c.RunDisplay()
+	c.requestRedraw()
+	select {
+	case <-display.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("display loop never started a frame")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		c.setStatus("reconnecting... (attempt 1)")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("setStatus blocked on the frozen terminal")
 	}
 }

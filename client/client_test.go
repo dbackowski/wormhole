@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -521,7 +522,7 @@ func TestHandleConnection_DispatchesMessages(t *testing.T) {
 	}))
 	defer proxyServer.Close()
 
-	client, display, wsServer, serverConn := newTestClient(t, proxyServer.URL)
+	client, _, wsServer, serverConn := newTestClient(t, proxyServer.URL)
 	defer wsServer.Close()
 	defer client.Conn.Close()
 
@@ -564,11 +565,13 @@ func TestHandleConnection_DispatchesMessages(t *testing.T) {
 	}
 
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && !display.Rendered() {
+	requested := false
+	for time.Now().Before(deadline) && !requested {
+		requested = redrawRequested(client)
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !display.Rendered() {
-		t.Error("expected Render to be called")
+	if !requested {
+		t.Error("expected a redraw to be requested")
 	}
 
 	// Close server side to end the loop
@@ -715,4 +718,53 @@ func TestShutdown_ConcurrentWithReconnect(t *testing.T) {
 	c.writeMu.Lock()
 	c.Conn.Close()
 	c.writeMu.Unlock()
+}
+
+// A burst of requests must neither wait on the terminal nor redraw it once
+// per request.
+func TestRunDisplayCoalescesRedraws(t *testing.T) {
+	display := &mockDisplay{}
+	c := &Client{
+		history: NewRequestHistory(10),
+		display: display,
+		redraw:  make(chan struct{}, 1),
+	}
+	go c.RunDisplay()
+
+	start := time.Now()
+	for range 10000 {
+		c.requestRedraw()
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Errorf("10000 redraw requests took %v, want no waiting", elapsed)
+	}
+
+	time.Sleep(3 * redrawInterval / 2)
+	if n := display.Renders(); n < 1 || n > 2 {
+		t.Errorf("renders = %d, want the burst folded into 1 or 2", n)
+	}
+}
+
+func TestRequestRate(t *testing.T) {
+	c := &Client{}
+	t0 := time.Date(2025, 1, 15, 10, 0, 0, 0, time.UTC)
+
+	steps := []struct {
+		at    time.Duration
+		total int
+		want  float64
+	}{
+		{0, 0, 0},
+		{5 * time.Second, 50, 10},             // since start
+		{12 * time.Second, 170, 170.0 / 12},   // baseline: start, the newest sample 10 s old
+		{20 * time.Second, 270, 220.0 / 15},   // baseline moved to 5 s
+		{40 * time.Second, 270, 0},            // traffic stopped
+		{41 * time.Second, 5270, 5000.0 / 21}, // a burst far past the history size counts in full
+	}
+
+	for _, s := range steps {
+		if got := c.requestRate(t0.Add(s.at), s.total); math.Abs(got-s.want) > 0.01 {
+			t.Errorf("at %v: requestRate() = %v, want %v", s.at, got, s.want)
+		}
+	}
 }

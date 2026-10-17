@@ -9,7 +9,7 @@ import (
 )
 
 func (c *Client) handleDomainRegistered(_ *common.Message) error {
-	c.RefreshTerminalOutput()
+	c.requestRedraw()
 	return nil
 }
 
@@ -48,7 +48,7 @@ func (c *Client) recordRequest(msg *common.Message, resolved ProxyResponse, forw
 		Stream:          stream,
 	})
 
-	c.RefreshTerminalOutput()
+	c.requestRedraw()
 }
 
 func (c *Client) dispatchHTTPRequest(msg *common.Message) error {

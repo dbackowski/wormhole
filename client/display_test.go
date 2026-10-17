@@ -133,9 +133,9 @@ func TestRequestLine(t *testing.T) {
 	}{
 		{
 			name: "short url",
-			log:  RequestLog{Timestamp: ts, Method: "POST", URL: "/api/data", StatusCode: 201, Duration: 42 * time.Millisecond},
+			log:  RequestLog{Timestamp: ts, Method: "POST", URL: "/api/data", StatusCode: 201, Duration: 42 * time.Millisecond, ResponseBodySize: 1536},
 			cols: 80,
-			want: []string{"10:30:45", "POST", "201  42ms  /api/data"},
+			want: []string{"10:30:45", "POST", "201  42ms  1.5KB  /api/data"},
 		},
 		{
 			name: "long url is cut to the terminal width",
@@ -153,13 +153,13 @@ func TestRequestLine(t *testing.T) {
 			name: "long error leaves room for the url",
 			log:  RequestLog{Timestamp: ts, Method: "GET", URL: long, StatusCode: 502, Error: strings.Repeat("e", 300)},
 			cols: 80,
-			want: []string{"/" + strings.Repeat("a", 22) + "…  eee"},
+			want: []string{"/" + strings.Repeat("a", 18) + "…  eee"},
 		},
 		{
 			name: "closed websocket",
 			log:  RequestLog{Timestamp: ts, Method: "GET", URL: "/ws", StatusCode: 101, Stream: StreamInfo{ClosedAt: ts}},
 			cols: 80,
-			want: []string{"/ws  websocket closed"},
+			want: []string{"    -  /ws  websocket closed"},
 		},
 	}
 
@@ -196,6 +196,37 @@ func TestFormatDuration(t *testing.T) {
 		if got := formatDuration(tt.d); got != tt.want {
 			t.Errorf("formatDuration(%v) = %q, want %q", tt.d, got, tt.want)
 		}
+	}
+}
+
+func TestFormatBytes(t *testing.T) {
+	tests := []struct {
+		n    int
+		want string
+	}{
+		{0, "0B"},
+		{1023, "1023B"},
+		{1536, "1.5KB"},
+		{10<<10 - 1, "10.0KB"},
+		{10 << 10, "10KB"},
+		{1<<20 - 1, "1023KB"},
+		{10 << 20, "10.0MB"},
+	}
+
+	for _, tt := range tests {
+		if got := formatBytes(tt.n); got != tt.want || len(got) > 6 {
+			t.Errorf("formatBytes(%d) = %q, want %q", tt.n, got, tt.want)
+		}
+	}
+}
+
+func TestRenderFrame_Totals(t *testing.T) {
+	output := renderFrame(Frame{Logs: testLogs(3), Total: 1204, Rate: 0.3}, 24, 80)
+	if !strings.Contains(output, "recent requests · 1204 total · 0.3/s") {
+		t.Errorf("frame missing totals\ngot:\n%s", output)
+	}
+	if output := renderFrame(Frame{}, 24, 80); strings.Contains(output, "total") {
+		t.Errorf("frame with no requests yet shows totals\ngot:\n%s", output)
 	}
 }
 

@@ -108,6 +108,8 @@ type Frame struct {
 	WebUIPort int
 	Status    string
 	Logs      []RequestLog // oldest first
+	Total     int          // every request so far, including ones no longer in Logs
+	Rate      float64      // requests per second, see Client.requestRate
 }
 
 type TerminalDisplay struct{}
@@ -153,6 +155,9 @@ func renderFrame(f Frame, rows, cols int) string {
 	if len(f.Logs) == 0 {
 		title = "waiting for requests"
 	}
+	if f.Total > 0 {
+		title += fmt.Sprintf(" · %d total · %s", f.Total, formatRate(f.Rate))
+	}
 	lines = append(lines, ansiDim+"── "+title+" ──"+ansiReset, "")
 
 	logs := f.Logs
@@ -168,9 +173,16 @@ func renderFrame(f Frame, rows, cols int) string {
 	return cursorHome + strings.Join(lines, clearLine+"\n") + clearLine + clearBelow
 }
 
-// Columns before the URL: indent, time, method, status and duration with their
-// gaps.
-const requestPrefixWidth = 2 + 8 + 2 + 7 + 1 + 3 + 1 + 5 + 2
+func formatRate(r float64) string {
+	if r < 10 {
+		return fmt.Sprintf("%.1f/s", r)
+	}
+	return fmt.Sprintf("%.0f/s", r)
+}
+
+// Columns before the URL: indent, time, method, status, duration and response
+// size with their gaps.
+const requestPrefixWidth = 2 + 8 + 2 + 7 + 1 + 3 + 1 + 5 + 1 + 6 + 2
 
 func requestLine(rl RequestLog, cols int) string {
 	note, noteColor := "", ansiDim
@@ -194,10 +206,16 @@ func requestLine(rl RequestLog, cols int) string {
 	url := truncate(rl.URL, max(room-noteWidth, room/2))
 	note = truncate(note, room-2-len([]rune(url)))
 
-	line := fmt.Sprintf("  %s%s%s  %-7s %s %s%5s%s  %s",
+	// A WebSocket has no response body, and its traffic is in the Web UI.
+	size := "-"
+	if rl.Stream == (StreamInfo{}) {
+		size = formatBytes(rl.ResponseBodySize)
+	}
+
+	line := fmt.Sprintf("  %s%s%s  %-7s %s %s%5s %6s%s  %s",
 		ansiDim, rl.Timestamp.Format(time.TimeOnly), ansiReset,
 		rl.Method, colorStatus(rl.StatusCode),
-		ansiDim, formatDuration(rl.Duration), ansiReset, url)
+		ansiDim, formatDuration(rl.Duration), size, ansiReset, url)
 	if note != "" {
 		line += "  " + noteColor + note + ansiReset
 	}
@@ -211,6 +229,21 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dms", d.Milliseconds())
 	}
 	return fmt.Sprintf("%.1fs", d.Seconds())
+}
+
+// formatBytes fits the 6 columns the terminal gives it up to 99.9 MB, past
+// the 10 MB response limit.
+func formatBytes(n int) string {
+	switch {
+	case n < 1<<10:
+		return fmt.Sprintf("%dB", n)
+	case n < 10<<10:
+		return fmt.Sprintf("%.1fKB", float64(n)/(1<<10))
+	case n < 1<<20:
+		return fmt.Sprintf("%dKB", n>>10)
+	default:
+		return fmt.Sprintf("%.1fMB", float64(n)/(1<<20))
+	}
 }
 
 // truncate cuts s to width columns, ending it with an ellipsis if it was cut.

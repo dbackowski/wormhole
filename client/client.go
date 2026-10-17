@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
@@ -67,6 +70,7 @@ type Client struct {
 	Conn       *websocket.Conn
 	writeMu    sync.Mutex
 	displayMu  sync.Mutex
+	statusMu   sync.Mutex
 	requestSem chan struct{}
 	streams    *common.Streams
 	proxy      *LocalProxy
@@ -78,7 +82,16 @@ type Client struct {
 
 	wsURL       string
 	dialHeaders http.Header
-	status      string // guarded by displayMu
+	// Guarded by its own lock rather than displayMu, so that reconnecting can
+	// report progress while a frame is stuck on a terminal that stopped reading.
+	status      string        // guarded by statusMu
+	redraw      chan struct{} // see requestRedraw
+	rateSamples []rateSample  // guarded by displayMu
+}
+
+type rateSample struct {
+	at    time.Time
+	total int
 }
 
 const (
@@ -128,6 +141,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		display:   TerminalDisplay{},
 		Logger:    logger,
 		WebUIPort: cfg.WebUIPort,
+		redraw:    make(chan struct{}, 1),
 
 		wsURL:       wsURL,
 		dialHeaders: dialHeaders,
@@ -280,28 +294,83 @@ func (c *Client) sendResponse(msg *common.Message, resolved ProxyResponse) error
 
 func (c *Client) ClearHistory() {
 	c.history.Clear()
-	c.RefreshTerminalOutput()
+	c.requestRedraw()
 }
 
 func (c *Client) setStatus(status string) {
-	c.displayMu.Lock()
+	c.statusMu.Lock()
 	c.status = status
-	c.displayMu.Unlock()
+	c.statusMu.Unlock()
 
-	c.RefreshTerminalOutput()
+	c.requestRedraw()
+}
+
+// Redraws are at most this frequent, so that heavy traffic neither floods the
+// terminal nor makes request handling wait on it.
+const redrawInterval = 100 * time.Millisecond
+
+// requestRedraw asks RunDisplay for a redraw without waiting for it. Requests
+// made while one is pending fold into it.
+func (c *Client) requestRedraw() {
+	select {
+	case c.redraw <- struct{}{}:
+	default:
+	}
+}
+
+// RunDisplay redraws the terminal when asked, when it is resized, and every
+// second so that the request rate falls once traffic stops.
+func (c *Client) RunDisplay() {
+	resize := make(chan os.Signal, 1)
+	signal.Notify(resize, syscall.SIGWINCH)
+	tick := time.Tick(time.Second)
+	for {
+		select {
+		case <-c.redraw:
+		case <-resize:
+		case <-tick:
+		}
+		c.RefreshTerminalOutput()
+		time.Sleep(redrawInterval)
+	}
 }
 
 func (c *Client) RefreshTerminalOutput() {
 	c.displayMu.Lock()
 	defer c.displayMu.Unlock()
+	c.statusMu.Lock()
+	status := c.status
+	c.statusMu.Unlock()
+	total := c.history.Total()
 	// The display picks how many of these fit the terminal.
 	c.display.Render(Frame{
 		TunnelURL: c.tunnelURL,
 		LocalURL:  c.localURL,
 		WebUIPort: c.WebUIPort,
-		Status:    c.status,
+		Status:    status,
 		Logs:      c.history.GetRecent(common.ClientRequestHistorySize),
+		Total:     total,
+		Rate:      c.requestRate(time.Now(), total),
 	})
+}
+
+const rateWindow = 10 * time.Second
+
+// requestRate is requests per second over about the last rateWindow, from the
+// total sampled at each redraw; until the client has run that long, it is the
+// rate since start. Exact however busy the tunnel, unlike counting the
+// history, which keeps only the latest requests. Callers hold displayMu.
+func (c *Client) requestRate(now time.Time, total int) float64 {
+	c.rateSamples = append(c.rateSamples, rateSample{now, total})
+	// The baseline is the newest sample at least rateWindow old.
+	for len(c.rateSamples) > 1 && now.Sub(c.rateSamples[1].at) >= rateWindow {
+		c.rateSamples = c.rateSamples[1:]
+	}
+	base := c.rateSamples[0]
+	if span := now.Sub(base.at); span > 0 {
+		return float64(total-base.total) / span.Seconds()
+	}
+	return 0
 }
 
 func closeWebsocket(c *websocket.Conn) error {

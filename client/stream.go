@@ -84,7 +84,7 @@ func (c *Client) handleUpgradeRequest(msg *common.Message, stream *common.Stream
 		log.Stream.Open = false
 		log.Stream.ClosedAt = time.Now()
 	})
-	c.RefreshTerminalOutput()
+	c.requestRedraw()
 	return nil
 }
 
