@@ -67,6 +67,12 @@ function formatBytes(n) {
     return (n / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
+// Duration arrives in nanoseconds, as Go encodes a time.Duration.
+function formatDuration(ns) {
+    const ms = ns / 1e6;
+    return ms < 1000 ? Math.floor(ms) + ' ms' : (ms / 1000).toFixed(1) + ' s';
+}
+
 function decodeUTF8(binary) {
     return new TextDecoder().decode(Uint8Array.from(binary, c => c.charCodeAt(0)));
 }
@@ -83,7 +89,7 @@ function formatRows(rows) {
 function formatStream(req) {
     const stream = req.Stream;
     const opened = new Date(req.Timestamp);
-    const rows = [['Opened', opened.toLocaleTimeString()]];
+    const rows = [['Opened', opened.toLocaleTimeString()], ['Handshake', formatDuration(req.Duration)]];
     if (stream.Open) {
         rows.push(['State', 'open']);
     } else {
@@ -202,6 +208,7 @@ function renderRequestItem(req) {
         '<div class="request-meta">' +
         '<span class="status ' + getStatusClass(req.StatusCode) + '">' + req.StatusCode + '</span>' +
         '<span class="method">' + escapeHtml(req.Method) + '</span>' +
+        '<span class="duration" title="Time the local app took to respond">' + formatDuration(req.Duration) + '</span>' +
         wsBadge +
         errorDot +
         '<span class="time">' + time + '</span>' +

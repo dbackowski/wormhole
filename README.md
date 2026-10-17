@@ -133,7 +133,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 When the client is running, a dashboard is available at `http://localhost:4040` where you can:
 
 - See the active tunnel URL
-- View recent requests with method, path, status code, and timestamp
+- View recent requests with method, path, status code, duration (how long your local app took to respond), and timestamp
 - Inspect request/response headers and bodies
 - For WebSockets: see whether each socket is open, the bytes and message counts in each direction, and its recent messages (text, JSON, binary as hex, close codes)
 - Freeze the list with the **Pause** button when requests arrive faster than you can click them; **Resume** catches up

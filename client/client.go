@@ -32,8 +32,9 @@ type RequestLog struct {
 	RequestHeaders  map[string][]string
 	RequestBody     []byte // at most MaxStoredBodySize bytes, see RequestBodySize
 	ResponseHeaders map[string][]string
-	ResponseBody    []byte // at most MaxStoredBodySize bytes, see ResponseBodySize
-	Error           string // reason the local forward failed, empty on success
+	ResponseBody    []byte        // at most MaxStoredBodySize bytes, see ResponseBodySize
+	Error           string        // reason the local forward failed, empty on success
+	Duration        time.Duration // time the local app took to respond; for a WebSocket, its handshake
 
 	RequestBodySize  int // full size before truncation
 	ResponseBodySize int

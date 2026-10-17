@@ -133,9 +133,9 @@ func TestRequestLine(t *testing.T) {
 	}{
 		{
 			name: "short url",
-			log:  RequestLog{Timestamp: ts, Method: "POST", URL: "/api/data", StatusCode: 201},
+			log:  RequestLog{Timestamp: ts, Method: "POST", URL: "/api/data", StatusCode: 201, Duration: 42 * time.Millisecond},
 			cols: 80,
-			want: []string{"10:30:45", "POST", "201", "/api/data"},
+			want: []string{"10:30:45", "POST", "201  42ms  /api/data"},
 		},
 		{
 			name: "long url is cut to the terminal width",
@@ -153,7 +153,7 @@ func TestRequestLine(t *testing.T) {
 			name: "long error leaves room for the url",
 			log:  RequestLog{Timestamp: ts, Method: "GET", URL: long, StatusCode: 502, Error: strings.Repeat("e", 300)},
 			cols: 80,
-			want: []string{"/" + strings.Repeat("a", 25) + "…  eee"},
+			want: []string{"/" + strings.Repeat("a", 22) + "…  eee"},
 		},
 		{
 			name: "closed websocket",
@@ -176,6 +176,26 @@ func TestRequestLine(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{0, "0ms"},
+		{800 * time.Microsecond, "0ms"},
+		{42 * time.Millisecond, "42ms"},
+		{999 * time.Millisecond, "999ms"},
+		{time.Second, "1.0s"},
+		{10*time.Second + 400*time.Millisecond, "10.4s"},
+	}
+
+	for _, tt := range tests {
+		if got := formatDuration(tt.d); got != tt.want {
+			t.Errorf("formatDuration(%v) = %q, want %q", tt.d, got, tt.want)
+		}
 	}
 }
 

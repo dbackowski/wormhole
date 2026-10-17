@@ -144,6 +144,7 @@ body {
 }
 
 .method { font-family: var(--font-mono); font-weight: 500; color: var(--color-text-muted); }
+.duration { font-family: var(--font-mono); color: var(--color-text-light); }
 .time { color: var(--color-text-light); margin-left: auto; }
 
 .status { font-family: var(--font-mono); font-weight: 500; }

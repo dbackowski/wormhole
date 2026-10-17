@@ -168,8 +168,9 @@ func renderFrame(f Frame, rows, cols int) string {
 	return cursorHome + strings.Join(lines, clearLine+"\n") + clearLine + clearBelow
 }
 
-// Columns before the URL: indent, time, method and status with their gaps.
-const requestPrefixWidth = 2 + 8 + 2 + 7 + 1 + 3 + 2
+// Columns before the URL: indent, time, method, status and duration with their
+// gaps.
+const requestPrefixWidth = 2 + 8 + 2 + 7 + 1 + 3 + 1 + 5 + 2
 
 func requestLine(rl RequestLog, cols int) string {
 	note, noteColor := "", ansiDim
@@ -193,13 +194,23 @@ func requestLine(rl RequestLog, cols int) string {
 	url := truncate(rl.URL, max(room-noteWidth, room/2))
 	note = truncate(note, room-2-len([]rune(url)))
 
-	line := fmt.Sprintf("  %s%s%s  %-7s %s  %s",
+	line := fmt.Sprintf("  %s%s%s  %-7s %s %s%5s%s  %s",
 		ansiDim, rl.Timestamp.Format(time.TimeOnly), ansiReset,
-		rl.Method, colorStatus(rl.StatusCode), url)
+		rl.Method, colorStatus(rl.StatusCode),
+		ansiDim, formatDuration(rl.Duration), ansiReset, url)
 	if note != "" {
 		line += "  " + noteColor + note + ansiReset
 	}
 	return line
+}
+
+// formatDuration fits the 5 columns the terminal gives it up to 99.9 s, well
+// past the request timeout.
+func formatDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	return fmt.Sprintf("%.1fs", d.Seconds())
 }
 
 // truncate cuts s to width columns, ending it with an ellipsis if it was cut.

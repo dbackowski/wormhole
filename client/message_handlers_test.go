@@ -103,7 +103,9 @@ func TestHandleDomainRegistered(t *testing.T) {
 }
 
 func TestHandleHTTPRequest(t *testing.T) {
+	const appDelay = 30 * time.Millisecond
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(appDelay)
 		w.Header().Set("X-Response", "test-value")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("proxy response"))
@@ -167,6 +169,9 @@ func TestHandleHTTPRequest(t *testing.T) {
 	}
 	if log.Error != "" {
 		t.Errorf("log Error = %q, want empty on success", log.Error)
+	}
+	if log.Duration < appDelay || log.Duration > 2*time.Second {
+		t.Errorf("log Duration = %v, want the app's %v delay", log.Duration, appDelay)
 	}
 
 	if !display.Rendered() {

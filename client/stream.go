@@ -37,19 +37,23 @@ func (c *Client) handleUpgradeRequest(msg *common.Message, stream *common.Stream
 	// A no-op once Pipe has run, which removes the stream itself.
 	defer c.streams.Abort(msg.UUID)
 
+	start := time.Now()
 	httpResp, err := c.proxy.Upgrade(NewProxyRequest(msg))
 	if err != nil || httpResp.StatusCode != http.StatusSwitchingProtocols {
 		var proxyResp *ProxyResponse
 		if err == nil {
 			proxyResp, err = c.proxy.readResponse(httpResp)
 		}
+		duration := time.Since(start)
 		resolved := resolveProxyResponse(proxyResp, err)
 		if sendErr := c.sendResponse(msg, resolved); sendErr != nil {
 			return sendErr
 		}
-		c.recordRequest(msg, resolved, err, StreamInfo{})
+		c.recordRequest(msg, resolved, err, StreamInfo{}, duration)
 		return nil
 	}
+
+	duration := time.Since(start)
 
 	conn, ok := httpResp.Body.(io.ReadWriteCloser)
 	if !ok {
@@ -65,7 +69,7 @@ func (c *Client) handleUpgradeRequest(msg *common.Message, stream *common.Stream
 		conn.Close()
 		return err
 	}
-	c.recordRequest(msg, resolved, nil, StreamInfo{Open: true})
+	c.recordRequest(msg, resolved, nil, StreamInfo{Open: true}, duration)
 
 	tapped := &tapConn{
 		ReadWriteCloser: conn,

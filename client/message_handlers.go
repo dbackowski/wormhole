@@ -14,18 +14,20 @@ func (c *Client) handleDomainRegistered(_ *common.Message) error {
 }
 
 func (c *Client) handleHTTPRequest(msg *common.Message) error {
+	start := time.Now()
 	proxyResp, forwardErr := c.proxy.Forward(NewProxyRequest(msg))
+	duration := time.Since(start)
 	resolved := resolveProxyResponse(proxyResp, forwardErr)
 
 	if err := c.sendResponse(msg, resolved); err != nil {
 		return fmt.Errorf("failed to send response for %s: %w", msg.UUID, err)
 	}
 
-	c.recordRequest(msg, resolved, forwardErr, StreamInfo{})
+	c.recordRequest(msg, resolved, forwardErr, StreamInfo{}, duration)
 	return nil
 }
 
-func (c *Client) recordRequest(msg *common.Message, resolved ProxyResponse, forwardErr error, stream StreamInfo) {
+func (c *Client) recordRequest(msg *common.Message, resolved ProxyResponse, forwardErr error, stream StreamInfo, duration time.Duration) {
 	errText := ""
 	if forwardErr != nil {
 		errText = forwardErr.Error()
@@ -42,6 +44,7 @@ func (c *Client) recordRequest(msg *common.Message, resolved ProxyResponse, forw
 		ResponseHeaders: resolved.Headers,
 		ResponseBody:    resolved.Body,
 		Error:           errText,
+		Duration:        duration,
 		Stream:          stream,
 	})
 
