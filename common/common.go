@@ -17,7 +17,7 @@ const (
 	RequestTimeout           = 10 * time.Second
 	RequestTimeoutGrace      = 5 * time.Second
 	RequestTimeoutBuffer     = RequestTimeout + RequestTimeoutGrace
-	ClientRequestHistorySize = 100
+	ClientRequestHistorySize = 500
 	ServerShutdownTimeout    = 10 * time.Second
 	ClientShutdownTimeout    = 5 * time.Second
 	ServerReadHeaderTimeout  = 10 * time.Second

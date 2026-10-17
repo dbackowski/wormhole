@@ -175,6 +175,19 @@ func TestAdd_CapsAndCopiesLargeBodies(t *testing.T) {
 
 // Entries no longer visible must not stay reachable through the backing array,
 // or their bodies cannot be garbage collected.
+func TestTotalCountsEvictedAndClearedEntries(t *testing.T) {
+	rh := NewRequestHistory(2)
+	for i := range 5 {
+		rh.Add(makeLog(i))
+	}
+	rh.Clear()
+	rh.Add(makeLog(5))
+
+	if got := rh.Total(); got != 6 {
+		t.Errorf("Total() = %d, want 6", got)
+	}
+}
+
 func TestDroppedAndClearedEntriesAreReleased(t *testing.T) {
 	rh := NewRequestHistory(3)
 	for i := range 10 {

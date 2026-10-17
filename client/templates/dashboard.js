@@ -7,10 +7,17 @@ const STATUS_BOUNDARIES = {
 
 let requestsData = [];
 let selectedId = null;
-// Copy of the selected request, kept so that its details stay open after busy
-// traffic pushes it out of the history.
+// Full record of the selected request, fetched on its own because the polled
+// list carries no headers or bodies. Kept after busy traffic pushes the
+// request out of the history, so that its details stay open.
 let selectedReq = null;
+// The list entry selectedReq was fetched for; when it changes (a WebSocket's
+// counters), the record is fetched again. Empty until a fetch succeeds.
+let selectedSummary = '';
 let paused = false;
+// Requests the server had recorded when the list was last fetched; a paused
+// dashboard compares it with the current total to count new ones.
+let totalAtFetch = 0;
 let lastRequestsPayload = '';
 let lastDetailsPayload = '';
 let lastMessagesPayload = '';
@@ -219,6 +226,7 @@ function renderRequestItem(req) {
 function selectRequest(id) {
     if (id !== selectedId) {
         selectedReq = null;
+        selectedSummary = '';
         lastMessagesPayload = '';
         document.getElementById('messages').innerHTML = '';
     }
@@ -226,21 +234,47 @@ function selectRequest(id) {
     document.querySelectorAll('.request-item').forEach(item => {
         item.classList.toggle('selected', item.dataset.id === id);
     });
-    renderDetails();
-    refreshMessages();
+    loadSelected().then(refreshMessages);
+}
+
+// Fetches the selected request if its list entry changed since the last
+// fetch, then shows it.
+async function loadSelected() {
+    const id = selectedId;
+    const summary = requestsData.find(r => r.UUID === id);
+    const key = JSON.stringify(summary);
+    if (summary && key !== selectedSummary) {
+        try {
+            const response = await fetch('/api/requests/' + encodeURIComponent(id));
+            const full = response.ok ? await response.json() : null;
+            if (id !== selectedId) return;
+            if (full) {
+                selectedReq = full;
+                selectedSummary = key;
+            } else if (!selectedReq) {
+                // Gone from the server already, as rows of a paused list can
+                // be: show what the list still knows.
+                selectedReq = summary;
+            }
+        } catch (err) {
+            console.error('Failed to load request:', err);
+        }
+    }
+    if (id === selectedId) renderDetails(Boolean(summary) && key === selectedSummary);
 }
 
 // Re-renders only when the selected request actually changed, so polling does not
 // wipe text selection or reset scroll inside the details pane.
-function renderDetails() {
-    const current = requestsData.find(r => r.UUID === selectedId);
-    if (current) selectedReq = current;
+function renderDetails(inHistory) {
     const req = selectedReq;
     if (!req) {
         closeDetails();
         return;
     }
-    document.getElementById('evictedNote').classList.toggle('hidden', Boolean(current));
+    document.getElementById('evictedNote').classList.toggle('hidden', inHistory);
+    document.getElementById('evictedNoteText').textContent = selectedSummary
+        ? 'No longer in the request history. Shown as last seen.'
+        : 'No longer in the request history, so its headers and bodies are gone.';
 
     const payload = JSON.stringify(req);
     if (payload === lastDetailsPayload) return;
@@ -296,6 +330,7 @@ function renderDetails() {
 function closeDetails() {
     selectedId = null;
     selectedReq = null;
+    selectedSummary = '';
     lastDetailsPayload = '';
     lastMessagesPayload = '';
     document.getElementById('messages').innerHTML = '';
@@ -314,6 +349,18 @@ function togglePause() {
     if (!paused) refresh();
 }
 
+async function countNewWhilePaused() {
+    try {
+        const status = await fetch('/api/status').then(r => r.json());
+        if (!paused) return;
+        const count = status.totalRequests - totalAtFetch;
+        document.getElementById('pauseButton').textContent =
+            count > 0 ? 'Resume (' + count.toLocaleString() + ' new)' : 'Resume';
+    } catch (err) {
+        console.error('Failed to count new requests:', err);
+    }
+}
+
 async function clearRequests() {
     try {
         await fetch('/api/requests', { method: 'DELETE' });
@@ -330,13 +377,15 @@ async function refresh() {
         document.getElementById('tunnelUrl').href = status.tunnelURL;
         document.getElementById('tunnelUrl').textContent = status.tunnelURL;
 
-        const payload = await fetch('/api/requests').then(r => r.text());
+        const response = await fetch('/api/requests');
+        const payload = await response.text();
+        totalAtFetch = Number(response.headers.get('X-Total-Requests'));
         if (payload === lastRequestsPayload) return;
         lastRequestsPayload = payload;
 
         requestsData = JSON.parse(payload) || [];
         renderList();
-        renderDetails();
+        if (selectedId) await loadSelected();
         await refreshMessages();
     } catch (err) {
         console.error('Failed to refresh:', err);
@@ -344,4 +393,4 @@ async function refresh() {
 }
 
 refresh();
-setInterval(() => { if (!paused) refresh(); }, REFRESH_INTERVAL_MS);
+setInterval(() => paused ? countNewWhilePaused() : refresh(), REFRESH_INTERVAL_MS);

@@ -21,6 +21,7 @@ type RequestHistory struct {
 	logs    []RequestLog
 	mutex   sync.RWMutex
 	maxSize int
+	total   int // every request ever added; neither eviction nor Clear lowers it
 }
 
 func NewRequestHistory(maxSize int) *RequestHistory {
@@ -49,6 +50,7 @@ func (rh *RequestHistory) Add(log RequestLog) {
 	defer rh.mutex.Unlock()
 
 	rh.logs = append(rh.logs, log)
+	rh.total++
 	if n := len(rh.logs) - rh.maxSize; n > 0 {
 		// slices.Delete zeroes the vacated tail, so dropped entries' bodies are
 		// released instead of lingering in the backing array.
@@ -69,6 +71,19 @@ func (rh *RequestHistory) Update(uuid string, fn func(*RequestLog)) {
 	}
 }
 
+func (rh *RequestHistory) Get(uuid string) (RequestLog, bool) {
+	rh.mutex.RLock()
+	defer rh.mutex.RUnlock()
+
+	for _, log := range rh.logs {
+		if log.UUID == uuid {
+			log.Messages = nil // see GetRecent
+			return log, true
+		}
+	}
+	return RequestLog{}, false
+}
+
 func (rh *RequestHistory) GetMessages(uuid string) ([]WSMessage, bool) {
 	rh.mutex.RLock()
 	defer rh.mutex.RUnlock()
@@ -87,6 +102,12 @@ func (rh *RequestHistory) Clear() {
 
 	clear(rh.logs)
 	rh.logs = rh.logs[:0]
+}
+
+func (rh *RequestHistory) Total() int {
+	rh.mutex.RLock()
+	defer rh.mutex.RUnlock()
+	return rh.total
 }
 
 func (rh *RequestHistory) GetRecent(n int) []RequestLog {

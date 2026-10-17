@@ -37,10 +37,15 @@ func TestHandleDashboard(t *testing.T) {
 }
 
 func TestHandleStatus(t *testing.T) {
+	history := NewRequestHistory(1)
+	history.Add(RequestLog{UUID: "a"})
+	history.Add(RequestLog{UUID: "b"})
+
 	ui := &WebUI{
 		client: &Client{
 			tunnelURL: "https://tunnel.example.com",
 			domain:    "example.com",
+			history:   history,
 		},
 	}
 
@@ -59,7 +64,7 @@ func TestHandleStatus(t *testing.T) {
 		t.Errorf("Content-Type = %q, want %q", ct, "application/json")
 	}
 
-	var result map[string]string
+	var result map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -71,11 +76,16 @@ func TestHandleStatus(t *testing.T) {
 	if result["domain"] != "example.com" {
 		t.Errorf("domain = %q, want %q", result["domain"], "example.com")
 	}
+
+	// Counts past the one entry the history keeps.
+	if result["totalRequests"] != float64(2) {
+		t.Errorf("totalRequests = %v, want 2", result["totalRequests"])
+	}
 }
 
 func TestHandleStatusEmptyFields(t *testing.T) {
 	ui := &WebUI{
-		client: &Client{},
+		client: &Client{history: NewRequestHistory(1)},
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
@@ -83,7 +93,7 @@ func TestHandleStatusEmptyFields(t *testing.T) {
 
 	ui.handleStatus(w, req)
 
-	var result map[string]string
+	var result map[string]any
 	if err := json.NewDecoder(w.Result().Body).Decode(&result); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -100,11 +110,13 @@ func TestHandleStatusEmptyFields(t *testing.T) {
 func TestHandleRequests(t *testing.T) {
 	history := NewRequestHistory(100)
 	history.Add(RequestLog{
-		UUID:       "abc-123",
-		Timestamp:  time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
-		Method:     "GET",
-		URL:        "/hello",
-		StatusCode: 200,
+		UUID:           "abc-123",
+		Timestamp:      time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
+		Method:         "GET",
+		URL:            "/hello",
+		StatusCode:     200,
+		RequestHeaders: map[string][]string{"Accept": {"*/*"}},
+		ResponseBody:   []byte("hello body"),
 	})
 	history.Add(RequestLog{
 		UUID:       "def-456",
@@ -134,6 +146,9 @@ func TestHandleRequests(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q, want %q", ct, "application/json")
 	}
+	if total := resp.Header.Get("X-Total-Requests"); total != "2" {
+		t.Errorf("X-Total-Requests = %q, want %q", total, "2")
+	}
 
 	var logs []RequestLog
 	if err := json.NewDecoder(resp.Body).Decode(&logs); err != nil {
@@ -150,6 +165,56 @@ func TestHandleRequests(t *testing.T) {
 
 	if logs[1].UUID != "def-456" {
 		t.Errorf("logs[1].UUID = %q, want %q", logs[1].UUID, "def-456")
+	}
+
+	// Headers and bodies are served per request, see TestHandleRequest.
+	if logs[0].RequestHeaders != nil || logs[0].ResponseBody != nil {
+		t.Errorf("list entry = %+v, want no headers or bodies", logs[0])
+	}
+	if logs[0].ResponseBodySize != len("hello body") {
+		t.Errorf("ResponseBodySize = %d, want %d", logs[0].ResponseBodySize, len("hello body"))
+	}
+	if full, _ := history.Get("abc-123"); string(full.ResponseBody) != "hello body" {
+		t.Errorf("history lost the body after listing: %q", full.ResponseBody)
+	}
+}
+
+func TestHandleRequest(t *testing.T) {
+	history := NewRequestHistory(100)
+	history.Add(RequestLog{
+		UUID:           "abc-123",
+		Method:         "POST",
+		URL:            "/hook",
+		StatusCode:     200,
+		RequestHeaders: map[string][]string{"Content-Type": {"application/json"}},
+		RequestBody:    []byte(`{"a":1}`),
+		ResponseBody:   []byte("ok"),
+	})
+
+	ui, err := NewWebUI(&Client{history: history}, 0)
+	if err != nil {
+		t.Fatalf("NewWebUI() error = %v", err)
+	}
+	get := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Host = "localhost"
+		w := httptest.NewRecorder()
+		ui.server.Handler.ServeHTTP(w, req)
+		return w
+	}
+
+	w := get("/api/requests/abc-123")
+	var log RequestLog
+	if err := json.NewDecoder(w.Body).Decode(&log); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if log.UUID != "abc-123" || string(log.RequestBody) != `{"a":1}` || string(log.ResponseBody) != "ok" ||
+		log.RequestHeaders["Content-Type"][0] != "application/json" {
+		t.Errorf("request = %+v, want the full record", log)
+	}
+
+	if w := get("/api/requests/unknown"); w.Code != http.StatusNotFound {
+		t.Errorf("unknown id status = %d, want 404", w.Code)
 	}
 }
 

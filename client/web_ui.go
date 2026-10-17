@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/dbackowski/wormhole/common"
@@ -34,6 +35,7 @@ func NewWebUI(client *Client, port int) (*WebUI, error) {
 	mux.HandleFunc("/", ui.handleDashboard)
 	mux.HandleFunc("/api/status", ui.handleStatus)
 	mux.HandleFunc("/api/requests", ui.handleRequests)
+	mux.HandleFunc("GET /api/requests/{id}", ui.handleRequest)
 	mux.HandleFunc("GET /api/requests/{id}/messages", ui.handleMessages)
 
 	ui.server = &http.Server{
@@ -116,9 +118,10 @@ func writeJSON(w http.ResponseWriter, data any) {
 }
 
 func (ui *WebUI) handleStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]string{
-		"tunnelURL": ui.client.tunnelURL,
-		"domain":    ui.client.domain,
+	writeJSON(w, map[string]any{
+		"tunnelURL":     ui.client.tunnelURL,
+		"domain":        ui.client.domain,
+		"totalRequests": ui.client.history.Total(),
 	})
 }
 
@@ -128,7 +131,26 @@ func (ui *WebUI) handleRequests(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	writeJSON(w, ui.client.history.GetRecent(common.ClientRequestHistorySize))
+	// Lets a paused dashboard count what arrived after this list. Read apart
+	// from the list, so a request landing in between can be counted off by one.
+	w.Header().Set("X-Total-Requests", strconv.Itoa(ui.client.history.Total()))
+	logs := ui.client.history.GetRecent(common.ClientRequestHistorySize)
+	// Polled every second, so the list leaves out headers and bodies; the
+	// dashboard fetches them from handleRequest for the request it shows.
+	for i := range logs {
+		logs[i].RequestHeaders, logs[i].ResponseHeaders = nil, nil
+		logs[i].RequestBody, logs[i].ResponseBody = nil, nil
+	}
+	writeJSON(w, logs)
+}
+
+func (ui *WebUI) handleRequest(w http.ResponseWriter, r *http.Request) {
+	log, ok := ui.client.history.Get(r.PathValue("id"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, log)
 }
 
 func (ui *WebUI) handleMessages(w http.ResponseWriter, r *http.Request) {
