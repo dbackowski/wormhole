@@ -265,6 +265,25 @@ function renderDetails() {
         document.getElementById('streamInfo').innerHTML = formatStream(req);
     }
 
+    const queryIndex = req.URL.indexOf('?');
+    const query = queryIndex < 0 ? [] : [...new URLSearchParams(req.URL.slice(queryIndex + 1))];
+    document.getElementById('queryParamsSection').classList.toggle('hidden', query.length === 0);
+    document.getElementById('queryParams').innerHTML = formatRows(query);
+
+    // Shown next to the raw body, which webhook signatures are computed over.
+    const contentType = ((req.RequestHeaders || {})['Content-Type'] || [''])[0];
+    const isForm = !isStream && Boolean(req.RequestBody) &&
+        contentType.split(';')[0].trim().toLowerCase() === 'application/x-www-form-urlencoded';
+    document.getElementById('formDataSection').classList.toggle('hidden', !isForm);
+    if (isForm) {
+        const form = atob(req.RequestBody);
+        let html = formatRows([...new URLSearchParams(form)]);
+        if (req.RequestBodySize > form.length) {
+            html += '<div class="no-content">Truncated: the last field may be cut short</div>';
+        }
+        document.getElementById('formData').innerHTML = html;
+    }
+
     document.getElementById('requestHeaders').innerHTML = formatHeaders(req.RequestHeaders);
     document.getElementById('responseHeaders').innerHTML = formatHeaders(req.ResponseHeaders);
     document.getElementById('requestBody').innerHTML = formatBody(req.RequestBody, req.RequestBodySize);

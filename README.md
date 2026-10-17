@@ -135,6 +135,7 @@ When the client is running, a dashboard is available at `http://localhost:4040` 
 - See the active tunnel URL
 - View recent requests with method, path, status code, duration (how long your local app took to respond), and timestamp
 - Inspect request/response headers and bodies
+- See query parameters and form-encoded request bodies (`application/x-www-form-urlencoded`) decoded as name/value pairs, with the raw body still shown
 - For WebSockets: see whether each socket is open, the bytes and message counts in each direction, and its recent messages (text, JSON, binary as hex, close codes)
 - Freeze the list with the **Pause** button when requests arrive faster than you can click them; **Resume** catches up
 - Keep reading a selected request under busy traffic: its details stay open after it has left the history
