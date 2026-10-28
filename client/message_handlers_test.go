@@ -437,6 +437,12 @@ func TestRequestsCompleteWhileTerminalIsFrozen(t *testing.T) {
 		}
 	}
 
+	// The response goes out before history.Add, so wait for every handler to
+	// release its semaphore slot before counting.
+	for range MaxConcurrentRequests {
+		client.requestSem <- struct{}{}
+	}
+
 	if got := client.history.Total(); got != 3*MaxConcurrentRequests {
 		t.Errorf("history total = %d, want %d", got, 3*MaxConcurrentRequests)
 	}
