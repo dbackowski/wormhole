@@ -28,8 +28,15 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, domain, err := s.upgradeAndExtractDomain(w, r)
+	// Checked before the upgrade, so the client gets a status it can report
+	// rather than a connection closed without a reason.
+	domain, err := s.extractDomain(r.Host)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.Logger.Error("WebSocket upgrade failed", "error", err, "remote_addr", r.RemoteAddr)
 		return
@@ -42,24 +49,8 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.requestLogger.LogClientConnected(domain, r.RemoteAddr)
+	s.Logger.Info("Client connected", "domain", domain, "remote_addr", r.RemoteAddr)
 	s.handleWebSocketConnection(domain, r.RemoteAddr, connection)
-}
-
-func (s *Server) upgradeAndExtractDomain(w http.ResponseWriter, r *http.Request) (*websocket.Conn, string, error) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		return nil, "", err
-	}
-
-	domain, err := s.extractDomain(r.Host)
-
-	if err != nil {
-		conn.Close()
-		return nil, "", err
-	}
-
-	return conn, domain, nil
 }
 
 func (s *Server) registerClient(conn *websocket.Conn, domain, session string) (*Connection, error) {
@@ -95,42 +86,39 @@ func disconnectReason(err error) string {
 	return "connection error: " + err.Error()
 }
 
-func (s *Server) newTunnelDispatcher(domain string, connection *Connection) *common.MessageDispatcher {
-	dispatcher := common.NewMessageDispatcher()
-
-	dispatcher.Register(common.MessageTypeHTTPResponse, func(msg *common.Message) error {
-		if err := connection.DeliverResponse(msg); err != nil {
-			// The waiter is gone: the request timed out, or the browser hung up.
-			// Routine on a public tunnel and not actionable, so it is not
-			// reported as a dispatch failure.
-			s.Logger.Debug("dropped response with no waiting request",
-				"domain", domain, "uuid", msg.UUID, "status", msg.Status, "error", err)
+func (s *Server) newTunnelHandlers(domain string, connection *Connection) common.Handlers {
+	return common.Handlers{
+		common.MessageTypeHTTPResponse: func(msg *common.Message) error {
+			if err := connection.requests.Deliver(msg); err != nil {
+				// The waiter is gone: the request timed out, or the browser hung up.
+				// Routine on a public tunnel and not actionable, so it is not
+				// reported as a dispatch failure.
+				s.Logger.Debug("dropped response with no waiting request",
+					"domain", domain, "uuid", msg.UUID, "status", msg.Status, "error", err)
+				return nil
+			}
+			s.Logger.Info("HTTP response received", "domain", domain, "uuid", msg.UUID, "status", msg.Status)
+			s.Logger.Debug("HTTP response details", "uuid", msg.UUID, "body", msg.Body)
 			return nil
-		}
-		s.requestLogger.LogHTTPResponse(domain, msg.UUID, msg.Status, msg.Body)
-		return nil
-	})
-
-	dispatcher.Register(common.MessageTypeStreamData, func(msg *common.Message) error {
-		connection.streams.Deliver(msg.UUID, msg.Body)
-		return nil
-	})
-
-	dispatcher.Register(common.MessageTypeStreamClose, func(msg *common.Message) error {
-		connection.streams.Finish(msg.UUID)
-		return nil
-	})
-
-	return dispatcher
+		},
+		common.MessageTypeStreamData: func(msg *common.Message) error {
+			connection.streams.Deliver(msg.UUID, msg.Body)
+			return nil
+		},
+		common.MessageTypeStreamClose: func(msg *common.Message) error {
+			connection.streams.Finish(msg.UUID)
+			return nil
+		},
+	}
 }
 
 func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, connection *Connection) {
 	conn := connection.conn
 	defer connection.Close()
 
-	common.RunMessageLoop(conn, s.newTunnelDispatcher(domain, connection), s.heartbeat,
+	common.RunMessageLoop(conn, s.newTunnelHandlers(domain, connection), s.heartbeat,
 		func(err error) {
-			s.requestLogger.LogClientDisconnected(domain, remoteAddr, disconnectReason(err))
+			s.Logger.Info("Client disconnected", "domain", domain, "remote_addr", remoteAddr, "reason", disconnectReason(err))
 			s.connManager.RemoveConnection(domain, connection)
 			connection.Close()
 		},

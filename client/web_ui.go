@@ -5,34 +5,29 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/dbackowski/wormhole/common"
 )
 
-//go:embed templates/dashboard.html templates/dashboard.css templates/dashboard.js
+//go:embed templates
 var templateFS embed.FS
 
 type WebUI struct {
-	client        *Client
-	server        *http.Server
-	dashboardHTML string
+	client *Client
+	server *http.Server
 }
 
-func NewWebUI(client *Client, port int) (*WebUI, error) {
+func NewWebUI(client *Client, port int) *WebUI {
 	ui := &WebUI{client: client}
 
-	dashboardHTML, err := ui.buildDashboardHTML()
-	if err != nil {
-		return nil, fmt.Errorf("failed to build dashboard: %w", err)
-	}
-	ui.dashboardHTML = dashboardHTML
+	static, _ := fs.Sub(templateFS, "templates") // fails only on an invalid path
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", ui.handleDashboard)
+	mux.Handle("/", http.FileServerFS(static))
 	mux.HandleFunc("/api/status", ui.handleStatus)
 	mux.HandleFunc("/api/requests", ui.handleRequests)
 	mux.HandleFunc("GET /api/requests/{id}", ui.handleRequest)
@@ -43,7 +38,7 @@ func NewWebUI(client *Client, port int) (*WebUI, error) {
 		Handler: localHostOnly(mux),
 	}
 
-	return ui, nil
+	return ui
 }
 
 // localHostOnly rejects requests whose Host is not the loopback name the UI is
@@ -62,36 +57,6 @@ func localHostOnly(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func readTemplate(name string) (string, error) {
-	data, err := templateFS.ReadFile("templates/" + name)
-	if err != nil {
-		return "", fmt.Errorf("failed to read %s: %w", name, err)
-	}
-	return string(data), nil
-}
-
-func (ui *WebUI) buildDashboardHTML() (string, error) {
-	html, err := readTemplate("dashboard.html")
-	if err != nil {
-		return "", err
-	}
-
-	css, err := readTemplate("dashboard.css")
-	if err != nil {
-		return "", err
-	}
-
-	js, err := readTemplate("dashboard.js")
-	if err != nil {
-		return "", err
-	}
-
-	result := strings.Replace(html, "{{CSS}}", css, 1)
-	result = strings.Replace(result, "{{JS}}", js, 1)
-
-	return result, nil
 }
 
 // Start binds the port before returning, so a port already in use is reported
@@ -160,9 +125,4 @@ func (ui *WebUI) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, messages)
-}
-
-func (ui *WebUI) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprint(w, ui.dashboardHTML)
 }

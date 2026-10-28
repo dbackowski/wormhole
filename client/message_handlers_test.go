@@ -105,23 +105,6 @@ func newTestClient(t *testing.T, proxyServerURL string) (*Client, *mockDisplay, 
 	return client, display, wsServer, serverConn
 }
 
-func TestHandleDomainRegistered(t *testing.T) {
-	client, _, wsServer, _ := newTestClient(t, "http://localhost:1")
-	defer wsServer.Close()
-	defer client.Conn.Close()
-
-	err := client.handleDomainRegistered(&common.Message{
-		Type: common.MessageTypeDomainRegistered,
-	})
-
-	if err != nil {
-		t.Fatalf("handleDomainRegistered() error = %v, want nil", err)
-	}
-	if !redrawRequested(client) {
-		t.Error("expected a redraw to be requested")
-	}
-}
-
 func TestHandleHTTPRequest(t *testing.T) {
 	const appDelay = 30 * time.Millisecond
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -361,19 +344,12 @@ func TestSetupMessageHandlers(t *testing.T) {
 
 	client.setupMessageHandlers()
 
-	if client.dispatcher == nil {
-		t.Fatal("dispatcher is nil after setupMessageHandlers")
+	if client.handlers == nil {
+		t.Fatal("handlers are nil after setupMessageHandlers")
 	}
 
-	t.Run("domain_registered is registered", func(t *testing.T) {
-		err := client.dispatcher.Dispatch(&common.Message{Type: common.MessageTypeDomainRegistered})
-		if err != nil {
-			t.Errorf("dispatch domain_registered failed: %v", err)
-		}
-	})
-
 	t.Run("http_request is registered", func(t *testing.T) {
-		err := client.dispatcher.Dispatch(&common.Message{
+		err := client.handlers.Dispatch(&common.Message{
 			Type:    common.MessageTypeHTTPRequest,
 			UUID:    "setup-test",
 			Method:  "GET",
@@ -388,7 +364,7 @@ func TestSetupMessageHandlers(t *testing.T) {
 		serverConn.ReadJSON(&resp)
 	})
 
-	err := client.dispatcher.Dispatch(&common.Message{Type: "unknown_type"})
+	err := client.handlers.Dispatch(&common.Message{Type: "unknown_type"})
 	if err == nil {
 		t.Error("expected error for unknown message type, got nil")
 	}

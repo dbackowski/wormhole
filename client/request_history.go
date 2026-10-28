@@ -114,14 +114,7 @@ func (rh *RequestHistory) GetRecent(n int) []RequestLog {
 	rh.mutex.RLock()
 	defer rh.mutex.RUnlock()
 
-	start := 0
-	if len(rh.logs) > n {
-		start = len(rh.logs) - n
-	}
-
-	slice := rh.logs[start:]
-	result := make([]RequestLog, len(slice))
-	copy(result, slice)
+	result := slices.Clone(rh.logs[max(len(rh.logs)-n, 0):])
 	// Update trims Messages in place, so copies must not share them.
 	for i := range result {
 		result[i].Messages = nil

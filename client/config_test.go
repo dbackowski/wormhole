@@ -3,6 +3,7 @@ package client
 import (
 	"flag"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/dbackowski/wormhole/common"
@@ -40,45 +41,6 @@ func TestParseURL(t *testing.T) {
 			}
 			if parsed.Scheme != tt.wantScheme {
 				t.Errorf("parseURL(%q).Scheme = %q, want %q", tt.rawURL, parsed.Scheme, tt.wantScheme)
-			}
-		})
-	}
-}
-
-func TestValidateAndParseServerURL(t *testing.T) {
-	tests := []struct {
-		name           string
-		rawURL         string
-		wantHTTPScheme string
-		wantWSScheme   string
-		wantHost       string
-		wantErr        bool
-	}{
-		{"http maps to ws", "http://localhost:8080", "http", "ws", "localhost:8080", false},
-		{"https maps to wss", "https://example.com", "https", "wss", "example.com", false},
-		{"empty url", "", "", "", "", true},
-		{"invalid url", "not-a-url", "", "", "", true},
-		{"unsupported scheme", "ftp://example.com", "", "", "", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := validateAndParseServerURL(tt.rawURL)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("validateAndParseServerURL(%q) error = %v, wantErr %v", tt.rawURL, err, tt.wantErr)
-				return
-			}
-			if err != nil {
-				return
-			}
-			if cfg.HTTPScheme != tt.wantHTTPScheme {
-				t.Errorf("HTTPScheme = %q, want %q", cfg.HTTPScheme, tt.wantHTTPScheme)
-			}
-			if cfg.WSScheme != tt.wantWSScheme {
-				t.Errorf("WSScheme = %q, want %q", cfg.WSScheme, tt.wantWSScheme)
-			}
-			if cfg.Host != tt.wantHost {
-				t.Errorf("Host = %q, want %q", cfg.Host, tt.wantHost)
 			}
 		})
 	}
@@ -152,6 +114,15 @@ func TestValidateClientConfig(t *testing.T) {
 	}{
 		{"valid config", "myapp", "http://localhost:3000", 4040, false},
 		{"empty domain", "", "http://localhost:3000", 4040, true},
+		{"domain with hyphen and digits", "my-app2", "http://localhost:3000", 4040, false},
+		{"domain of 63 chars", strings.Repeat("a", 63), "http://localhost:3000", 4040, false},
+		{"domain of 64 chars", strings.Repeat("a", 64), "http://localhost:3000", 4040, true},
+		{"domain with dot", "a.b", "http://localhost:3000", 4040, true},
+		{"domain uppercase", "MyApp", "http://localhost:3000", 4040, true},
+		{"domain underscore", "my_app", "http://localhost:3000", 4040, true},
+		{"domain leading hyphen", "-app", "http://localhost:3000", 4040, true},
+		{"domain trailing hyphen", "app-", "http://localhost:3000", 4040, true},
+		{"domain with slash", "app/", "http://localhost:3000", 4040, true},
 		{"empty local", "myapp", "", 4040, true},
 		{"invalid local url", "myapp", "not-a-url", 4040, true},
 		{"invalid port zero", "myapp", "http://localhost:3000", 0, true},

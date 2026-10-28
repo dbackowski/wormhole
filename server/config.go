@@ -44,17 +44,8 @@ func ParseFlags(version string) *Config {
 	}
 
 	if cfg.AuthToken == "" {
-		fileCfg, err := common.LoadConfigFile(common.DefaultConfigPath())
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to load config file: %v\n", err)
-		} else if fileCfg.AuthToken != "" {
-			cfg.AuthToken = fileCfg.AuthToken
-		}
+		cfg.AuthToken = common.AuthTokenFromConfigFile()
 	}
 
 	return cfg
-}
-
-func (c *Config) Validate() error {
-	return common.ValidatePort(c.Port)
 }

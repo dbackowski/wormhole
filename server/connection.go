@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"sync"
 
 	"github.com/dbackowski/wormhole/common"
@@ -33,18 +32,10 @@ func (c *Connection) Done() <-chan struct{} {
 	return c.done
 }
 
-func (c *Connection) RegisterRequest(ctx context.Context, uuid string) (chan *common.Message, context.CancelFunc) {
-	return c.requests.Register(ctx, uuid)
-}
-
 func (c *Connection) SendMessage(msg *common.Message) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return common.WriteJSON(c.conn, msg)
-}
-
-func (c *Connection) DeliverResponse(msg *common.Message) error {
-	return c.requests.Deliver(msg)
 }
 
 func (c *Connection) Close() error {

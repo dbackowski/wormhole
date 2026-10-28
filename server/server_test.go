@@ -269,7 +269,7 @@ func TestTunnelRequest_SlowBodyIsCutOff(t *testing.T) {
 	}
 	s.connManager.ActivateConnection("foo")
 
-	srv := httptest.NewServer(s.mux)
+	srv := httptest.NewServer(s.httpServer.Handler)
 	defer srv.Close()
 
 	// Spoken over a raw socket rather than through http.Client: a client that
@@ -360,7 +360,7 @@ func TestAuthenticateRequest_RawTokenWithoutBearer(t *testing.T) {
 
 func TestSetupRoutes(t *testing.T) {
 	s := newTestServer(t)
-	srv := httptest.NewServer(s.mux)
+	srv := httptest.NewServer(s.httpServer.Handler)
 	defer srv.Close()
 
 	resp, err := http.Get(fmt.Sprintf("%s/health", srv.URL))

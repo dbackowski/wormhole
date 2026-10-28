@@ -4,10 +4,11 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"log/slog"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -76,8 +77,7 @@ type Client struct {
 	proxy      *LocalProxy
 	history    *RequestHistory
 	display    Display
-	Logger     *slog.Logger
-	dispatcher *common.MessageDispatcher
+	handlers   common.Handlers
 	WebUIPort  int
 
 	wsURL       string
@@ -106,12 +106,14 @@ func NewClient(cfg *Config) (*Client, error) {
 		return nil, fmt.Errorf("invalid client config: %w", err)
 	}
 
-	serverConfig, err := validateAndParseServerURL(cfg.ServerURL)
+	server, err := parseURL(cfg.ServerURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid server URL: %w", err)
 	}
 
-	wsURL := common.BuildSubdomainURL(serverConfig.WSScheme, cfg.Domain, serverConfig.Host)
+	// http becomes ws, https becomes wss.
+	wsScheme := strings.Replace(server.Scheme, "http", "ws", 1)
+	wsURL := common.BuildSubdomainURL(wsScheme, cfg.Domain, server.Host)
 
 	dialHeaders := http.Header{}
 	dialHeaders.Set(common.ClientHeader, "1")
@@ -125,11 +127,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		return nil, err
 	}
 
-	// Discarded: anything written to the terminal is wiped by the next refresh
-	// of the alt screen. Errors worth seeing go to the status line instead.
-	logger := slog.New(slog.DiscardHandler)
-
-	tunnelURL := common.BuildSubdomainURL(serverConfig.HTTPScheme, cfg.Domain, serverConfig.Host)
+	tunnelURL := common.BuildSubdomainURL(server.Scheme, cfg.Domain, server.Host)
 
 	client := &Client{
 		domain:    cfg.Domain,
@@ -139,7 +137,6 @@ func NewClient(cfg *Config) (*Client, error) {
 		proxy:     NewLocalProxy(localURL, tunnelURL, common.RequestTimeout),
 		history:   NewRequestHistory(common.ClientRequestHistorySize),
 		display:   TerminalDisplay{},
-		Logger:    logger,
 		WebUIPort: cfg.WebUIPort,
 		redraw:    make(chan struct{}, 1),
 
@@ -157,6 +154,11 @@ func dialAndRegister(wsURL string, headers http.Header) (*websocket.Conn, error)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 			return nil, ErrUnauthorized
+		}
+		// The server names the problem, e.g. a host outside its -host domain.
+		if resp != nil && resp.StatusCode == http.StatusBadRequest {
+			reason, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("server rejected %s: %s", wsURL, strings.TrimSpace(string(reason)))
 		}
 		return nil, fmt.Errorf("failed to connect to %s: %w", wsURL, err)
 	}
@@ -226,17 +228,10 @@ func (c *Client) HandleConnection() {
 	// already dropped its side of each one when that connection ends.
 	defer c.streams.AbortAll()
 
-	common.RunMessageLoop(c.Conn, c.dispatcher, common.DefaultHeartbeat(),
-		func(err error) {
-			c.Logger.Error("Failed to read message", "error", err)
-		},
-		func(msg *common.Message, err error) {
-			c.Logger.Error("Message handling failed",
-				"type", msg.Type,
-				"uuid", msg.UUID,
-				"error", err)
-		},
-	)
+	// Errors are dropped: anything written to the terminal is wiped by the next
+	// refresh of the alt screen. Errors worth seeing go to the status line.
+	common.RunMessageLoop(c.Conn, c.handlers, common.DefaultHeartbeat(),
+		func(error) {}, func(*common.Message, error) {})
 }
 
 // Shutdown holds writeMu throughout, since Reconnect may swap Conn from the
@@ -245,10 +240,8 @@ func (c *Client) Shutdown() error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
-	if err := closeWebsocket(c.Conn); err != nil {
-		c.Logger.Error("Failed to send close frame", "error", err)
-	}
-
+	// Best effort: the connection may already be gone.
+	c.Conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")) //nolint:errcheck
 	return c.Conn.Close()
 }
 
@@ -371,10 +364,6 @@ func (c *Client) requestRate(now time.Time, total int) float64 {
 		return float64(total-base.total) / span.Seconds()
 	}
 	return 0
-}
-
-func closeWebsocket(c *websocket.Conn) error {
-	return c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 }
 
 func awaitRegistration(conn *websocket.Conn) error {

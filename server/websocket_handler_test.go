@@ -30,7 +30,7 @@ func dialWS(t *testing.T, url string, host string) *websocket.Conn {
 
 func startWSServer(t *testing.T, s *Server) (wsURL string, cleanup func()) {
 	t.Helper()
-	srv := httptest.NewServer(s.mux)
+	srv := httptest.NewServer(s.httpServer.Handler)
 	wsURL = "ws" + strings.TrimPrefix(srv.URL, "http")
 	return wsURL, srv.Close
 }
@@ -57,28 +57,22 @@ func TestServeWebSocket_Success(t *testing.T) {
 	}
 }
 
-func TestUpgradeAndExtractDomain_InvalidHost(t *testing.T) {
+func TestServeWebSocket_InvalidHostRejectedBeforeUpgrade(t *testing.T) {
 	s := newTestServer(t)
+	s.host = "localhost"
+	wsURL, cleanup := startWSServer(t, s)
+	defer cleanup()
 
-	// Use a server that sets the Host to an invalid value (no subdomain)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Host = "localhost" // override to invalid host (no subdomain)
-		s.ServeWebSocket(w, r)
-	}))
-	defer srv.Close()
-
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn := dialWS(t, wsURL, "")
-	defer conn.Close()
-
-	// Connection should be closed by server due to invalid host
-	conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-	var msg common.Message
-	err := conn.ReadJSON(&msg)
+	header := http.Header{}
+	header.Set(common.ClientHeader, "1")
+	header.Set("Host", "a.b.localhost") // nested subdomain, outside -host
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
 	if err == nil {
-		if msg.Type == common.MessageTypeDomainRegistered {
-			t.Error("expected no registration for invalid host")
-		}
+		conn.Close()
+		t.Fatal("dial succeeded, want handshake rejected")
+	}
+	if resp == nil || resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("response = %v, want 400", resp)
 	}
 
 	if s.connManager.Count() != 0 {
@@ -171,7 +165,7 @@ func TestServeWebSocket_ResponseDeliveredToOriginatingConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetConnection() error = %v", err)
 	}
-	respChan, cancelReq := connection.RegisterRequest(context.Background(), "req-uuid")
+	respChan, cancelReq := connection.requests.Register(context.Background(), "req-uuid")
 	defer cancelReq()
 
 	// The client replies. Delivery is keyed solely on the connection the
@@ -325,7 +319,7 @@ func TestRegisterClient_DuplicateDomain(t *testing.T) {
 
 func TestServeWebSocket_ConcurrentRequestDuringRegistration(t *testing.T) {
 	s := newTestServer(t)
-	srv := httptest.NewServer(s.mux)
+	srv := httptest.NewServer(s.httpServer.Handler)
 	defer srv.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
@@ -430,11 +424,11 @@ func TestTunnelDispatcher_DeliversToWaitingRequest(t *testing.T) {
 	conn, cleanup := newTestConnection(t)
 	defer cleanup()
 
-	ch, cancel := conn.RegisterRequest(context.Background(), "u1")
+	ch, cancel := conn.requests.Register(context.Background(), "u1")
 	defer cancel()
 
 	msg := &common.Message{Type: common.MessageTypeHTTPResponse, UUID: "u1", Status: http.StatusOK}
-	if err := newTestServer(t).newTunnelDispatcher("foo", conn).Dispatch(msg); err != nil {
+	if err := newTestServer(t).newTunnelHandlers("foo", conn).Dispatch(msg); err != nil {
 		t.Fatalf("Dispatch() error = %v", err)
 	}
 
@@ -454,7 +448,7 @@ func TestTunnelDispatcher_UndeliverableResponseIsNotAnError(t *testing.T) {
 	conn, cleanup := newTestConnection(t)
 	defer cleanup()
 
-	dispatcher := newTestServer(t).newTunnelDispatcher("foo", conn)
+	dispatcher := newTestServer(t).newTunnelHandlers("foo", conn)
 
 	t.Run("no pending request", func(t *testing.T) {
 		msg := &common.Message{Type: common.MessageTypeHTTPResponse, UUID: "gone", Status: http.StatusOK}
@@ -464,7 +458,7 @@ func TestTunnelDispatcher_UndeliverableResponseIsNotAnError(t *testing.T) {
 	})
 
 	t.Run("duplicate response", func(t *testing.T) {
-		_, cancel := conn.RegisterRequest(context.Background(), "u2")
+		_, cancel := conn.requests.Register(context.Background(), "u2")
 		defer cancel()
 
 		msg := &common.Message{Type: common.MessageTypeHTTPResponse, UUID: "u2", Status: http.StatusOK}
@@ -484,7 +478,7 @@ func TestTunnelDispatcher_UnknownMessageTypeStillErrors(t *testing.T) {
 	defer cleanup()
 
 	msg := &common.Message{Type: "nonsense", UUID: "u1"}
-	if err := newTestServer(t).newTunnelDispatcher("foo", conn).Dispatch(msg); err == nil {
+	if err := newTestServer(t).newTunnelHandlers("foo", conn).Dispatch(msg); err == nil {
 		t.Error("expected error for unknown message type, got nil")
 	}
 }
@@ -543,7 +537,7 @@ func TestServeWebSocket_UnmarkedUpgradeDoesNotRegister(t *testing.T) {
 // by its own stale connection, instead of waiting for the heartbeat timeout.
 func TestServeWebSocket_SameSessionReclaimsDomain(t *testing.T) {
 	s := newTestServer(t)
-	srv := httptest.NewServer(s.mux)
+	srv := httptest.NewServer(s.httpServer.Handler)
 	defer srv.Close()
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
 

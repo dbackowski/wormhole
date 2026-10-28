@@ -11,28 +11,22 @@ import (
 	"time"
 )
 
-func TestHandleDashboard(t *testing.T) {
-	ui := &WebUI{
-		dashboardHTML: "<html><body>test dashboard</body></html>",
-	}
+func TestDashboardServesFiles(t *testing.T) {
+	ui := NewWebUI(&Client{}, 0)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
+	for path, want := range map[string]string{
+		"/":              `<script src="dashboard.js">`,
+		"/dashboard.css": ".app-header",
+		"/dashboard.js":  "function",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Host = "localhost"
+		w := httptest.NewRecorder()
+		ui.server.Handler.ServeHTTP(w, req)
 
-	ui.handleDashboard(w, req)
-
-	resp := w.Result()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
-	}
-
-	if ct := resp.Header.Get("Content-Type"); ct != "text/html" {
-		t.Errorf("Content-Type = %q, want %q", ct, "text/html")
-	}
-
-	if body := w.Body.String(); body != ui.dashboardHTML {
-		t.Errorf("body = %q, want %q", body, ui.dashboardHTML)
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), want) {
+			t.Errorf("GET %s = %d, body missing %q", path, w.Code, want)
+		}
 	}
 }
 
@@ -191,10 +185,7 @@ func TestHandleRequest(t *testing.T) {
 		ResponseBody:   []byte("ok"),
 	})
 
-	ui, err := NewWebUI(&Client{history: history}, 0)
-	if err != nil {
-		t.Fatalf("NewWebUI() error = %v", err)
-	}
+	ui := NewWebUI(&Client{history: history}, 0)
 	get := func(path string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Host = "localhost"
@@ -267,45 +258,13 @@ func TestHandleRequestsEmpty(t *testing.T) {
 	}
 }
 
-func TestBuildDashboardHTML(t *testing.T) {
-	ui := &WebUI{}
-
-	html, err := ui.buildDashboardHTML()
-	if err != nil {
-		t.Fatalf("buildDashboardHTML() error: %v", err)
-	}
-
-	if html == "" {
-		t.Fatal("buildDashboardHTML() returned empty string")
-	}
-
-	if !strings.Contains(html, "<html") {
-		t.Error("dashboard HTML does not contain <html tag")
-	}
-
-	if strings.Contains(html, "{{CSS}}") {
-		t.Error("dashboard HTML still contains {{CSS}} placeholder")
-	}
-
-	if strings.Contains(html, "{{JS}}") {
-		t.Error("dashboard HTML still contains {{JS}} placeholder")
-	}
-}
-
 func TestNewWebUI(t *testing.T) {
 	client := &Client{}
 
-	ui, err := NewWebUI(client, 8080)
-	if err != nil {
-		t.Fatalf("NewWebUI() error: %v", err)
-	}
+	ui := NewWebUI(client, 8080)
 
 	if ui.client != client {
 		t.Error("client not set correctly")
-	}
-
-	if ui.dashboardHTML == "" {
-		t.Error("dashboardHTML is empty")
 	}
 
 	if ui.server == nil {
@@ -354,10 +313,7 @@ func TestWebUIStart_PortInUse(t *testing.T) {
 	}
 	defer ln.Close()
 
-	ui, err := NewWebUI(&Client{}, ln.Addr().(*net.TCPAddr).Port)
-	if err != nil {
-		t.Fatalf("NewWebUI() error: %v", err)
-	}
+	ui := NewWebUI(&Client{}, ln.Addr().(*net.TCPAddr).Port)
 
 	if err := ui.Start(); err == nil {
 		ui.Shutdown(context.Background())
@@ -377,10 +333,7 @@ func TestHandleMessages(t *testing.T) {
 		Messages:   []WSMessage{{Type: "text", Size: 2, Payload: []byte("hi")}},
 	})
 
-	ui, err := NewWebUI(&Client{history: history}, 0)
-	if err != nil {
-		t.Fatalf("NewWebUI() error = %v", err)
-	}
+	ui := NewWebUI(&Client{history: history}, 0)
 	get := func(path string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Host = "localhost"

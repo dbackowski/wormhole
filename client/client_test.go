@@ -3,7 +3,6 @@ package client
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -200,15 +199,15 @@ func TestRefreshTerminalOutput_EmptyHistory(t *testing.T) {
 	}
 }
 
-func TestCloseWebsocket(t *testing.T) {
+func TestShutdown_SendsNormalClosure(t *testing.T) {
 	clientConn, wsServer, serverConn := setupTestWebsocket(t)
 	defer wsServer.Close()
 	defer clientConn.Close()
 	defer serverConn.Close()
 
-	err := closeWebsocket(clientConn)
+	err := (&Client{Conn: clientConn}).Shutdown()
 	if err != nil {
-		t.Fatalf("closeWebsocket() error = %v, want nil", err)
+		t.Fatalf("Shutdown() error = %v, want nil", err)
 	}
 
 	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -232,8 +231,7 @@ func TestShutdown(t *testing.T) {
 	defer serverConn.Close()
 
 	client := &Client{
-		Conn:   clientConn,
-		Logger: slog.New(slog.DiscardHandler),
+		Conn: clientConn,
 	}
 
 	err := client.Shutdown()
@@ -254,8 +252,7 @@ func TestShutdown_AlreadyClosed(t *testing.T) {
 	defer serverConn.Close()
 
 	client := &Client{
-		Conn:   clientConn,
-		Logger: slog.New(slog.DiscardHandler),
+		Conn: clientConn,
 	}
 
 	clientConn.Close()
@@ -420,8 +417,7 @@ func TestHandleConnection_ReturnsOnClose(t *testing.T) {
 	defer clientConn.Close()
 
 	client := &Client{
-		Conn:   clientConn,
-		Logger: slog.New(slog.DiscardHandler),
+		Conn: clientConn,
 	}
 	client.setupMessageHandlers()
 
@@ -469,7 +465,6 @@ func TestHandleConnection_RequestsRunConcurrently(t *testing.T) {
 	defer client.Conn.Close()
 	defer serverConn.Close()
 
-	client.Logger = slog.New(slog.DiscardHandler)
 	client.setupMessageHandlers()
 
 	done := make(chan struct{})
@@ -526,7 +521,6 @@ func TestHandleConnection_DispatchesMessages(t *testing.T) {
 	defer wsServer.Close()
 	defer client.Conn.Close()
 
-	client.Logger = slog.New(slog.DiscardHandler)
 	client.setupMessageHandlers()
 
 	done := make(chan struct{})
@@ -691,6 +685,20 @@ func TestReconnectWithBackoff_GivesUpOnAuthFailure(t *testing.T) {
 	}
 }
 
+// A host the server refuses to route is reported with the server's reason,
+// not as an unexplained handshake failure.
+func TestDialAndRegister_ReportsBadRequestReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "invalid host: a.b.example.com", http.StatusBadRequest)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := dialAndRegister("ws"+server.URL[len("http"):], http.Header{})
+	if err == nil || !strings.Contains(err.Error(), "invalid host: a.b.example.com") {
+		t.Fatalf("dialAndRegister() error = %v, want the server's reason", err)
+	}
+}
+
 // Quitting while a reconnect is completing must not race on Conn: Reconnect
 // swaps it from the reconnect goroutine while Shutdown runs on main.
 func TestShutdown_ConcurrentWithReconnect(t *testing.T) {
@@ -702,9 +710,8 @@ func TestShutdown_ConcurrentWithReconnect(t *testing.T) {
 	}
 
 	c := &Client{
-		Conn:   conn,
-		Logger: slog.New(slog.DiscardHandler),
-		wsURL:  wsURL,
+		Conn:  conn,
+		wsURL: wsURL,
 	}
 
 	reconnected := make(chan error, 1)

@@ -80,17 +80,17 @@ func TestRunMessageLoop_DispatchesMessagesUntilReadError(t *testing.T) {
 	pair := newWSTestPair(t)
 	defer pair.cleanup()
 
-	dispatcher := NewMessageDispatcher()
+	dispatcher := Handlers{}
 
 	var mu sync.Mutex
 	var received []*Message
 
-	dispatcher.Register(MessageTypeHTTPRequest, func(msg *Message) error {
+	dispatcher[MessageTypeHTTPRequest] = func(msg *Message) error {
 		mu.Lock()
 		received = append(received, msg)
 		mu.Unlock()
 		return nil
-	})
+	}
 
 	var readErr error
 	done := make(chan struct{})
@@ -143,7 +143,7 @@ func TestRunMessageLoop_CallsOnReadErrAndReturns(t *testing.T) {
 	pair := newWSTestPair(t)
 	defer pair.cleanup()
 
-	dispatcher := NewMessageDispatcher()
+	dispatcher := Handlers{}
 
 	var readErr error
 	done := make(chan struct{})
@@ -170,8 +170,8 @@ func TestRunMessageLoop_EnforcesReadLimit(t *testing.T) {
 	pair := newWSTestPair(t)
 	defer pair.cleanup()
 
-	dispatcher := NewMessageDispatcher()
-	dispatcher.Register(MessageTypeHTTPResponse, func(msg *Message) error { return nil })
+	dispatcher := Handlers{}
+	dispatcher[MessageTypeHTTPResponse] = func(msg *Message) error { return nil }
 
 	var readErr error
 	done := make(chan struct{})
@@ -208,12 +208,12 @@ func TestRunMessageLoop_CallsOnDispatchErrAndContinues(t *testing.T) {
 	pair := newWSTestPair(t)
 	defer pair.cleanup()
 
-	dispatcher := NewMessageDispatcher()
+	dispatcher := Handlers{}
 
 	handlerErr := errors.New("handler boom")
-	dispatcher.Register(MessageTypeHTTPResponse, func(msg *Message) error {
+	dispatcher[MessageTypeHTTPResponse] = func(msg *Message) error {
 		return handlerErr
-	})
+	}
 
 	var (
 		mu           sync.Mutex
@@ -304,7 +304,7 @@ func TestRunMessageLoop_SendsPings(t *testing.T) {
 	}()
 
 	hb := Heartbeat{PongWait: time.Second, PingPeriod: 20 * time.Millisecond, WriteWait: time.Second}
-	go RunMessageLoop(pair.client, NewMessageDispatcher(), hb,
+	go RunMessageLoop(pair.client, Handlers{}, hb,
 		func(error) {}, func(*Message, error) {})
 
 	select {
@@ -324,7 +324,7 @@ func TestRunMessageLoop_ExitsWhenPeerStopsResponding(t *testing.T) {
 
 	var readErr error
 	done := make(chan struct{})
-	go RunMessageLoop(pair.client, NewMessageDispatcher(), hb,
+	go RunMessageLoop(pair.client, Handlers{}, hb,
 		func(err error) { readErr = err; close(done) },
 		func(*Message, error) {})
 
@@ -342,7 +342,7 @@ func TestRunMessageLoop_OnReadErrReceivesUnderlyingError(t *testing.T) {
 	pair := newWSTestPair(t)
 	defer pair.cleanup()
 
-	dispatcher := NewMessageDispatcher()
+	dispatcher := Handlers{}
 
 	var readErr error
 	done := make(chan struct{})
@@ -456,4 +456,16 @@ func TestPingLoop_SurvivesWriteTimeout(t *testing.T) {
 
 	close(done)
 	waitFor(t, returned, "pingLoop to stop when done is closed")
+}
+
+func TestHandlersDispatch(t *testing.T) {
+	boom := errors.New("boom")
+	h := Handlers{MessageTypeHTTPRequest: func(*Message) error { return boom }}
+
+	if err := h.Dispatch(&Message{Type: MessageTypeHTTPRequest}); !errors.Is(err, boom) {
+		t.Errorf("Dispatch() error = %v, want it to wrap %v", err, boom)
+	}
+	if err := h.Dispatch(&Message{Type: "unknown"}); err == nil {
+		t.Error("Dispatch() of an unknown type: want an error")
+	}
 }

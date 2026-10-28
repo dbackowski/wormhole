@@ -3,13 +3,28 @@ package common
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-func RunMessageLoop(conn *websocket.Conn, dispatcher *MessageDispatcher, hb Heartbeat, onReadErr func(error), onDispatchErr func(*Message, error)) {
+// Handlers maps each message type a side accepts to its handler.
+type Handlers map[MessageType]func(*Message) error
+
+func (h Handlers) Dispatch(msg *Message) error {
+	handler, ok := h[msg.Type]
+	if !ok {
+		return fmt.Errorf("unknown message type: %s", msg.Type)
+	}
+	if err := handler(msg); err != nil {
+		return fmt.Errorf("handler for %s failed: %w", msg.Type, err)
+	}
+	return nil
+}
+
+func RunMessageLoop(conn *websocket.Conn, handlers Handlers, hb Heartbeat, onReadErr func(error), onDispatchErr func(*Message, error)) {
 	conn.SetReadLimit(MaxWebSocketMessageSize)
 	if err := conn.SetReadDeadline(time.Now().Add(hb.PongWait)); err != nil {
 		onReadErr(err)
@@ -30,7 +45,7 @@ func RunMessageLoop(conn *websocket.Conn, dispatcher *MessageDispatcher, hb Hear
 			return
 		}
 
-		if err := dispatcher.Dispatch(&message); err != nil {
+		if err := handlers.Dispatch(&message); err != nil {
 			onDispatchErr(&message, err)
 		}
 	}

@@ -15,22 +15,6 @@ import (
 
 var ErrResponseTooLarge = errors.New("local server response body too large")
 
-type ProxyRequest struct {
-	Method  string
-	URL     string
-	Headers map[string][]string
-	Body    []byte
-}
-
-func NewProxyRequest(msg *common.Message) ProxyRequest {
-	return ProxyRequest{
-		Method:  msg.Method,
-		URL:     msg.URL,
-		Headers: msg.Headers,
-		Body:    msg.Body,
-	}
-}
-
 type ProxyResponse struct {
 	StatusCode int
 	Headers    map[string][]string
@@ -75,7 +59,7 @@ func NewLocalProxy(baseURL url.URL, tunnelURL string, timeout time.Duration) *Lo
 	}
 }
 
-func (lp *LocalProxy) newRequest(req ProxyRequest) (*http.Request, error) {
+func (lp *LocalProxy) newRequest(req *common.Message) (*http.Request, error) {
 	hostHeader, ok := req.Headers["Host"]
 	if !ok || len(hostHeader) == 0 {
 		return nil, fmt.Errorf("missing required Host header")
@@ -94,7 +78,7 @@ func (lp *LocalProxy) newRequest(req ProxyRequest) (*http.Request, error) {
 	return httpReq, nil
 }
 
-func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
+func (lp *LocalProxy) Forward(req *common.Message) (*ProxyResponse, error) {
 	httpReq, err := lp.newRequest(req)
 	if err != nil {
 		return nil, err
@@ -110,7 +94,7 @@ func (lp *LocalProxy) Forward(req ProxyRequest) (*ProxyResponse, error) {
 // Upgrade sends a WebSocket handshake to the local app. On 101 the response
 // Body is the open connection, an io.ReadWriteCloser the caller must close;
 // any other status is an ordinary response for readResponse.
-func (lp *LocalProxy) Upgrade(req ProxyRequest) (*http.Response, error) {
+func (lp *LocalProxy) Upgrade(req *common.Message) (*http.Response, error) {
 	httpReq, err := lp.newRequest(req)
 	if err != nil {
 		return nil, err

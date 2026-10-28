@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -9,7 +10,6 @@ import (
 	"net/http"
 
 	"github.com/dbackowski/wormhole/common"
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -106,7 +106,7 @@ func (s *Server) buildRequestMessage(w http.ResponseWriter, r *http.Request) (*c
 
 	return &common.Message{
 		Type:    common.MessageTypeHTTPRequest,
-		UUID:    uuid.New().String(),
+		UUID:    rand.Text(),
 		URL:     r.URL.String(),
 		Method:  r.Method,
 		Headers: s.prepareRequestHeaders(r),
@@ -115,12 +115,12 @@ func (s *Server) buildRequestMessage(w http.ResponseWriter, r *http.Request) (*c
 }
 
 func (s *Server) forwardAndWaitForResponse(ctx context.Context, w http.ResponseWriter, connection *Connection, requestMsg *common.Message, domain string) {
-	s.requestLogger.LogHTTPRequest(domain, requestMsg.UUID, requestMsg.Method, requestMsg.URL, requestMsg.Headers, requestMsg.Body)
+	s.logRequest(domain, requestMsg)
 
 	// cancelCleanup drops the pending entry and releases the timeout context, so
 	// it is deferred at acquisition rather than handed to a caller that may skip
 	// it on an early return.
-	responseChan, cancelCleanup := connection.RegisterRequest(ctx, requestMsg.UUID)
+	responseChan, cancelCleanup := connection.requests.Register(ctx, requestMsg.UUID)
 	defer cancelCleanup()
 
 	if err := connection.SendMessage(requestMsg); err != nil {
@@ -131,6 +131,11 @@ func (s *Server) forwardAndWaitForResponse(ctx context.Context, w http.ResponseW
 	}
 
 	s.handleResponse(ctx, w, connection, responseChan)
+}
+
+func (s *Server) logRequest(domain string, msg *common.Message) {
+	s.Logger.Info("HTTP request forwarded", "domain", domain, "uuid", msg.UUID, "method", msg.Method, "url", msg.URL)
+	s.Logger.Debug("HTTP request details", "uuid", msg.UUID, "headers", msg.Headers, "body", msg.Body)
 }
 
 func (s *Server) writeResponse(w http.ResponseWriter, status int, body []byte) {

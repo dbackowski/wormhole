@@ -129,28 +129,3 @@ func TestParseFlags_FlagOverridesEnv(t *testing.T) {
 		t.Errorf("Host = %q, want %q (flag should win over env)", cfg.Host, "flag.example")
 	}
 }
-
-func TestValidate(t *testing.T) {
-	tests := []struct {
-		name    string
-		port    int
-		wantErr bool
-	}{
-		{"valid min port", common.MinValidPort, false},
-		{"valid max port", common.MaxValidPort, false},
-		{"valid default port", common.DefaultServerPort, false},
-		{"invalid zero", 0, true},
-		{"invalid negative", -1, true},
-		{"invalid too high", common.MaxValidPort + 1, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{Port: tt.port}
-			err := cfg.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}

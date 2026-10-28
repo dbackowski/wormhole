@@ -97,7 +97,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 ```
 
 **Required flags:**
-- `-domain`: Your unique subdomain name
+- `-domain`: Your unique subdomain name: lowercase letters, digits and hyphens, up to 63 characters, no dots
 - `-local`: URL of your local development server
 
 **Optional flags:**

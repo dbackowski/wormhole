@@ -18,9 +18,7 @@ import (
 type Server struct {
 	connManager     *ConnectionManager
 	Logger          *slog.Logger
-	requestLogger   *common.RequestLogger
 	httpServer      *http.Server
-	mux             *http.ServeMux
 	authToken       string
 	host            string
 	heartbeat       common.Heartbeat
@@ -29,7 +27,7 @@ type Server struct {
 }
 
 func NewServer(cfg *Config) (*Server, error) {
-	if err := cfg.Validate(); err != nil {
+	if err := common.ValidatePort(cfg.Port); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
@@ -42,9 +40,7 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	server := Server{
 		connManager:     NewConnectionManager(),
-		mux:             http.NewServeMux(),
 		Logger:          logger,
-		requestLogger:   common.NewRequestLogger(logger),
 		authToken:       cfg.AuthToken,
 		host:            cfg.Host,
 		heartbeat:       common.DefaultHeartbeat(),
@@ -52,22 +48,16 @@ func NewServer(cfg *Config) (*Server, error) {
 		writeTimeout:    common.ServerWriteTimeout,
 	}
 
-	server.setupRoutes()
-
 	server.httpServer = &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           server.mux,
+		Addr: fmt.Sprintf(":%d", cfg.Port),
+		// Everything routes through one handler: a path registered on a mux would
+		// be reserved on every tunnel subdomain too, since mux patterns match all hosts.
+		Handler:           http.HandlerFunc(server.routeRequest),
 		ReadHeaderTimeout: common.ServerReadHeaderTimeout,
 		IdleTimeout:       common.ServerIdleTimeout,
 	}
 
 	return &server, nil
-}
-
-func (s *Server) setupRoutes() {
-	// Everything routes through one handler: a path registered on the mux would
-	// be reserved on every tunnel subdomain too, since mux patterns match all hosts.
-	s.mux.HandleFunc("/", s.routeRequest)
 }
 
 func (s *Server) setRequestDeadlines(w http.ResponseWriter) {

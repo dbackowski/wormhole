@@ -1,12 +1,12 @@
 package server
 
 import (
+	"crypto/rand"
 	"io"
 	"net/http"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
-	"github.com/google/uuid"
 )
 
 // tunnelUpgrade forwards a WebSocket handshake to the client and, once the
@@ -21,7 +21,7 @@ func (s *Server) tunnelUpgrade(w http.ResponseWriter, r *http.Request, connectio
 
 	requestMsg := &common.Message{
 		Type:    common.MessageTypeUpgradeRequest,
-		UUID:    uuid.New().String(),
+		UUID:    rand.Text(),
 		URL:     r.URL.String(),
 		Method:  r.Method,
 		Headers: headers,
@@ -45,9 +45,9 @@ func (s *Server) tunnelUpgrade(w http.ResponseWriter, r *http.Request, connectio
 		}
 	}()
 
-	s.requestLogger.LogHTTPRequest(domain, id, requestMsg.Method, requestMsg.URL, requestMsg.Headers, nil)
+	s.logRequest(domain, requestMsg)
 
-	responseChan, cancelCleanup := connection.RegisterRequest(r.Context(), id)
+	responseChan, cancelCleanup := connection.requests.Register(r.Context(), id)
 	defer cancelCleanup()
 
 	if err := connection.SendMessage(requestMsg); err != nil {

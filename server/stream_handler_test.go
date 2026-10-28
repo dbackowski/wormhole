@@ -19,7 +19,7 @@ import (
 func startTunnel(t *testing.T) (*Server, *httptest.Server, *websocket.Conn) {
 	t.Helper()
 	s := newTestServer(t)
-	srv := httptest.NewServer(s.mux)
+	srv := httptest.NewServer(s.httpServer.Handler)
 	t.Cleanup(srv.Close)
 
 	tunnel := dialWS(t, "ws"+strings.TrimPrefix(srv.URL, "http"), "foo.localhost")

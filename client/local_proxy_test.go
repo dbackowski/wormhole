@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/dbackowski/wormhole/common"
 )
 
 func mustParseURL(t *testing.T, rawURL string) url.URL {
@@ -39,7 +41,7 @@ func TestForward(t *testing.T) {
 	tests := []struct {
 		name           string
 		handler        http.HandlerFunc
-		request        ProxyRequest
+		request        *common.Message
 		wantStatusCode int
 		wantBody       string
 		wantErr        bool
@@ -52,7 +54,7 @@ func TestForward(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte("hello"))
 			},
-			request: ProxyRequest{
+			request: &common.Message{
 				Method:  "GET",
 				URL:     "/path",
 				Headers: map[string][]string{"Host": {"example.com"}},
@@ -71,7 +73,7 @@ func TestForward(t *testing.T) {
 				w.WriteHeader(http.StatusCreated)
 				w.Write(buf[:n])
 			},
-			request: ProxyRequest{
+			request: &common.Message{
 				Method:  "POST",
 				URL:     "/submit",
 				Headers: map[string][]string{"Host": {"example.com"}},
@@ -83,7 +85,7 @@ func TestForward(t *testing.T) {
 		{
 			name:    "missing Host header",
 			handler: func(w http.ResponseWriter, r *http.Request) {},
-			request: ProxyRequest{
+			request: &common.Message{
 				Method:  "GET",
 				URL:     "/path",
 				Headers: map[string][]string{},
@@ -94,7 +96,7 @@ func TestForward(t *testing.T) {
 		{
 			name:    "nil headers",
 			handler: func(w http.ResponseWriter, r *http.Request) {},
-			request: ProxyRequest{
+			request: &common.Message{
 				Method:  "GET",
 				URL:     "/path",
 				Headers: nil,
@@ -105,7 +107,7 @@ func TestForward(t *testing.T) {
 		{
 			name:    "empty Host header slice",
 			handler: func(w http.ResponseWriter, r *http.Request) {},
-			request: ProxyRequest{
+			request: &common.Message{
 				Method:  "GET",
 				URL:     "/path",
 				Headers: map[string][]string{"Host": {}},
@@ -120,7 +122,7 @@ func TestForward(t *testing.T) {
 				w.Header().Set("X-Got-Content-Type", r.Header.Get("Content-Type"))
 				w.WriteHeader(http.StatusOK)
 			},
-			request: ProxyRequest{
+			request: &common.Message{
 				Method: "GET",
 				URL:    "/path",
 				Headers: map[string][]string{
@@ -137,7 +139,7 @@ func TestForward(t *testing.T) {
 				w.Header().Set("X-Got-Host", r.Host)
 				w.WriteHeader(http.StatusOK)
 			},
-			request: ProxyRequest{
+			request: &common.Message{
 				Method:  "GET",
 				URL:     "/path",
 				Headers: map[string][]string{"Host": {"custom.example.com"}},
@@ -152,7 +154,7 @@ func TestForward(t *testing.T) {
 				}
 				w.WriteHeader(http.StatusNoContent)
 			},
-			request: ProxyRequest{
+			request: &common.Message{
 				Method:  "DELETE",
 				URL:     "/resource/1",
 				Headers: map[string][]string{"Host": {"example.com"}},
@@ -168,7 +170,7 @@ func TestForward(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte("updated"))
 			},
-			request: ProxyRequest{
+			request: &common.Message{
 				Method:  "PUT",
 				URL:     "/resource/1",
 				Headers: map[string][]string{"Host": {"example.com"}},
@@ -183,7 +185,7 @@ func TestForward(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 				w.Write([]byte("internal error"))
 			},
-			request: ProxyRequest{
+			request: &common.Message{
 				Method:  "GET",
 				URL:     "/fail",
 				Headers: map[string][]string{"Host": {"example.com"}},
@@ -229,7 +231,7 @@ func TestForwardRedirectNotFollowed(t *testing.T) {
 	defer redirectServer.Close()
 
 	lp := NewLocalProxy(mustParseURL(t, redirectServer.URL), "https://tunnel.example.com", 5*time.Second)
-	resp, err := lp.Forward(ProxyRequest{
+	resp, err := lp.Forward(&common.Message{
 		Method:  "GET",
 		URL:     "/original",
 		Headers: map[string][]string{"Host": {"example.com"}},
@@ -255,7 +257,7 @@ func TestForwardResponseTooLarge(t *testing.T) {
 	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
 	lp.maxResponseBytes = 100
 
-	_, err := lp.Forward(ProxyRequest{
+	_, err := lp.Forward(&common.Message{
 		Method:  "GET",
 		URL:     "/big",
 		Headers: map[string][]string{"Host": {"example.com"}},
@@ -275,7 +277,7 @@ func TestForwardResponseAtLimit(t *testing.T) {
 	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
 	lp.maxResponseBytes = 100
 
-	resp, err := lp.Forward(ProxyRequest{
+	resp, err := lp.Forward(&common.Message{
 		Method:  "GET",
 		URL:     "/exact",
 		Headers: map[string][]string{"Host": {"example.com"}},
@@ -291,7 +293,7 @@ func TestForwardResponseAtLimit(t *testing.T) {
 
 func TestForwardRequestToUnreachableServer(t *testing.T) {
 	lp := NewLocalProxy(mustParseURL(t, "http://127.0.0.1:1"), "https://tunnel.example.com", 1*time.Second)
-	_, err := lp.Forward(ProxyRequest{
+	_, err := lp.Forward(&common.Message{
 		Method:  "GET",
 		URL:     "/path",
 		Headers: map[string][]string{"Host": {"example.com"}},
@@ -315,7 +317,7 @@ func TestForwardResponseHeaders(t *testing.T) {
 	defer server.Close()
 
 	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
-	resp, err := lp.Forward(ProxyRequest{
+	resp, err := lp.Forward(&common.Message{
 		Method:  "GET",
 		URL:     "/",
 		Headers: map[string][]string{"Host": {"example.com"}},
@@ -343,7 +345,7 @@ func TestForwardStripsHopByHopResponseHeaders(t *testing.T) {
 	defer server.Close()
 
 	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
-	resp, err := lp.Forward(ProxyRequest{
+	resp, err := lp.Forward(&common.Message{
 		Method:  "GET",
 		URL:     "/",
 		Headers: map[string][]string{"Host": {"example.com"}},
@@ -370,7 +372,7 @@ func TestForwardURLPath(t *testing.T) {
 	defer server.Close()
 
 	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
-	_, err := lp.Forward(ProxyRequest{
+	_, err := lp.Forward(&common.Message{
 		Method:  "GET",
 		URL:     "/api/v1/users",
 		Headers: map[string][]string{"Host": {"example.com"}},

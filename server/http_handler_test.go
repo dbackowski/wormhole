@@ -475,7 +475,7 @@ func TestTunnelRequest_Success(t *testing.T) {
 			return
 		}
 		conn, _ := s.connManager.GetConnection("foo")
-		conn.DeliverResponse(&common.Message{ //nolint:errcheck
+		conn.requests.Deliver(&common.Message{ //nolint:errcheck
 			UUID:   req.UUID,
 			Status: http.StatusOK,
 			Body:   []byte("proxied response"),

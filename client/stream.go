@@ -25,11 +25,7 @@ func (c *Client) dispatchUpgradeRequest(msg *common.Message) error {
 		return nil
 	}
 
-	go func() {
-		if err := c.handleUpgradeRequest(msg, stream); err != nil && c.Logger != nil {
-			c.Logger.Error("WebSocket handling failed", "uuid", msg.UUID, "error", err)
-		}
-	}()
+	go c.handleUpgradeRequest(msg, stream) //nolint:errcheck // nowhere to report it, see HandleConnection
 	return nil
 }
 
@@ -38,7 +34,7 @@ func (c *Client) handleUpgradeRequest(msg *common.Message, stream *common.Stream
 	defer c.streams.Abort(msg.UUID)
 
 	start := time.Now()
-	httpResp, err := c.proxy.Upgrade(NewProxyRequest(msg))
+	httpResp, err := c.proxy.Upgrade(msg)
 	if err != nil || httpResp.StatusCode != http.StatusSwitchingProtocols {
 		var proxyResp *ProxyResponse
 		if err == nil {

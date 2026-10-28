@@ -8,14 +8,9 @@ import (
 	"github.com/dbackowski/wormhole/common"
 )
 
-func (c *Client) handleDomainRegistered(_ *common.Message) error {
-	c.requestRedraw()
-	return nil
-}
-
 func (c *Client) handleHTTPRequest(msg *common.Message) error {
 	start := time.Now()
-	proxyResp, forwardErr := c.proxy.Forward(NewProxyRequest(msg))
+	proxyResp, forwardErr := c.proxy.Forward(msg)
 	duration := time.Since(start)
 	resolved := resolveProxyResponse(proxyResp, forwardErr)
 
@@ -56,9 +51,7 @@ func (c *Client) dispatchHTTPRequest(msg *common.Message) error {
 	case c.requestSem <- struct{}{}:
 		go func() {
 			defer func() { <-c.requestSem }()
-			if err := c.handleHTTPRequest(msg); err != nil && c.Logger != nil {
-				c.Logger.Error("HTTP request handling failed", "uuid", msg.UUID, "error", err)
-			}
+			c.handleHTTPRequest(msg) //nolint:errcheck // nowhere to report it, see HandleConnection
 		}()
 	default:
 		if err := c.sendResponse(msg, ProxyResponse{
@@ -72,7 +65,6 @@ func (c *Client) dispatchHTTPRequest(msg *common.Message) error {
 }
 
 func (c *Client) setupMessageHandlers() {
-	c.dispatcher = common.NewMessageDispatcher()
 	if c.requestSem == nil {
 		c.requestSem = make(chan struct{}, MaxConcurrentRequests)
 	}
@@ -80,15 +72,16 @@ func (c *Client) setupMessageHandlers() {
 		c.streams = common.NewStreams()
 	}
 
-	c.dispatcher.Register(common.MessageTypeDomainRegistered, c.handleDomainRegistered)
-	c.dispatcher.Register(common.MessageTypeHTTPRequest, c.dispatchHTTPRequest)
-	c.dispatcher.Register(common.MessageTypeUpgradeRequest, c.dispatchUpgradeRequest)
-	c.dispatcher.Register(common.MessageTypeStreamData, func(msg *common.Message) error {
-		c.streams.Deliver(msg.UUID, msg.Body)
-		return nil
-	})
-	c.dispatcher.Register(common.MessageTypeStreamClose, func(msg *common.Message) error {
-		c.streams.Finish(msg.UUID)
-		return nil
-	})
+	c.handlers = common.Handlers{
+		common.MessageTypeHTTPRequest:    c.dispatchHTTPRequest,
+		common.MessageTypeUpgradeRequest: c.dispatchUpgradeRequest,
+		common.MessageTypeStreamData: func(msg *common.Message) error {
+			c.streams.Deliver(msg.UUID, msg.Body)
+			return nil
+		},
+		common.MessageTypeStreamClose: func(msg *common.Message) error {
+			c.streams.Finish(msg.UUID)
+			return nil
+		},
+	}
 }

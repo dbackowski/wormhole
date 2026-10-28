@@ -6,108 +6,108 @@ import (
 	"testing"
 )
 
-func TestLoadConfigFile_EmptyPath(t *testing.T) {
-	cfg, err := LoadConfigFile("")
+func TestLoadAuthToken_EmptyPath(t *testing.T) {
+	token, err := LoadAuthToken("")
 	if err != nil {
-		t.Fatalf("LoadConfigFile(\"\") error = %v", err)
+		t.Fatalf("LoadAuthToken(\"\") error = %v", err)
 	}
-	if cfg.AuthToken != "" {
-		t.Errorf("AuthToken = %q, want empty", cfg.AuthToken)
+	if token != "" {
+		t.Errorf("AuthToken = %q, want empty", token)
 	}
 }
 
-func TestLoadConfigFile_NonExistent(t *testing.T) {
-	cfg, err := LoadConfigFile("/tmp/nonexistent-wormhole-config")
+func TestLoadAuthToken_NonExistent(t *testing.T) {
+	token, err := LoadAuthToken("/tmp/nonexistent-wormhole-config")
 	if err != nil {
-		t.Fatalf("LoadConfigFile() error = %v", err)
+		t.Fatalf("LoadAuthToken() error = %v", err)
 	}
-	if cfg.AuthToken != "" {
-		t.Errorf("AuthToken = %q, want empty", cfg.AuthToken)
+	if token != "" {
+		t.Errorf("AuthToken = %q, want empty", token)
 	}
 }
 
-func TestLoadConfigFile_ValidEnvFile(t *testing.T) {
+func TestLoadAuthToken_ValidEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
 	os.WriteFile(path, []byte("AUTH_TOKEN=my-secret\n"), 0600)
 
-	cfg, err := LoadConfigFile(path)
+	token, err := LoadAuthToken(path)
 	if err != nil {
-		t.Fatalf("LoadConfigFile() error = %v", err)
+		t.Fatalf("LoadAuthToken() error = %v", err)
 	}
-	if cfg.AuthToken != "my-secret" {
-		t.Errorf("AuthToken = %q, want %q", cfg.AuthToken, "my-secret")
+	if token != "my-secret" {
+		t.Errorf("AuthToken = %q, want %q", token, "my-secret")
 	}
 }
 
-func TestLoadConfigFile_WithComments(t *testing.T) {
+func TestLoadAuthToken_WithComments(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
 	content := "# Wormhole config\nAUTH_TOKEN=token123\n# end\n"
 	os.WriteFile(path, []byte(content), 0600)
 
-	cfg, err := LoadConfigFile(path)
+	token, err := LoadAuthToken(path)
 	if err != nil {
-		t.Fatalf("LoadConfigFile() error = %v", err)
+		t.Fatalf("LoadAuthToken() error = %v", err)
 	}
-	if cfg.AuthToken != "token123" {
-		t.Errorf("AuthToken = %q, want %q", cfg.AuthToken, "token123")
+	if token != "token123" {
+		t.Errorf("AuthToken = %q, want %q", token, "token123")
 	}
 }
 
-func TestLoadConfigFile_WithSpaces(t *testing.T) {
+func TestLoadAuthToken_WithSpaces(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
 	os.WriteFile(path, []byte("  AUTH_TOKEN = spaced-token  \n"), 0600)
 
-	cfg, err := LoadConfigFile(path)
+	token, err := LoadAuthToken(path)
 	if err != nil {
-		t.Fatalf("LoadConfigFile() error = %v", err)
+		t.Fatalf("LoadAuthToken() error = %v", err)
 	}
-	if cfg.AuthToken != "spaced-token" {
-		t.Errorf("AuthToken = %q, want %q", cfg.AuthToken, "spaced-token")
+	if token != "spaced-token" {
+		t.Errorf("AuthToken = %q, want %q", token, "spaced-token")
 	}
 }
 
-func TestLoadConfigFile_EmptyFile(t *testing.T) {
+func TestLoadAuthToken_EmptyFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
 	os.WriteFile(path, []byte(""), 0600)
 
-	cfg, err := LoadConfigFile(path)
+	token, err := LoadAuthToken(path)
 	if err != nil {
-		t.Fatalf("LoadConfigFile() error = %v", err)
+		t.Fatalf("LoadAuthToken() error = %v", err)
 	}
-	if cfg.AuthToken != "" {
-		t.Errorf("AuthToken = %q, want empty", cfg.AuthToken)
+	if token != "" {
+		t.Errorf("AuthToken = %q, want empty", token)
 	}
 }
 
-func TestLoadConfigFile_BlankLinesOnly(t *testing.T) {
+func TestLoadAuthToken_BlankLinesOnly(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
 	os.WriteFile(path, []byte("\n\n\n"), 0600)
 
-	cfg, err := LoadConfigFile(path)
+	token, err := LoadAuthToken(path)
 	if err != nil {
-		t.Fatalf("LoadConfigFile() error = %v", err)
+		t.Fatalf("LoadAuthToken() error = %v", err)
 	}
-	if cfg.AuthToken != "" {
-		t.Errorf("AuthToken = %q, want empty", cfg.AuthToken)
+	if token != "" {
+		t.Errorf("AuthToken = %q, want empty", token)
 	}
 }
 
-func TestLoadConfigFile_UnknownKeysIgnored(t *testing.T) {
+func TestLoadAuthToken_UnknownKeysIgnored(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
 	os.WriteFile(path, []byte("UNKNOWN_KEY=value\nAUTH_TOKEN=real\n"), 0600)
 
-	cfg, err := LoadConfigFile(path)
+	token, err := LoadAuthToken(path)
 	if err != nil {
-		t.Fatalf("LoadConfigFile() error = %v", err)
+		t.Fatalf("LoadAuthToken() error = %v", err)
 	}
-	if cfg.AuthToken != "real" {
-		t.Errorf("AuthToken = %q, want %q", cfg.AuthToken, "real")
+	if token != "real" {
+		t.Errorf("AuthToken = %q, want %q", token, "real")
 	}
 }
 

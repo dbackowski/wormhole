@@ -13,10 +13,6 @@ const (
 	DefaultConfigFile = "config"
 )
 
-type ConfigFile struct {
-	AuthToken string
-}
-
 func DefaultConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -25,21 +21,33 @@ func DefaultConfigPath() string {
 	return filepath.Join(home, DefaultConfigDir, DefaultConfigFile)
 }
 
-func LoadConfigFile(path string) (*ConfigFile, error) {
+// AuthTokenFromConfigFile returns AUTH_TOKEN from the default config file, or
+// "" if there is none. A file that cannot be read is reported on stderr.
+func AuthTokenFromConfigFile() string {
+	token, err := LoadAuthToken(DefaultConfigPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load config file: %v\n", err)
+	}
+	return token
+}
+
+// LoadAuthToken reads AUTH_TOKEN from the config file at path. A missing file
+// or empty path gives "".
+func LoadAuthToken(path string) (string, error) {
 	if path == "" {
-		return &ConfigFile{}, nil
+		return "", nil
 	}
 
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &ConfigFile{}, nil
+			return "", nil
 		}
-		return nil, fmt.Errorf("reading config file: %w", err)
+		return "", fmt.Errorf("reading config file: %w", err)
 	}
 	defer file.Close()
 
-	cfg := &ConfigFile{}
+	token := ""
 	scanner := bufio.NewScanner(file)
 
 	for scanner.Scan() {
@@ -54,18 +62,14 @@ func LoadConfigFile(path string) (*ConfigFile, error) {
 			continue
 		}
 
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-
-		switch key {
-		case "AUTH_TOKEN":
-			cfg.AuthToken = value
+		if strings.TrimSpace(key) == "AUTH_TOKEN" {
+			token = strings.TrimSpace(value)
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("reading config file: %w", err)
+		return "", fmt.Errorf("reading config file: %w", err)
 	}
 
-	return cfg, nil
+	return token, nil
 }
