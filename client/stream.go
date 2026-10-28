@@ -126,10 +126,9 @@ func (t *tapConn) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// Write records before writing: once the app has the bytes it can reply, and
+// the reply must not land in the history ahead of the message it answers.
 func (t *tapConn) Write(p []byte) (int, error) {
-	n, err := t.ReadWriteCloser.Write(p)
-	if n > 0 {
-		t.onWrite(p[:n])
-	}
-	return n, err
+	t.onWrite(p)
+	return t.ReadWriteCloser.Write(p)
 }
