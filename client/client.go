@@ -240,8 +240,10 @@ func (c *Client) Shutdown() error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
-	// Best effort: the connection may already be gone.
-	c.Conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")) //nolint:errcheck
+	// Best effort: the connection may already be gone. WriteControl takes its
+	// own deadline; WriteMessage would inherit the last response's, which is
+	// already past once the tunnel has been idle for WriteWait.
+	c.Conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(common.WriteWait)) //nolint:errcheck
 	return c.Conn.Close()
 }
 

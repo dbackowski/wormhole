@@ -56,7 +56,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 func (s *Server) registerClient(conn *websocket.Conn, domain, session string) (*Connection, error) {
 	connection, stale, err := s.connManager.AddConnection(domain, session, conn)
 	if err != nil {
-		conn.WriteJSON(common.Message{Type: common.MessageTypeDomainTaken})
+		common.WriteJSON(conn, &common.Message{Type: common.MessageTypeDomainTaken}) //nolint:errcheck // closing anyway
 		conn.Close()
 		return nil, fmt.Errorf("registering domain: %w", err)
 	}

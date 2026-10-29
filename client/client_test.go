@@ -205,6 +205,10 @@ func TestShutdown_SendsNormalClosure(t *testing.T) {
 	defer clientConn.Close()
 	defer serverConn.Close()
 
+	// As left by a response sent more than WriteWait ago: the close frame must
+	// not inherit it.
+	clientConn.SetWriteDeadline(time.Now().Add(-time.Second))
+
 	err := (&Client{Conn: clientConn}).Shutdown()
 	if err != nil {
 		t.Fatalf("Shutdown() error = %v, want nil", err)
