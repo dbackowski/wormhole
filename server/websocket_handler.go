@@ -98,7 +98,7 @@ func (s *Server) newTunnelHandlers(domain string, connection *Connection) common
 				return nil
 			}
 			s.Logger.Info("HTTP response received", "domain", domain, "uuid", msg.UUID, "status", msg.Status)
-			s.Logger.Debug("HTTP response details", "uuid", msg.UUID, "body", msg.Body)
+			s.Logger.Debug("HTTP response details", "uuid", msg.UUID, "body_bytes", len(msg.Body))
 			return nil
 		},
 		common.MessageTypeStreamData: func(msg *common.Message) error {

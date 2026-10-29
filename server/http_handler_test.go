@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -630,5 +631,47 @@ func TestForwardAndWaitForResponse_ClientDisconnects(t *testing.T) {
 
 	if w.Code != http.StatusBadGateway {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
+	}
+}
+
+// Even at debug level, a visitor's secrets must not reach the server log: on a
+// shared server the operator is not the tunnel owner.
+func TestRequestLogging_LeavesOutSecrets(t *testing.T) {
+	s := newTestServer(t)
+	var logs bytes.Buffer
+	s.Logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	s.logRequest("myapp", &common.Message{
+		UUID:   "req-1",
+		Method: "POST",
+		URL:    "/reset?token=QUERY-SECRET",
+		Headers: map[string][]string{
+			"Authorization": {"Bearer HEADER-SECRET"},
+			"Cookie":        {"sessionid=COOKIE-SECRET"},
+		},
+		Body: []byte(`{"password":"BODY-SECRET"}`),
+	})
+
+	connection := newConnection(nil, "")
+	_, cancel := connection.requests.Register(context.Background(), "req-1")
+	defer cancel()
+	err := s.newTunnelHandlers("myapp", connection).Dispatch(&common.Message{
+		Type: common.MessageTypeHTTPResponse, UUID: "req-1", Status: 200,
+		Body: []byte(`{"session":"RESPONSE-SECRET"}`),
+	})
+	if err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
+	}
+
+	out := logs.String()
+	for _, secret := range []string{"QUERY-SECRET", "HEADER-SECRET", "COOKIE-SECRET", "BODY-SECRET", "RESPONSE-SECRET"} {
+		if strings.Contains(out, secret) {
+			t.Errorf("log contains %s:\n%s", secret, out)
+		}
+	}
+	for _, want := range []string{"path=/reset", "Authorization", "body_bytes=26", "HTTP response details"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log missing %q:\n%s", want, out)
+		}
 	}
 }

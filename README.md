@@ -86,7 +86,7 @@ go run cmd/server/main.go -port=8080
 - `-port`: Port to run the server on (default: 8080)
 - `-host`: Public hostname of this server (e.g. `wormhole.tools`). When set, `/health` and `/metrics` are only served on this host; requests to `<name>.<host>` are tunneled to the matching client, and any other `Host` (a foreign domain, a nested subdomain) is rejected with `400`. **Required for any deployment on a real domain** — see the note below.
 - `-auth-token`: Authentication token required for client connections
-- `-debug`: Enable debug mode
+- `-debug`: Enable debug logging. Each request adds its header names and body sizes, never header values or bodies; query strings are left out at every level
 - `-version`: Print version and exit
 
 > **Note on `-host`:** When `-host` is unset, the server falls back to a heuristic — any `Host` containing a dot is treated as a tunnel subdomain. This works for local development (`*.localhost`) and bare-IP access, but on a real domain it has two consequences: requests to your apex (e.g. `wormhole.tools/health`) are treated as a tunnel and return `502` instead of serving health/metrics, and the apex's first label (`wormhole`) becomes a reserved subdomain that shadows any client claiming it. Set `-host` to your public hostname in production to route exactly.

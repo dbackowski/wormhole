@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/dbackowski/wormhole/common"
 	"github.com/gorilla/websocket"
@@ -133,9 +136,14 @@ func (s *Server) forwardAndWaitForResponse(ctx context.Context, w http.ResponseW
 	s.handleResponse(ctx, w, connection, responseChan)
 }
 
+// logRequest leaves out the query string, header values and the body: on a
+// shared server they carry visitors' tokens, cookies and passwords. The tunnel
+// owner sees them in the client's Web UI.
 func (s *Server) logRequest(domain string, msg *common.Message) {
-	s.Logger.Info("HTTP request forwarded", "domain", domain, "uuid", msg.UUID, "method", msg.Method, "url", msg.URL)
-	s.Logger.Debug("HTTP request details", "uuid", msg.UUID, "headers", msg.Headers, "body", msg.Body)
+	path, _, _ := strings.Cut(msg.URL, "?")
+	s.Logger.Info("HTTP request forwarded", "domain", domain, "uuid", msg.UUID, "method", msg.Method, "path", path)
+	s.Logger.Debug("HTTP request details", "uuid", msg.UUID,
+		"headers", slices.Sorted(maps.Keys(msg.Headers)), "body_bytes", len(msg.Body))
 }
 
 func (s *Server) writeResponse(w http.ResponseWriter, status int, body []byte) {
