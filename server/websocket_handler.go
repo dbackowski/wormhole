@@ -66,15 +66,18 @@ func (s *Server) registerClient(conn *websocket.Conn, domain, session string) (*
 		stale.Close()
 	}
 
-	if err := connection.SendMessage(&common.Message{Type: common.MessageTypeDomainRegistered}); err != nil {
+	// Activated under the write lock: a request that finds the domain blocks in
+	// SendMessage until the confirmation is out, so the client reads
+	// domain_registered first, and the domain is routable once it does.
+	connection.mu.Lock()
+	s.connManager.ActivateConnection(domain)
+	err = common.WriteJSON(connection.conn, &common.Message{Type: common.MessageTypeDomainRegistered})
+	connection.mu.Unlock()
+	if err != nil {
 		s.connManager.RemoveConnection(domain, connection)
 		connection.Close()
 		return nil, fmt.Errorf("failed to send registration confirmation: %w", err)
 	}
-
-	// Only expose the domain to HTTP forwarding after the confirmation has been
-	// written, so the client always reads domain_registered before any request.
-	s.connManager.ActivateConnection(domain)
 
 	return connection, nil
 }
