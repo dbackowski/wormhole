@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/textproto"
+	"runtime/debug"
 	"strings"
 	"time"
 )
@@ -124,4 +125,14 @@ func ValidatePort(port int) error {
 		return fmt.Errorf("invalid port: %d (must be %d-%d)", port, MinValidPort, MaxValidPort)
 	}
 	return nil
+}
+
+// Version returns the release version stamped with -ldflags, or else the one
+// the go command derived from git (a build in a checkout, go install @tag).
+func Version(stamped string) string {
+	if info, ok := debug.ReadBuildInfo(); ok && stamped == "dev" &&
+		info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return stamped
 }

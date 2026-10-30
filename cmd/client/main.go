@@ -15,7 +15,7 @@ import (
 var version = "dev"
 
 func main() {
-	clientCfg := client.ParseFlags(version)
+	clientCfg := client.ParseFlags(common.Version(version))
 	c, err := client.NewClient(clientCfg)
 
 	if err != nil {

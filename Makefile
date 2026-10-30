@@ -1,10 +1,8 @@
-deps:
-	go mod tidy
-	go mod download
+.PHONY: build test clean
 
-build: deps
-	go build -o bin/server/wormhole-server cmd/server/main.go
-	go build -o bin/client/wormhole cmd/client/main.go
+build:
+	go build -o bin/server/wormhole-server ./cmd/server
+	go build -o bin/client/wormhole ./cmd/client
 
 test:
 	go test -race ./...

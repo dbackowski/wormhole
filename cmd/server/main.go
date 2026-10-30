@@ -14,6 +14,7 @@ import (
 var version = "dev"
 
 func main() {
+	version := common.Version(version)
 	cfg := server.ParseFlags(version)
 	srv, err := server.NewServer(cfg)
 
@@ -21,6 +22,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to create server: %v\n", err)
 		os.Exit(1)
 	}
+
+	srv.Logger.Info("wormhole-server", "version", version)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)

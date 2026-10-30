@@ -46,6 +46,32 @@ func TestMain_VersionFlag(t *testing.T) {
 	}
 }
 
+// Without a release stamp, -version reports what the go command embedded from
+// git, as for make build, Docker and Fly deploys. Outside a checkout that is
+// "(devel)", and -version stays "dev".
+func TestMain_VersionFallsBackToBuildInfo(t *testing.T) {
+	bin := buildBinary(t, "dev")
+
+	info, err := exec.Command("go", "version", "-m", bin).Output()
+	if err != nil {
+		t.Fatalf("go version -m failed: %v", err)
+	}
+	want := "dev"
+	for line := range strings.Lines(string(info)) {
+		if f := strings.Fields(line); len(f) >= 3 && f[0] == "mod" && f[2] != "(devel)" {
+			want = f[2]
+		}
+	}
+
+	out, err := exec.Command(bin, "-version").CombinedOutput()
+	if err != nil {
+		t.Fatalf("running -version failed: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != want {
+		t.Errorf("version output = %q, want %q", got, want)
+	}
+}
+
 func TestMain_InvalidPort_ExitsWithError(t *testing.T) {
 	bin := buildBinary(t, "dev")
 

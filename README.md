@@ -63,7 +63,6 @@ Alternatively, you can right-click the binary in Finder, select "Open", and conf
 ```bash
 git clone https://github.com/dbackowski/wormhole.git
 cd wormhole
-go mod download
 make build
 ```
 
