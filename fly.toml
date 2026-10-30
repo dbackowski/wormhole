@@ -19,5 +19,14 @@ primary_region = 'fra'
   min_machines_running = 1 
   processes = ['app']
 
+  # Fly probes the machine directly, by IP; the server answers /health on any
+  # IP Host (see isBareHost), so no Host header is needed.
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+
 [[vm]]
   size = 'shared-cpu-1x'

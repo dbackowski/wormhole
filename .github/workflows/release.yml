@@ -23,13 +23,17 @@ jobs:
       - name: Run tests
         run: go test -race ./...
 
-  build-linux:
+  # Every target is cross-compiled on Linux: with CGO_ENABLED=0 nothing needs a
+  # macOS host, and Go's linker ad-hoc signs darwin/arm64 binaries itself.
+  build:
     needs: test
     runs-on: ubuntu-latest
     env:
       BIN: ${{ matrix.component == 'server' && 'wormhole-server' || 'wormhole' }}
+      NAME: wormhole-${{ matrix.component }}-${{ matrix.os }}-${{ matrix.arch }}
     strategy:
       matrix:
+        os: [linux, darwin]
         arch: [amd64, arm64]
         component: [server, client]
     steps:
@@ -43,7 +47,7 @@ jobs:
 
       - name: Build
         env:
-          GOOS: linux
+          GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 0
         run: |
@@ -51,52 +55,16 @@ jobs:
 
       - name: Create archive
         run: |
-          tar -czvf wormhole-${{ matrix.component }}-linux-${{ matrix.arch }}.tar.gz $BIN
+          tar -czvf $NAME.tar.gz $BIN
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wormhole-${{ matrix.component }}-linux-${{ matrix.arch }}
-          path: wormhole-${{ matrix.component }}-linux-${{ matrix.arch }}.tar.gz
-
-  build-macos:
-    needs: test
-    runs-on: macos-latest
-    env:
-      BIN: ${{ matrix.component == 'server' && 'wormhole-server' || 'wormhole' }}
-    strategy:
-      matrix:
-        arch: [amd64, arm64]
-        component: [server, client]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-
-      - name: Build
-        env:
-          GOOS: darwin
-          GOARCH: ${{ matrix.arch }}
-          CGO_ENABLED: 0
-        run: |
-          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o $BIN ./cmd/${{ matrix.component }}
-
-      - name: Create archive
-        run: |
-          tar -czvf wormhole-${{ matrix.component }}-darwin-${{ matrix.arch }}.tar.gz $BIN
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wormhole-${{ matrix.component }}-darwin-${{ matrix.arch }}
-          path: wormhole-${{ matrix.component }}-darwin-${{ matrix.arch }}.tar.gz
+          name: ${{ env.NAME }}
+          path: ${{ env.NAME }}.tar.gz
 
   release:
-    needs: [build-linux, build-macos]
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write

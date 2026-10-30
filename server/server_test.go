@@ -495,3 +495,35 @@ func TestRouteRequest_ConfiguredHost_IgnoresPort(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 }
+
+// Health probes from Fly, Kubernetes and Docker send an IP or localhost as
+// Host, which must reach /health even with -host set. A foreign domain still
+// must not.
+func TestRouteRequest_ConfiguredHost_ProbeHosts(t *testing.T) {
+	s, err := NewServer(&Config{Port: 9999, Host: "wormhole.tools"})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+
+	tests := []struct {
+		host string
+		want int
+	}{
+		{"172.19.4.2:8080", http.StatusOK},
+		{"[fdaa:0:1::2]:8080", http.StatusOK},
+		{"localhost:8080", http.StatusOK},
+		{"example.com", http.StatusBadRequest},
+		{"myapp.example.com", http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		r := httptest.NewRequest(http.MethodGet, "/health", nil)
+		r.Host = tt.host
+		w := httptest.NewRecorder()
+
+		s.routeRequest(w, r)
+
+		if w.Code != tt.want {
+			t.Errorf("Host %q: status = %d, want %d", tt.host, w.Code, tt.want)
+		}
+	}
+}

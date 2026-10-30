@@ -99,13 +99,12 @@ func (s *Server) isBareHost(host string) bool {
 	if err != nil {
 		h = host
 	}
-	if s.host != "" {
-		return strings.EqualFold(h, s.host)
-	}
-	if net.ParseIP(h) != nil {
+	// An IP or a dotless name (localhost) can never be <name>.<host>, so
+	// probes that send one reach /health whatever -host is.
+	if net.ParseIP(h) != nil || !strings.Contains(h, ".") {
 		return true
 	}
-	return !strings.Contains(h, ".")
+	return s.host != "" && strings.EqualFold(h, s.host)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
