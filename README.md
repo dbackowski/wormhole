@@ -4,7 +4,7 @@
 
 A simple HTTP tunneling tool that exposes your local development server to the internet through custom subdomains.
 
-![Wormhole CLI](https://i.imgur.com/QsUPf7h.png)
+![Wormhole CLI](docs/cli.png)
 
 ## What it does
 
@@ -142,7 +142,7 @@ When the client is running, a dashboard is available at `http://localhost:4040` 
 - Keep reading a selected request under busy traffic: its details stay open after it has left the history
 - Clear the request history with the **Clear** button (also clears the terminal view)
 
-![Dashboard with request list](https://i.imgur.com/ArdSzZ7.png)
+![Dashboard with request list](docs/dashboard.png)
 
 To use a different port:
 ```bash
