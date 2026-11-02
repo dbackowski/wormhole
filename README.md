@@ -36,13 +36,15 @@ Your local server is now available at: `http://myapp.localhost:8080`
 
 Download the latest release for your platform from the [Releases](https://github.com/dbackowski/wormhole/releases) page. Pre-built binaries are provided for Linux and macOS (amd64 and arm64). Archives are named `wormhole-<client|server>-<linux|darwin>-<amd64|arm64>.tar.gz`; the client archive contains `wormhole`, the server archive `wormhole-server`.
 
+The client's default server, `wormhole.tools`, is private and requires a token. Run your own (see [Quick Start](#quick-start) or [Self-Hosting](#self-hosting)) and point the client at it with `-server`.
+
 **Other platforms:** The client also builds from source on FreeBSD, OpenBSD, NetBSD and DragonFly BSD. Windows is not supported natively; run the Linux binary under [WSL](https://learn.microsoft.com/windows/wsl/) instead. The server builds on any platform Go supports.
 
 **Linux:**
 ```bash
 tar -xzf wormhole-client-linux-amd64.tar.gz
 chmod +x wormhole
-./wormhole -domain=myapp -local=http://localhost:3000
+./wormhole -server=https://yourdomain.com -domain=myapp -local=http://localhost:3000
 ```
 
 **macOS:**
@@ -53,7 +55,7 @@ The binaries are not signed with an Apple Developer certificate. After downloadi
 tar -xzf wormhole-client-darwin-arm64.tar.gz
 xattr -d com.apple.quarantine wormhole
 chmod +x wormhole
-./wormhole -domain=myapp -local=http://localhost:3000
+./wormhole -server=https://yourdomain.com -domain=myapp -local=http://localhost:3000
 ```
 
 Alternatively, you can right-click the binary in Finder, select "Open", and confirm in the dialog.
@@ -100,7 +102,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 - `-local`: URL of your local development server
 
 **Optional flags:**
-- `-server`: Server URL (default: https://wormhole.tools)
+- `-server`: Server URL (default: https://wormhole.tools, a private server that requires a token)
 - `-auth-token`: Authentication token for server connection
 - `-webui-port`: Port for the Web UI dashboard (default: 4040)
 - `-version`: Print version and exit
@@ -144,7 +146,7 @@ When the client is running, a dashboard is available at `http://localhost:4040` 
 
 To use a different port:
 ```bash
-go run cmd/client/main.go -domain=myapp -local=http://localhost:3000 -webui-port=5050
+go run cmd/client/main.go -server=http://localhost:8080 -domain=myapp -local=http://localhost:3000 -webui-port=5050
 ```
 
 ## Authentication
@@ -160,7 +162,7 @@ You can secure your Wormhole server by requiring an authentication token for cli
 
 **Client:**
 ```bash
-./wormhole -domain=myapp -local=http://localhost:3000 -auth-token=my-secret-token
+./wormhole -server=http://localhost:8080 -domain=myapp -local=http://localhost:3000 -auth-token=my-secret-token
 ```
 
 ### Using a config file

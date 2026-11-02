@@ -23,6 +23,9 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Domain %q is already taken. Please choose another one with -domain.\n", clientCfg.Domain)
 		} else {
 			fmt.Fprintf(os.Stderr, "Error creating client: %v\n", err)
+			if errors.Is(err, client.ErrUnauthorized) && clientCfg.AuthToken == "" {
+				fmt.Fprintf(os.Stderr, "The server %s requires a token. Pass -auth-token, or use -server to connect to your own.\n", clientCfg.ServerURL)
+			}
 		}
 		os.Exit(1)
 	}

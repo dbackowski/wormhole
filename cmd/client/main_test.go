@@ -1,6 +1,9 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -84,5 +87,44 @@ func TestMain_InvalidLocalURL_ExitsWithError(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "invalid local URL") {
 		t.Errorf("output missing 'invalid local URL'; got: %s", out)
+	}
+}
+
+// A reader who runs the client without a token gets told the server needs
+// one, not just that authentication failed. With a token, the hint would be
+// wrong, so it is left out.
+func TestMain_UnauthorizedWithoutTokenHints(t *testing.T) {
+	bin := buildBinary(t, "dev")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	serverURL := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)
+	hint := "requires a token"
+
+	for _, tt := range []struct {
+		name     string
+		args     []string
+		wantHint bool
+	}{
+		{"no token", nil, true},
+		{"wrong token", []string{"-auth-token=wrong"}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append([]string{"-server=" + serverURL, "-domain=myapp", "-local=http://localhost:3000"}, tt.args...)
+			cmd := exec.Command(bin, args...)
+			// An empty HOME, so a token in the developer's own config is not read.
+			cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
+			out, err := cmd.CombinedOutput()
+			if _, ok := err.(*exec.ExitError); !ok {
+				t.Fatalf("expected exit error, got %v\n%s", err, out)
+			}
+			if !strings.Contains(string(out), "authentication failed") {
+				t.Fatalf("output missing auth error: %s", out)
+			}
+			if got := strings.Contains(string(out), hint); got != tt.wantHint {
+				t.Errorf("hint shown = %v, want %v; output: %s", got, tt.wantHint, out)
+			}
+		})
 	}
 }
