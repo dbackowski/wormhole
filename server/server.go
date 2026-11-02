@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"crypto/subtle"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -19,7 +19,7 @@ type Server struct {
 	connManager     *ConnectionManager
 	Logger          *slog.Logger
 	httpServer      *http.Server
-	authToken       string
+	auth            *auth // nil: login disabled, any client may connect
 	host            string
 	heartbeat       common.Heartbeat
 	bodyReadTimeout time.Duration
@@ -41,11 +41,14 @@ func NewServer(cfg *Config) (*Server, error) {
 	server := Server{
 		connManager:     NewConnectionManager(),
 		Logger:          logger,
-		authToken:       cfg.AuthToken,
 		host:            cfg.Host,
 		heartbeat:       common.DefaultHeartbeat(),
 		bodyReadTimeout: common.ServerBodyReadTimeout,
 		writeTimeout:    common.ServerWriteTimeout,
+	}
+
+	if err := server.setupAuth(cfg); err != nil {
+		return nil, err
 	}
 
 	server.httpServer = &http.Server{
@@ -87,7 +90,9 @@ func (s *Server) routeRequest(w http.ResponseWriter, r *http.Request) {
 		case "/metrics":
 			s.handleMetrics(w, r)
 		default:
-			http.NotFound(w, r)
+			if s.auth == nil || !s.serveAuth(w, r) {
+				http.NotFound(w, r)
+			}
 		}
 		return
 	}
@@ -115,17 +120,64 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "active_connections: %d\n", s.connManager.Count())
 }
 
-func (s *Server) authenticateRequest(r *http.Request) bool {
-	if s.authToken == "" {
-		return true
+func (s *Server) setupAuth(cfg *Config) error {
+	if cfg.GoogleClientID == "" && cfg.GoogleClientSecret == "" {
+		s.Logger.Warn("Login disabled: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are not set, so any client can connect")
+		return nil
+	}
+	if cfg.GoogleClientID == "" || cfg.GoogleClientSecret == "" {
+		return errors.New("invalid configuration: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together")
+	}
+
+	store, err := OpenStore(cfg.DBPath)
+	if err != nil {
+		return err
+	}
+	hasAdmin, err := store.HasAdmin()
+	if err != nil {
+		store.Close()
+		return fmt.Errorf("reading database: %w", err)
+	}
+
+	s.auth = &auth{
+		store:    store,
+		google:   newGoogleOAuth(cfg.GoogleClientID, cfg.GoogleClientSecret),
+		logins:   newTTLMap[pendingLogin](loginTTL),
+		codes:    newTTLMap[cliCode](cliCodeTTL),
+		sessions: newTTLMap[string](sessionTTL),
+	}
+
+	if !hasAdmin {
+		s.auth.setupCode = rand.Text()
+		link := "/admin/setup?code=" + s.auth.setupCode
+		if s.host != "" {
+			link = "https://" + s.host + link
+		}
+		s.Logger.Warn("No admin yet. Open this link and log in with Google to become the admin", "url", link)
+	}
+	return nil
+}
+
+// authenticateRequest returns the email of the user whose token r carries.
+// With login disabled every request passes, with no email.
+func (s *Server) authenticateRequest(r *http.Request) (string, bool) {
+	if s.auth == nil {
+		return "", true
 	}
 
 	token := r.Header.Get("Authorization")
 	if len(token) > 7 && strings.EqualFold(token[:7], "bearer ") {
 		token = token[7:]
 	}
+	if token == "" {
+		return "", false
+	}
 
-	return subtle.ConstantTimeCompare([]byte(token), []byte(s.authToken)) == 1
+	email, ok, err := s.auth.store.TokenEmail(token)
+	if err != nil {
+		s.Logger.Error("Token lookup failed", "error", err)
+	}
+	return email, ok
 }
 
 // extractDomain returns the tunnel subdomain of host. With -host set, only
@@ -156,6 +208,9 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.Logger.Info("Shutting down server gracefully")
 	s.connManager.CloseAll()
+	if s.auth != nil {
+		defer s.auth.store.Close()
+	}
 
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		return fmt.Errorf("server shutdown failed: %w", err)

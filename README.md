@@ -86,7 +86,7 @@ go run cmd/server/main.go -port=8080
 **Optional flags:**
 - `-port`: Port to run the server on (default: 8080)
 - `-host`: Public hostname of this server (e.g. `wormhole.tools`). When set, `/health` and `/metrics` are only served on this host (or when addressed by IP or as `localhost`, so health probes work); requests to `<name>.<host>` are tunneled to the matching client, and any other `Host` (a foreign domain, a nested subdomain) is rejected with `400`. **Required for any deployment on a real domain** — see the note below.
-- `-auth-token`: Authentication token required for client connections
+- `-db`: SQLite database holding the allowlist and client tokens (default: `wormhole.db` in the working directory; the Docker image uses `/data/wormhole.db`). Only used when login is enabled, see [Authentication](#authentication)
 - `-debug`: Enable debug logging. Each request adds its header names and body sizes, never header values or bodies; query strings are left out at every level
 - `-version`: Print version and exit
 
@@ -103,7 +103,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 
 **Optional flags:**
 - `-server`: Server URL (default: https://wormhole.tools, a private server that requires a token)
-- `-auth-token`: Authentication token for server connection
+- `-auth-token`: Client token to connect with, instead of logging in through the browser (for scripts and CI). A rejected token makes the client exit rather than start a login
 - `-webui-port`: Port for the Web UI dashboard (default: 4040)
 - `-version`: Print version and exit
 
@@ -120,7 +120,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 ✅ **Automatic Reconnect** - The client retries with exponential backoff if the connection drops  
 ✅ **Live Terminal View** - The client lists recent requests in the terminal, as many as fit the window; press `q` to quit, `c` to clear  
 ✅ **Web UI Dashboard** - Monitor tunneled requests in a browser at `http://localhost:4040`  
-✅ **Optional Authentication** - Secure your server with token-based auth  
+✅ **Google Login** - Only emails on an allowlist you manage at `/admin` can open tunnels  
 
 ## Example Use Cases
 
@@ -151,29 +151,39 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=myapp -local=htt
 
 ## Authentication
 
-You can secure your Wormhole server by requiring an authentication token for client connections.
+When `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set, clients must log in with Google, and only emails on the server's allowlist get in. Without them, login is disabled and any client can connect, which suits local development.
 
-### Using flags
+### Setting up Google login
 
-**Server:**
-```bash
-./wormhole-server -port=8080 -auth-token=my-secret-token
+1. In the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an OAuth client of type **Web application** with the redirect URI `https://yourdomain.com/auth/callback` (for local testing also `http://localhost:8080/auth/callback`). Publish the consent screen; the `openid` and `email` scopes need no verification.
+2. Start the server with the client ID and secret in the environment (see [Docker](#docker) and [Fly.io](#flyio)).
+3. On first start the database has no admin, and the server logs a one-time setup link:
+   ```
+   level=WARN msg="No admin yet. Open this link and log in with Google to become the admin" url=https://yourdomain.com/admin/setup?code=...
+   ```
+   Open it and log in with Google: that account becomes the admin. A restart before then logs a new link, and the old one stops working.
+4. Manage the allowlist at `https://yourdomain.com/admin`: add or remove emails and make other users admins. There is always at least one admin. Admins are on the allowlist too.
+
+Removing a user revokes their client tokens at once. A tunnel they have open stays up until it disconnects.
+
+### Logging in from the client
+
+The first time you run the client against a server with login enabled, it opens your browser to log in with Google:
+
+```
+$ wormhole -domain=myapp -local=http://localhost:3000
+Log in to wormhole.tools in your browser. If it does not open, visit:
+
+  https://wormhole.tools/cli/login?...
+
+Logged in as you@gmail.com.
 ```
 
-**Client:**
-```bash
-./wormhole -server=http://localhost:8080 -domain=myapp -local=http://localhost:3000 -auth-token=my-secret-token
-```
+If your email is on the allowlist, the client saves its token to `~/.wormhole/config` (as `AUTH_TOKEN=...`, readable only by you) and connects. Later runs use the saved token. When the server rejects it, for example after an admin removed you and added you back, the client logs in again.
 
-### Using a config file
+Each login gets its own token, so logging in on a second machine does not log out the first. To log out, delete the `AUTH_TOKEN` line.
 
-Both the server and client can read the token from `~/.wormhole/config`:
-
-```
-AUTH_TOKEN=my-secret-token
-```
-
-The `-auth-token` flag takes precedence over the config file. When a token is configured on the server, clients must provide the same token to connect — unauthenticated connections will be rejected with HTTP 401.
+The browser is sent back to a temporary listener on `127.0.0.1`, so it must run on the same machine as the client. On a machine you reach over SSH, log in on your own computer and copy `~/.wormhole/config` over, or pass the token with `-auth-token`.
 
 ## How it works
 
@@ -199,6 +209,8 @@ graph TD
 |----------|-------------|
 | `/health` | Health check, returns `OK`. Served on the server's own host only |
 | `/metrics` | Active connection count. Served on the server's own host only |
+| `/admin` | Admin panel: manage the allowlist. Served on the server's own host only, when login is enabled |
+| `/cli/login`, `/cli/token`, `/auth/callback`, `/admin/*` | Google login for the client and the admin panel |
 | `/*` | Everything else is tunneled to the matching subdomain client |
 
 Client connections are not a path. The server recognizes them as WebSocket upgrades carrying the `X-Wormhole-Client` header, at whatever path the client dialed, so no path is reserved on your tunnel.
@@ -234,14 +246,24 @@ To run your own Wormhole server, you need:
 
 ```bash
 docker build -t wormhole .
-docker run -p 8080:8080 -e WORMHOLE_HOST=yourdomain.com -e AUTH_TOKEN=my-secret-token wormhole
+docker run -p 8080:8080 -v wormhole-data:/data -e WORMHOLE_HOST=yourdomain.com \
+  -e GOOGLE_CLIENT_ID=... -e GOOGLE_CLIENT_SECRET=... wormhole
 ```
 
-The server reads `AUTH_TOKEN` and `WORMHOLE_HOST` from the environment (equivalent to the `-auth-token` and `-host` flags), so secrets stay out of the process command line. Flags, when provided, take precedence over the environment.
+The server reads `WORMHOLE_HOST` from the environment (equivalent to the `-host` flag, which takes precedence), and `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from the environment only, so the secret stays out of the process command line.
 
 ### Fly.io
 
 The repository includes a `fly.toml` for deployment to Fly.io. Set your `FLY_API_TOKEN` as a GitHub secret for automatic deploys on push to main.
+
+Before the first deploy with login enabled, create the volume for the database and set the Google credentials:
+
+```bash
+fly volumes create wormhole_data --region fra --size 1
+fly secrets set GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...
+```
+
+The database is SQLite on that volume, so the app must run on a single machine.
 
 ## Limitations
 
@@ -256,7 +278,7 @@ The repository includes a `fly.toml` for deployment to Fly.io. Set your `FLY_API
 - **64 concurrent requests per tunnel** - Beyond that the client returns `503 Service Unavailable` until a slot frees up
 - **Request history keeps the last 500 requests** - Older ones drop out of the terminal view and the Web UI. Each stored body is cut to its first 64 KB; the Web UI says when one was truncated. Your app always receives the full body
 - **Redirects are passed through unchanged** - The client does not follow redirects from your local server. A `Location` header pointing at `http://localhost:3000` is sent to the browser as-is, taking it off the tunnel. Configure your app to emit relative redirects, or to build absolute URLs from the `X-Forwarded-Host` and `X-Forwarded-Proto` headers
-- **Reconnect is time-limited** - If the connection drops, the client retries with exponential backoff (500 ms up to 30 s) for 5 minutes, then exits with status 1, so a supervisor such as systemd `Restart=on-failure` can restart it. If the server rejects the auth token, the client stops retrying immediately. Requests in flight when the connection drops fail with `502 Bad Gateway`
+- **Reconnect is time-limited** - If the connection drops, the client retries with exponential backoff (500 ms up to 30 s) for 5 minutes, then exits with status 1, so a supervisor such as systemd `Restart=on-failure` can restart it. If the server rejects the token (say an admin removed you), the client stops retrying immediately; run it again to log in. Requests in flight when the connection drops fail with `502 Bad Gateway`
 - **Older clients can be delayed reconnecting after an unclean drop** - If the connection dies without closing cleanly (laptop sleep, Wi-Fi drop), the server only notices when its heartbeat times out, up to 30 seconds later. Current clients reclaim their own subdomain immediately: each client process sends a random session secret on every dial, and the server replaces a stale connection registered with the same secret. Clients up to `v1.0.5` do not send it, so they see the subdomain as taken until the timeout and keep retrying, so they recover on their own
 
 ## Requirements

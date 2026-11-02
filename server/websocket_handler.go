@@ -23,7 +23,8 @@ func isClientRegistration(r *http.Request) bool {
 }
 
 func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticateRequest(r) {
+	email, ok := s.authenticateRequest(r)
+	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -49,7 +50,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.Logger.Info("Client connected", "domain", domain, "remote_addr", r.RemoteAddr)
+	s.Logger.Info("Client connected", "domain", domain, "email", email, "remote_addr", r.RemoteAddr)
 	s.handleWebSocketConnection(domain, r.RemoteAddr, connection)
 }
 

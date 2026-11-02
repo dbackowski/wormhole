@@ -1,0 +1,2 @@
+# Local server database: holds the allowlist and client token hashes.
+wormhole.db

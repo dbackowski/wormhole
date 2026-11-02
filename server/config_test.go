@@ -80,13 +80,14 @@ func TestParseFlags_EnvFallback(t *testing.T) {
 	defer func() { os.Args = oldArgs }()
 
 	os.Args = []string{"cmd"}
-	t.Setenv("AUTH_TOKEN", "env-token")
+	t.Setenv("GOOGLE_CLIENT_ID", "id")
+	t.Setenv("GOOGLE_CLIENT_SECRET", "secret")
 	t.Setenv("WORMHOLE_HOST", "wormhole.example")
 
 	cfg := ParseFlags("test")
 
-	if cfg.AuthToken != "env-token" {
-		t.Errorf("AuthToken = %q, want %q", cfg.AuthToken, "env-token")
+	if cfg.GoogleClientID != "id" || cfg.GoogleClientSecret != "secret" {
+		t.Errorf("Google client = %q/%q, want id/secret", cfg.GoogleClientID, cfg.GoogleClientSecret)
 	}
 	if cfg.Host != "wormhole.example" {
 		t.Errorf("Host = %q, want %q", cfg.Host, "wormhole.example")
@@ -116,15 +117,11 @@ func TestParseFlags_FlagOverridesEnv(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
 
-	os.Args = []string{"cmd", "-auth-token", "flag-token", "-host", "flag.example"}
-	t.Setenv("AUTH_TOKEN", "env-token")
+	os.Args = []string{"cmd", "-host", "flag.example"}
 	t.Setenv("WORMHOLE_HOST", "env.example")
 
 	cfg := ParseFlags("test")
 
-	if cfg.AuthToken != "flag-token" {
-		t.Errorf("AuthToken = %q, want %q (flag should win over env)", cfg.AuthToken, "flag-token")
-	}
 	if cfg.Host != "flag.example" {
 		t.Errorf("Host = %q, want %q (flag should win over env)", cfg.Host, "flag.example")
 	}

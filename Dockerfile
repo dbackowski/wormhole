@@ -9,13 +9,14 @@ COPY . .
 # libc), so it can run on a base image with no shared libraries at all.
 RUN cd cmd/server && CGO_ENABLED=0 GOOS=linux go build -v -o /run-app .
 
-# distroless static: no shell, no package manager, ships a nonroot user.
-# The server reads AUTH_TOKEN and WORMHOLE_HOST from the environment (see server/config.go),
-# so no shell-form CMD is needed for variable expansion.
-FROM gcr.io/distroless/static-debian12:nonroot
+# distroless static: no shell, no package manager. It runs as root because Fly
+# mounts the volume holding the database (/data) owned by root.
+# The server reads GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and WORMHOLE_HOST from
+# the environment (see server/config.go), so no shell-form CMD is needed.
+FROM gcr.io/distroless/static-debian12
 
 COPY --from=builder /run-app /usr/local/bin/run-app
 
 EXPOSE 8080
 
-ENTRYPOINT ["/usr/local/bin/run-app"]
+ENTRYPOINT ["/usr/local/bin/run-app", "-db=/data/wormhole.db"]

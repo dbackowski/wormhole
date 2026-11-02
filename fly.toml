@@ -11,6 +11,11 @@ primary_region = 'fra'
 [env]
   WORMHOLE_HOST = "wormhole.tools"
 
+# Holds the allowlist and client tokens. SQLite lives on one machine: do not scale out.
+[mounts]
+  source = 'wormhole_data'
+  destination = '/data'
+
 [http_service]
   internal_port = 8080
   force_https = true

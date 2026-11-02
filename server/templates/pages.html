@@ -1,0 +1,61 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wormhole admin</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { max-width: 44rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
+  th, td { text-align: left; padding: .5rem .25rem; border-bottom: 1px solid #8884; }
+  td form { display: inline; }
+  header { display: flex; justify-content: space-between; align-items: baseline; }
+  .muted { opacity: .65; }
+</style>
+</head>
+<body>{{end}}
+
+{{define "message"}}{{template "head"}}
+<h1>Wormhole</h1>
+<p>{{.}}</p>
+</body>
+</html>{{end}}
+
+{{define "admin"}}{{template "head"}}
+<header>
+  <h1>Wormhole admin</h1>
+  <form method="post" action="/admin/logout">
+    <span class="muted">{{.Me}}</span> <button>Log out</button>
+  </form>
+</header>
+
+<form method="post" action="/admin/users">
+  <input type="hidden" name="action" value="add">
+  <label>Allow email <input type="email" name="email" required autocomplete="off"></label>
+  <button>Add</button>
+</form>
+
+<table>
+  <tr><th>Email</th><th>Role</th><th>Last connected</th><th></th></tr>
+  {{range .Users}}
+  <tr>
+    <td>{{.Email}}</td>
+    <td>{{if .IsAdmin}}admin{{else}}user{{end}}</td>
+    <td class="muted">{{if .LastUsed.IsZero}}never{{else}}{{.LastUsed.UTC.Format "2006-01-02 15:04 UTC"}}{{end}}</td>
+    <td>
+      <form method="post" action="/admin/users">
+        <input type="hidden" name="email" value="{{.Email}}">
+        {{if .IsAdmin}}
+        <button name="action" value="demote">Make user</button>
+        {{else}}
+        <button name="action" value="promote">Make admin</button>
+        {{end}}
+        <button name="action" value="remove">Remove</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+</table>
+</body>
+</html>{{end}}

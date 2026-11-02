@@ -3,10 +3,12 @@ package server
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -20,11 +22,27 @@ func newTestServer(t *testing.T) *Server {
 	return s
 }
 
+// newTestServerWithAuth returns a server with login enabled, where token is a
+// valid client token of the allowlisted user dev@example.com.
 func newTestServerWithAuth(t *testing.T, token string) *Server {
 	t.Helper()
-	s, err := NewServer(&Config{Port: 9999, AuthToken: token})
+	s, err := NewServer(&Config{
+		Port:               9999,
+		GoogleClientID:     "client-id",
+		GoogleClientSecret: "client-secret",
+		DBPath:             filepath.Join(t.TempDir(), "wormhole.db"),
+	})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
+	}
+	t.Cleanup(func() { s.auth.store.Close() })
+
+	if err := s.auth.store.AddUser("dev@example.com", false); err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256([]byte(token))
+	if _, err := s.auth.store.db.Exec(`INSERT INTO tokens (hash, email, created_at) VALUES (?, 'dev@example.com', 0)`, hash[:]); err != nil {
+		t.Fatal(err)
 	}
 	return s
 }
@@ -304,8 +322,8 @@ func TestAuthenticateRequest_NoTokenConfigured(t *testing.T) {
 	s := newTestServer(t)
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 
-	if !s.authenticateRequest(r) {
-		t.Error("expected auth to pass when no token configured")
+	if _, ok := s.authenticateRequest(r); !ok {
+		t.Error("expected auth to pass when login is disabled")
 	}
 }
 
@@ -314,7 +332,7 @@ func TestAuthenticateRequest_ValidBearerToken(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Header.Set("Authorization", "Bearer secret123")
 
-	if !s.authenticateRequest(r) {
+	if _, ok := s.authenticateRequest(r); !ok {
 		t.Error("expected auth to pass with valid token")
 	}
 }
@@ -324,7 +342,7 @@ func TestAuthenticateRequest_CaseInsensitiveBearer(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Header.Set("Authorization", "bearer secret123")
 
-	if !s.authenticateRequest(r) {
+	if _, ok := s.authenticateRequest(r); !ok {
 		t.Error("expected auth to pass with lowercase bearer prefix")
 	}
 }
@@ -334,7 +352,7 @@ func TestAuthenticateRequest_InvalidToken(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Header.Set("Authorization", "Bearer wrongtoken")
 
-	if s.authenticateRequest(r) {
+	if _, ok := s.authenticateRequest(r); ok {
 		t.Error("expected auth to fail with wrong token")
 	}
 }
@@ -343,8 +361,21 @@ func TestAuthenticateRequest_MissingHeader(t *testing.T) {
 	s := newTestServerWithAuth(t, "secret123")
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 
-	if s.authenticateRequest(r) {
+	if _, ok := s.authenticateRequest(r); ok {
 		t.Error("expected auth to fail with missing header")
+	}
+}
+
+func TestAuthenticateRequest_RemovedUser(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret123")
+	if err := s.auth.store.RemoveUser("dev@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Authorization", "Bearer secret123")
+
+	if _, ok := s.authenticateRequest(r); ok {
+		t.Error("expected auth to fail once the user is removed")
 	}
 }
 
@@ -353,7 +384,7 @@ func TestAuthenticateRequest_RawTokenWithoutBearer(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	r.Header.Set("Authorization", "secret123")
 
-	if !s.authenticateRequest(r) {
+	if _, ok := s.authenticateRequest(r); !ok {
 		t.Error("expected auth to pass with raw token (no Bearer prefix)")
 	}
 }

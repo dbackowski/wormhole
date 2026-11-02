@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -18,14 +19,18 @@ func main() {
 	clientCfg := client.ParseFlags(common.Version(version))
 	c, err := client.NewClient(clientCfg)
 
+	// No token yet, or the server stopped accepting it: log in through the
+	// browser. Not for a token given with -auth-token, which is how scripts and
+	// CI connect, where a browser would only hang the run.
+	if errors.Is(err, client.ErrUnauthorized) && !flagSet("auth-token") {
+		c, err = loginAndConnect(clientCfg)
+	}
+
 	if err != nil {
 		if errors.Is(err, client.ErrDomainTaken) {
 			fmt.Fprintf(os.Stderr, "Domain %q is already taken. Please choose another one with -domain.\n", clientCfg.Domain)
 		} else {
 			fmt.Fprintf(os.Stderr, "Error creating client: %v\n", err)
-			if errors.Is(err, client.ErrUnauthorized) && clientCfg.AuthToken == "" {
-				fmt.Fprintf(os.Stderr, "The server %s requires a token. Pass -auth-token, or use -server to connect to your own.\n", clientCfg.ServerURL)
-			}
 		}
 		os.Exit(1)
 	}
@@ -86,4 +91,24 @@ func main() {
 
 	webUI.Shutdown(ctx) //nolint:errcheck // exiting anyway
 	c.Shutdown()        //nolint:errcheck
+}
+
+func loginAndConnect(cfg *client.Config) (*client.Client, error) {
+	token, email, err := client.Login(cfg.ServerURL, os.Stdout)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("Logged in as %s.\n", email)
+
+	if err := common.SaveAuthToken(common.DefaultConfigPath(), token); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not save the token, you will have to log in again next time: %v\n", err)
+	}
+
+	cfg.AuthToken = token
+	return client.NewClient(cfg)
+}
+
+func flagSet(name string) (set bool) {
+	flag.Visit(func(f *flag.Flag) { set = set || f.Name == name })
+	return set
 }

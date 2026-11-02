@@ -121,3 +121,27 @@ func TestDefaultConfigPath(t *testing.T) {
 		t.Errorf("config file name = %q, want %q", filepath.Base(path), DefaultConfigFile)
 	}
 }
+
+func TestSaveAuthToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sub", "config")
+
+	if err := SaveAuthToken(path, "first"); err != nil {
+		t.Fatalf("SaveAuthToken() error = %v", err)
+	}
+	os.WriteFile(path, []byte("# keep me\nOTHER=x\nAUTH_TOKEN=first\n"), 0600)
+
+	if err := SaveAuthToken(path, "second"); err != nil {
+		t.Fatalf("SaveAuthToken() error = %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	if want := "# keep me\nOTHER=x\nAUTH_TOKEN=second\n"; string(data) != want {
+		t.Errorf("config = %q, want %q", data, want)
+	}
+	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
+		t.Errorf("config mode = %v, want 0600", info.Mode().Perm())
+	}
+	if token, _ := LoadAuthToken(path); token != "second" {
+		t.Errorf("LoadAuthToken() = %q, want %q", token, "second")
+	}
+}
