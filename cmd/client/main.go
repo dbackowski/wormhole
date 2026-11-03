@@ -58,6 +58,7 @@ func main() {
 
 	client.EnterAltScreen()
 	defer client.ExitAltScreen()
+	defer c.StopDisplay() // runs first: no frame may follow ExitAltScreen
 
 	c.RefreshTerminalOutput()
 
@@ -69,11 +70,15 @@ func main() {
 	quitCh := make(chan struct{})
 	go client.WaitForInput(quitCh, c.ClearHistory)
 
+	// Closed on any way out (q, a signal, a lost connection), so the drop that
+	// Shutdown causes is not taken for one to reconnect from.
+	stopping := make(chan struct{})
+
 	disconnectedCh := make(chan error, 1)
 	go func() {
 		for {
 			c.HandleConnection()
-			if err := c.ReconnectWithBackoff(quitCh); err != nil {
+			if err := c.ReconnectWithBackoff(stopping); err != nil {
 				disconnectedCh <- err
 				return
 			}
@@ -85,6 +90,7 @@ func main() {
 	case <-quitCh:
 	case lostErr = <-disconnectedCh:
 	}
+	close(stopping)
 
 	ctx, cancel := context.WithTimeout(context.Background(), common.ClientShutdownTimeout)
 	defer cancel()

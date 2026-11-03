@@ -662,6 +662,25 @@ func TestReconnectWithBackoff_GivesUpWhenCancelled(t *testing.T) {
 	if err := c.ReconnectWithBackoff(cancel); err == nil {
 		t.Error("ReconnectWithBackoff() error = nil, want an error when cancelled")
 	}
+	// Cancelled before the first attempt, as on quit: shutting down closes the
+	// connection, and that must not show up as a drop being reconnected.
+	if c.status != "" {
+		t.Errorf("status = %q, want none when cancelled before the first attempt", c.status)
+	}
+}
+
+// A frame drawn after the alt screen is left stays on the normal screen.
+func TestStopDisplay(t *testing.T) {
+	display := &mockDisplay{}
+	c := &Client{history: NewRequestHistory(10), display: display}
+
+	c.RefreshTerminalOutput()
+	c.StopDisplay()
+	c.RefreshTerminalOutput()
+
+	if display.renders != 1 {
+		t.Errorf("renders = %d, want 1: none after StopDisplay", display.renders)
+	}
 }
 
 // A rejected token cannot start working on retry, so the client must give up

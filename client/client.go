@@ -87,6 +87,7 @@ type Client struct {
 	status      string        // guarded by statusMu
 	redraw      chan struct{} // see requestRedraw
 	rateSamples []rateSample  // guarded by displayMu
+	displayOff  bool          // guarded by displayMu, see StopDisplay
 }
 
 type rateSample struct {
@@ -197,6 +198,13 @@ func (c *Client) ReconnectWithBackoff(cancel <-chan struct{}) error {
 	var lastErr error
 
 	for attempt := 1; ; attempt++ {
+		// The connection may have dropped because the client is shutting down.
+		select {
+		case <-cancel:
+			return errReconnectCancelled
+		default:
+		}
+
 		status := fmt.Sprintf("reconnecting... (attempt %d)", attempt)
 		if lastErr != nil {
 			status += ": " + lastErr.Error()
@@ -330,9 +338,21 @@ func (c *Client) RunDisplay() {
 	}
 }
 
+// StopDisplay waits for a frame being drawn and stops any later one. Called
+// before leaving the alt screen: a frame drawn after that lands on the
+// normal screen and stays there under the shell prompt.
+func (c *Client) StopDisplay() {
+	c.displayMu.Lock()
+	defer c.displayMu.Unlock()
+	c.displayOff = true
+}
+
 func (c *Client) RefreshTerminalOutput() {
 	c.displayMu.Lock()
 	defer c.displayMu.Unlock()
+	if c.displayOff {
+		return
+	}
 	c.statusMu.Lock()
 	status := c.status
 	c.statusMu.Unlock()
