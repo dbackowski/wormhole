@@ -1,2 +1,5 @@
 # Local server database: holds the allowlist and client token hashes.
 wormhole.db
+
+# Build output from make build.
+/bin/

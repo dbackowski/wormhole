@@ -70,6 +70,15 @@ make build
 
 This produces `bin/client/wormhole` and `bin/server/wormhole-server`.
 
+To install the client to `/usr/local/bin` so `wormhole` works from anywhere:
+
+```bash
+make build
+sudo make install
+```
+
+Pass `PREFIX` to install elsewhere, e.g. `make install PREFIX=$HOME/.local`. Remove it with `sudo make uninstall`.
+
 To run the test suite:
 
 ```bash
