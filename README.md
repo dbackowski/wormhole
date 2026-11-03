@@ -166,6 +166,8 @@ When `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set, clients must log in 
 
 The admin page also shows the server's state: active tunnels with their owner, client IP and request counts, open WebSockets, who is online, and requests and errors since the server started. These numbers live in memory, so a restart or deploy resets them.
 
+![Admin dashboard with active tunnels and users](docs/admin.png)
+
 Removing a user revokes their client tokens and closes their open tunnels at once. Their client's reconnect is then refused, and it exits.
 
 ### Logging in from the client
