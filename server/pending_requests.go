@@ -65,3 +65,9 @@ func (pr *PendingRequests) Cleanup(uuid string) {
 		close(ch)
 	}
 }
+
+func (pr *PendingRequests) Len() int {
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+	return len(pr.pending)
+}

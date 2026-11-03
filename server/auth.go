@@ -41,7 +41,7 @@ const (
 //go:embed templates/pages.html
 var pagesHTML string
 
-var pages = template.Must(template.New("").Parse(pagesHTML))
+var pages = template.Must(template.New("").Funcs(templateFuncs).Parse(pagesHTML))
 
 type googleOAuth struct {
 	clientID, clientSecret         string
@@ -468,26 +468,6 @@ func (s *Server) sessionAdmin(r *http.Request) (string, bool) {
 	return email, err == nil && ok && user.IsAdmin
 }
 
-func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
-	email, ok := s.sessionAdmin(r)
-	if !ok {
-		if s.setupPending() {
-			renderMessage(w, http.StatusOK, "No admin yet. Open the setup link from the server logs.")
-			return
-		}
-		http.Redirect(w, r, "/admin/login", http.StatusFound)
-		return
-	}
-
-	users, err := s.auth.store.Users()
-	if err != nil {
-		s.Logger.Error("Listing users failed", "error", err)
-		renderMessage(w, http.StatusInternalServerError, "Something went wrong. Try again.")
-		return
-	}
-	render(w, http.StatusOK, "admin", map[string]any{"Me": email, "Users": users})
-}
-
 // checkAdminPost guards the admin forms. A tunnel page is same-site with this
 // host, so SameSite cookies alone would let it submit them.
 func (s *Server) checkAdminPost(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -516,7 +496,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	email := normalizeEmail(r.PostFormValue("email"))
 	action := r.PostFormValue("action")
 	if !strings.Contains(email, "@") {
-		renderMessage(w, http.StatusBadRequest, "Enter an email address.")
+		redirectAdminError(w, r, "invalid_email")
 		return
 	}
 
@@ -531,17 +511,25 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	case "demote":
 		err = s.auth.store.SetAdmin(email, false)
 	default:
-		renderMessage(w, http.StatusBadRequest, "Unknown action.")
+		http.Error(w, "unknown action", http.StatusBadRequest)
 		return
 	}
 	if errors.Is(err, errLastAdmin) {
-		renderMessage(w, http.StatusBadRequest, "There must always be at least one admin.")
+		redirectAdminError(w, r, "last_admin")
 		return
 	}
 	if err != nil {
 		s.Logger.Error("Updating allowlist failed", "action", action, "email", email, "error", err)
-		renderMessage(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+		redirectAdminError(w, r, "internal")
 		return
+	}
+
+	// Removal revokes the tokens; closing the tunnels makes it take effect now.
+	// The client's reconnect then gets a 401 and stops.
+	if action == "remove" {
+		if n := s.connManager.CloseByEmail(email); n > 0 {
+			s.Logger.Info("Closed tunnels of removed user", "email", email, "tunnels", n)
+		}
 	}
 
 	s.Logger.Info("Allowlist changed", "by", admin, "action", action, "email", email)

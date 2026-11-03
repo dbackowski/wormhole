@@ -1,9 +1,12 @@
 package server
 
 import (
+	"cmp"
 	"crypto/subtle"
 	"fmt"
+	"slices"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -86,4 +89,56 @@ func (cm *ConnectionManager) Count() int {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	return len(cm.connections)
+}
+
+// TunnelInfo is a copy of one tunnel's state for the admin page.
+type TunnelInfo struct {
+	Domain      string
+	Email       string
+	ClientIP    string
+	ConnectedAt time.Time
+	Requests    int64
+	InFlight    int
+	WebSockets  int
+}
+
+// Snapshot returns the live tunnels sorted by domain. Copies, so the caller
+// renders them without holding the lock.
+func (cm *ConnectionManager) Snapshot() []TunnelInfo {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	tunnels := make([]TunnelInfo, 0, len(cm.connections))
+	for domain, c := range cm.connections {
+		if !c.ready {
+			continue
+		}
+		tunnels = append(tunnels, TunnelInfo{
+			Domain:      domain,
+			Email:       c.owner.email,
+			ClientIP:    c.owner.clientIP,
+			ConnectedAt: c.owner.connectedAt,
+			Requests:    c.served.Load(),
+			InFlight:    c.requests.Len(),
+			WebSockets:  c.streams.Count(),
+		})
+	}
+	slices.SortFunc(tunnels, func(a, b TunnelInfo) int { return cmp.Compare(a.Domain, b.Domain) })
+	return tunnels
+}
+
+// CloseByEmail closes every tunnel opened by email and returns how many. Each
+// read loop then fails and releases its domain.
+func (cm *ConnectionManager) CloseByEmail(email string) int {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	closed := 0
+	for _, c := range cm.connections {
+		if c.ready && c.owner.email == email {
+			c.Close()
+			closed++
+		}
+	}
+	return closed
 }

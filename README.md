@@ -164,7 +164,9 @@ When `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set, clients must log in 
    Open it and log in with Google: that account becomes the admin. A restart before then logs a new link, and the old one stops working.
 4. Manage the allowlist at `https://yourdomain.com/admin`: add or remove emails and make other users admins. There is always at least one admin. Admins are on the allowlist too.
 
-Removing a user revokes their client tokens at once. A tunnel they have open stays up until it disconnects.
+The admin page also shows the server's state: active tunnels with their owner, client IP and request counts, open WebSockets, who is online, and requests and errors since the server started. These numbers live in memory, so a restart or deploy resets them.
+
+Removing a user revokes their client tokens and closes their open tunnels at once. Their client's reconnect is then refused, and it exits.
 
 ### Logging in from the client
 
@@ -209,7 +211,7 @@ graph TD
 |----------|-------------|
 | `/health` | Health check, returns `OK`. Served on the server's own host only |
 | `/metrics` | Active connection count. Served on the server's own host only |
-| `/admin` | Admin panel: manage the allowlist. Served on the server's own host only, when login is enabled |
+| `/admin` | Admin panel: active tunnels, server stats, and the allowlist. Served on the server's own host only, when login is enabled |
 | `/cli/login`, `/cli/token`, `/auth/callback`, `/admin/*` | Google login for the client and the admin panel |
 | `/*` | Everything else is tunneled to the matching subdomain client |
 

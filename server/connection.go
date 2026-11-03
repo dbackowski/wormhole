@@ -2,6 +2,8 @@ package server
 
 import (
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/dbackowski/wormhole/common"
 	"github.com/gorilla/websocket"
@@ -16,6 +18,19 @@ type Connection struct {
 	ready     bool // guarded by ConnectionManager.mu
 	done      chan struct{}
 	closeOnce sync.Once
+
+	// Written by registerClient before the connection is activated, so only
+	// read for ready connections, under ConnectionManager.mu.
+	owner tunnelOwner
+
+	served atomic.Int64 // requests routed to this tunnel
+}
+
+// tunnelOwner is who opened a tunnel, shown on the admin page.
+type tunnelOwner struct {
+	email       string // empty with login disabled
+	clientIP    string
+	connectedAt time.Time
 }
 
 func newConnection(conn *websocket.Conn, session string) *Connection {

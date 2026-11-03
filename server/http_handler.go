@@ -35,6 +35,8 @@ func (s *Server) tunnelRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	s.requests.Add(1)
+	connection.served.Add(1)
 
 	if websocket.IsWebSocketUpgrade(r) {
 		s.tunnelUpgrade(w, r, connection, domain)
@@ -165,10 +167,12 @@ func (s *Server) writeSuccessResponse(w http.ResponseWriter, responseMsg *common
 }
 
 func (s *Server) writeTimeoutResponse(w http.ResponseWriter) {
+	s.tunnelErrors.Add(1)
 	s.writeResponse(w, http.StatusGatewayTimeout, []byte("Gateway timeout"))
 }
 
 func (s *Server) writeDisconnectedResponse(w http.ResponseWriter) {
+	s.tunnelErrors.Add(1)
 	s.writeResponse(w, http.StatusBadGateway, []byte("tunnel client disconnected"))
 }
 

@@ -210,8 +210,15 @@ func TestAdminSetupAndPanel(t *testing.T) {
 		t.Error("added user is not on the allowlist")
 	}
 
-	if w := serve(s, http.MethodPost, "/admin/users", url.Values{"action": {"demote"}, "email": {"boss@example.com"}}, session); w.Code != http.StatusBadRequest {
-		t.Errorf("demoting the last admin: status %d, want 400", w.Code)
+	w = serve(s, http.MethodPost, "/admin/users", url.Values{"action": {"demote"}, "email": {"boss@example.com"}}, session)
+	if loc := w.Header().Get("Location"); loc != "/admin?error=last_admin" {
+		t.Errorf("demoting the last admin: redirected to %q, want the last_admin banner", loc)
+	}
+	if w := serve(s, http.MethodGet, "/admin?error=last_admin", nil, session); !strings.Contains(w.Body.String(), "at least one admin") {
+		t.Error("/admin?error=last_admin shows no banner")
+	}
+	if w := serve(s, http.MethodGet, "/admin?error=Call+us+now", nil, session); strings.Contains(w.Body.String(), "Call us now") {
+		t.Error("/admin shows text taken from the URL")
 	}
 
 	if w := serve(s, http.MethodPost, "/admin/users", url.Values{"action": {"add"}, "email": {"x@example.com"}}); w.Code != http.StatusForbidden {

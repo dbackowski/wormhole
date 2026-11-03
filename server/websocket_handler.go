@@ -2,7 +2,10 @@ package server
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/dbackowski/wormhole/common"
 	"github.com/gorilla/websocket"
@@ -43,7 +46,8 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	connection, err := s.registerClient(conn, domain, r.Header.Get(common.SessionHeader))
+	owner := tunnelOwner{email: email, clientIP: clientIP(r), connectedAt: time.Now()}
+	connection, err := s.registerClient(conn, domain, r.Header.Get(common.SessionHeader), owner)
 
 	if err != nil {
 		s.Logger.Error("Client registration failed", "error", err, "domain", domain)
@@ -54,13 +58,14 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.handleWebSocketConnection(domain, r.RemoteAddr, connection)
 }
 
-func (s *Server) registerClient(conn *websocket.Conn, domain, session string) (*Connection, error) {
+func (s *Server) registerClient(conn *websocket.Conn, domain, session string, owner tunnelOwner) (*Connection, error) {
 	connection, stale, err := s.connManager.AddConnection(domain, session, conn)
 	if err != nil {
 		common.WriteJSON(conn, &common.Message{Type: common.MessageTypeDomainTaken}) //nolint:errcheck // closing anyway
 		conn.Close()
 		return nil, fmt.Errorf("registering domain: %w", err)
 	}
+	connection.owner = owner
 
 	if stale != nil {
 		s.Logger.Info("Client reconnected, replacing stale connection", "domain", domain)
@@ -130,4 +135,21 @@ func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, con
 			s.Logger.Error("Message dispatch failed", "uuid", msg.UUID, "error", err)
 		},
 	)
+}
+
+// clientIP is the tunnel client's address for the admin page. Behind Fly's
+// proxy or a reverse proxy, RemoteAddr is the proxy, so the proxy's header is
+// preferred. Display only: without a proxy the header is whatever the client sent.
+func clientIP(r *http.Request) string {
+	if ip := r.Header.Get("Fly-Client-IP"); ip != "" {
+		return ip
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		return strings.TrimSpace(xff[strings.LastIndex(xff, ",")+1:])
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

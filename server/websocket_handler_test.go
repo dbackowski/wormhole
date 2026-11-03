@@ -292,7 +292,7 @@ func TestRegisterClient_Success(t *testing.T) {
 	dialer, _, cleanup := newWSPair(t)
 	defer cleanup()
 
-	_, err := s.registerClient(dialer, "regtest.com", "")
+	_, err := s.registerClient(dialer, "regtest.com", "", tunnelOwner{})
 	if err != nil {
 		t.Fatalf("registerClient() error = %v", err)
 	}
@@ -311,7 +311,7 @@ func TestRegisterClient_DuplicateDomain(t *testing.T) {
 
 	s.connManager.AddConnection("dup.com", "", ws1) //nolint:errcheck
 
-	_, err := s.registerClient(dialer, "dup.com", "")
+	_, err := s.registerClient(dialer, "dup.com", "", tunnelOwner{})
 	if err == nil {
 		t.Error("expected error for duplicate domain, got nil")
 	}
@@ -409,7 +409,7 @@ func TestRegisterClient_WriteConfirmationFails(t *testing.T) {
 	ws, cleanup := newTestWSPair(t)
 	cleanup() // close immediately so WriteJSON fails
 
-	_, err := s.registerClient(ws, "writefail.com", "")
+	_, err := s.registerClient(ws, "writefail.com", "", tunnelOwner{})
 	if err == nil {
 		t.Error("expected error when write fails, got nil")
 	}

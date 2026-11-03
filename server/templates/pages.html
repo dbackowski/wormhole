@@ -5,57 +5,218 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wormhole admin</title>
 <style>
-  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-  body { max-width: 44rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
-  table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
-  th, td { text-align: left; padding: .5rem .25rem; border-bottom: 1px solid #8884; }
-  td form { display: inline; }
-  header { display: flex; justify-content: space-between; align-items: baseline; }
-  .muted { opacity: .65; }
+  /* Same palette as the client's Web UI (client/templates/dashboard.css), plus a dark theme. */
+  :root {
+    color-scheme: light dark;
+    --primary: #0066cc;
+    --success: #22863a;
+    --danger: #cb2431;
+    --text: #333;
+    --muted: #666;
+    --border: #e9ecef;
+    --bg: #fff;
+    --bg-2: #f8f9fa;
+    --banner: #fff5f5;
+    --mono: 'SF Mono', Monaco, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --primary: #4493f8;
+      --success: #3fb950;
+      --danger: #f85149;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --border: #30363d;
+      --bg: #0d1117;
+      --bg-2: #161b22;
+      --banner: #2d1214;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  a { color: var(--primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .mono { font-family: var(--mono); font-size: 13px; }
+  .muted { color: var(--muted); }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-2);
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-weight: 600; color: var(--primary); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent); }
+  .me { display: flex; align-items: center; gap: 12px; color: var(--muted); }
+
+  main { max-width: 1040px; margin: 0 auto; padding: 24px; }
+  main.narrow { max-width: 560px; padding-top: 64px; }
+  section { margin-top: 32px; }
+  h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+  .section-head h2 { margin: 0; }
+
+  .banner { padding: 10px 14px; border: 1px solid var(--danger); border-radius: 6px; background: var(--banner); color: var(--danger); }
+  .panel { padding: 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-2); font-size: 15px; }
+  .panel p { margin: 0; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 0; }
+  main > .banner + .cards { margin-top: 16px; }
+  .card { padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-2); }
+  .card b { display: block; font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .card span { color: var(--muted); font-size: 13px; }
+  .note { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; white-space: nowrap; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { font-size: 12px; font-weight: 600; color: var(--muted); background: var(--bg-2); }
+  tbody tr:last-child td { border-bottom: 0; }
+  .n { text-align: right; font-variant-numeric: tabular-nums; }
+  .empty { margin: 0; padding: 24px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); text-align: center; }
+
+  .badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; background: var(--border); color: var(--muted); }
+  .badge.admin { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); }
+  .status { color: var(--muted); }
+  .status::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--border); }
+  .status.on { color: var(--success); }
+  .status.on::before { background: var(--success); }
+
+  .actions { text-align: right; }
+  .actions form { display: inline; }
+  .add { display: flex; gap: 8px; }
+  input[type=email] {
+    width: 260px; max-width: 100%; padding: 6px 10px;
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  input[type=email]:focus { outline: none; border-color: var(--primary); }
+  .btn {
+    padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer;
+    color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  }
+  .btn:hover { background: var(--bg-2); }
+  .btn.primary { color: #fff; background: var(--primary); border-color: var(--primary); }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn.danger { color: var(--danger); }
+  .btn.danger:hover { border-color: var(--danger); }
+
+  @media (max-width: 600px) {
+    .topbar, main { padding-left: 16px; padding-right: 16px; }
+    .me span { display: none; }
+    .add { width: 100%; }
+    .add input { flex: 1; width: auto; }
+  }
 </style>
 </head>
 <body>{{end}}
 
 {{define "message"}}{{template "head"}}
-<h1>Wormhole</h1>
-<p>{{.}}</p>
+<header class="topbar"><div class="brand"><span class="dot"></span>wormhole</div></header>
+<main class="narrow">
+  <div class="panel"><p>{{.}}</p></div>
+</main>
 </body>
 </html>{{end}}
 
 {{define "admin"}}{{template "head"}}
-<header>
-  <h1>Wormhole admin</h1>
-  <form method="post" action="/admin/logout">
-    <span class="muted">{{.Me}}</span> <button>Log out</button>
+<header class="topbar">
+  <div class="brand"><span class="dot"></span>{{.Host}}</div>
+  <form method="post" action="/admin/logout" class="me">
+    <span>{{.Me}}</span>
+    <button class="btn">Log out</button>
   </form>
 </header>
 
-<form method="post" action="/admin/users">
-  <input type="hidden" name="action" value="add">
-  <label>Allow email <input type="email" name="email" required autocomplete="off"></label>
-  <button>Add</button>
-</form>
+<main>
+  {{with .Error}}<div class="banner" role="alert">{{.}}</div>{{end}}
 
-<table>
-  <tr><th>Email</th><th>Role</th><th>Last connected</th><th></th></tr>
-  {{range .Users}}
-  <tr>
-    <td>{{.Email}}</td>
-    <td>{{if .IsAdmin}}admin{{else}}user{{end}}</td>
-    <td class="muted">{{if .LastUsed.IsZero}}never{{else}}{{.LastUsed.UTC.Format "2006-01-02 15:04 UTC"}}{{end}}</td>
-    <td>
-      <form method="post" action="/admin/users">
-        <input type="hidden" name="email" value="{{.Email}}">
-        {{if .IsAdmin}}
-        <button name="action" value="demote">Make user</button>
-        {{else}}
-        <button name="action" value="promote">Make admin</button>
-        {{end}}
-        <button name="action" value="remove">Remove</button>
+  <section class="cards">
+    <div class="card"><b>{{len .Tunnels}}</b><span>Active tunnels</span></div>
+    <div class="card"><b>{{.WebSockets}}</b><span>Open WebSockets</span></div>
+    <div class="card"><b>{{num .Requests}}</b><span>Requests</span></div>
+    <div class="card" title="Requests the server answered with 504 (client too slow) or 502 (tunnel dropped)"><b>{{num .TunnelErrors}}</b><span>Timeouts &amp; drops</span></div>
+    <div class="card"><b>{{len .Users}}</b><span>Users, {{.Admins}} admin{{if ne .Admins 1}}s{{end}}</span></div>
+    <div class="card"><b>{{dur .Uptime}}</b><span>Uptime</span></div>
+  </section>
+  <p class="note">Requests and errors are counted since the server started.</p>
+
+  <section>
+    <h2>Active tunnels</h2>
+    {{if .Tunnels}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Domain</th><th>Owner</th><th>Connected</th><th>Client IP</th><th class="n">Requests</th><th class="n">In flight</th><th class="n">WebSockets</th></tr>
+        </thead>
+        <tbody>
+          {{range .Tunnels}}
+          <tr>
+            <td><a class="mono" href="{{.URL}}" target="_blank" rel="noopener">{{.Domain}}</a></td>
+            <td>{{or .Email "—"}}</td>
+            <td>{{since .ConnectedAt}}</td>
+            <td class="mono">{{.ClientIP}}</td>
+            <td class="n">{{num .Requests}}</td>
+            <td class="n">{{.InFlight}}</td>
+            <td class="n">{{.WebSockets}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="empty">No tunnels connected.</p>
+    {{end}}
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Users</h2>
+      <form method="post" action="/admin/users" class="add">
+        <input type="hidden" name="action" value="add">
+        <input type="email" name="email" placeholder="email@example.com" required autocomplete="off" aria-label="Email to allow">
+        <button class="btn primary">Add user</button>
       </form>
-    </td>
-  </tr>
-  {{end}}
-</table>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Email</th><th>Role</th><th>Status</th><th>Last connected</th><th></th></tr>
+        </thead>
+        <tbody>
+          {{range .Users}}
+          <tr>
+            <td>{{.Email}}{{if eq .Email $.Me}} <span class="muted">(you)</span>{{end}}</td>
+            <td><span class="badge{{if .IsAdmin}} admin{{end}}">{{if .IsAdmin}}admin{{else}}user{{end}}</span></td>
+            <td>{{if .Online}}<span class="status on">online</span>{{else}}<span class="status">offline</span>{{end}}</td>
+            <td class="muted">{{if .LastUsed.IsZero}}never{{else}}{{since .LastUsed}} ago{{end}}</td>
+            <td class="actions">
+              <form method="post" action="/admin/users">
+                <input type="hidden" name="email" value="{{.Email}}">
+                {{if .IsAdmin}}
+                <button class="btn" name="action" value="demote">Make user</button>
+                {{else}}
+                <button class="btn" name="action" value="promote">Make admin</button>
+                {{end}}
+              </form>
+              <form method="post" action="/admin/users" onsubmit="return confirm('Remove ' + this.email.value + '? Their tunnels will be closed.')">
+                <input type="hidden" name="email" value="{{.Email}}">
+                <input type="hidden" name="action" value="remove">
+                <button class="btn danger">Remove</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
 </body>
 </html>{{end}}

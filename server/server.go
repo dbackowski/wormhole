@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
@@ -24,6 +25,11 @@ type Server struct {
 	heartbeat       common.Heartbeat
 	bodyReadTimeout time.Duration
 	writeTimeout    time.Duration
+
+	// For the admin page; reset on restart.
+	startedAt    time.Time
+	requests     atomic.Int64 // requests routed to a tunnel
+	tunnelErrors atomic.Int64 // 504s and 502s for a dropped tunnel
 }
 
 func NewServer(cfg *Config) (*Server, error) {
@@ -45,6 +51,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		heartbeat:       common.DefaultHeartbeat(),
 		bodyReadTimeout: common.ServerBodyReadTimeout,
 		writeTimeout:    common.ServerWriteTimeout,
+		startedAt:       time.Now(),
 	}
 
 	if err := server.setupAuth(cfg); err != nil {
