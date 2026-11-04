@@ -91,12 +91,12 @@
   .actions { text-align: right; }
   .actions form { display: inline; }
   .add { display: flex; gap: 8px; }
-  input[type=email] {
+  input[type=email], input[type=text], select {
     width: 260px; max-width: 100%; padding: 6px 10px;
     font: inherit; color: var(--text); background: var(--bg);
     border: 1px solid var(--border); border-radius: 6px;
   }
-  input[type=email]:focus { outline: none; border-color: var(--primary); }
+  input[type=email]:focus, input[type=text]:focus, select:focus { outline: none; border-color: var(--primary); }
   .btn {
     padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer;
     color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
@@ -111,7 +111,8 @@
     .topbar, main { padding-left: 16px; padding-right: 16px; }
     .me span { display: none; }
     .add { width: 100%; }
-    .add input { flex: 1; width: auto; }
+    .add { flex-wrap: wrap; }
+    .add input, .add select { flex: 1; width: auto; }
   }
 </style>
 </head>
@@ -158,7 +159,7 @@
         <tbody>
           {{range .Tunnels}}
           <tr>
-            <td><a class="mono" href="{{.URL}}" target="_blank" rel="noopener">{{.Domain}}</a></td>
+            <td><a class="mono" href="{{.URL}}" target="_blank" rel="noopener">{{.Domain}}</a>{{if .Reserved}} <span class="badge">reserved</span>{{end}}</td>
             <td>{{or .Email "—"}}</td>
             <td>{{since .ConnectedAt}}</td>
             <td class="mono">{{.ClientIP}}</td>
@@ -172,6 +173,48 @@
     </div>
     {{else}}
     <p class="empty">No tunnels connected.</p>
+    {{end}}
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Reserved domains</h2>
+      <form method="post" action="/admin/domains" class="add">
+        <input type="hidden" name="action" value="reserve">
+        <input type="text" name="domain" placeholder="domain" required autocomplete="off" aria-label="Domain to reserve"
+               pattern="[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?" title="Lowercase letters, digits and hyphens, up to 63">
+        <select name="email" required aria-label="Reserve for">
+          {{range .Users}}<option{{if eq .Email $.Me}} selected{{end}}>{{.Email}}</option>{{end}}
+        </select>
+        <button class="btn primary">Reserve</button>
+      </form>
+    </div>
+    {{if .Domains}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Domain</th><th>Reserved for</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+          {{range .Domains}}
+          <tr>
+            <td class="mono">{{.Name}}</td>
+            <td>{{.Email}}</td>
+            <td>{{if .InUseBy}}<span class="status on">in use</span>{{else}}<span class="status">free</span>{{end}}</td>
+            <td class="actions">
+              <form method="post" action="/admin/domains" onsubmit="return confirm('Release ' + this.domain.value + '? Anyone on the list can then use it.')">
+                <input type="hidden" name="domain" value="{{.Name}}">
+                <input type="hidden" name="action" value="release">
+                <button class="btn danger">Release</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="empty">No reserved domains. Anyone on the list can use any free domain.</p>
     {{end}}
   </section>
 

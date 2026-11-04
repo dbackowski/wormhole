@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"regexp"
 	"slices"
 
 	"github.com/dbackowski/wormhole/common"
@@ -41,16 +40,12 @@ func parseURL(rawURL string) (url.URL, error) {
 	return *parsed, nil
 }
 
-// domainLabel is a single DNS label. The server routes on the first label of
-// the Host, so a dot would register only the part before it.
-var domainLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-
 func validateClientConfig(domain, local string, port int) (url.URL, error) {
 	if domain == "" {
 		return url.URL{}, fmt.Errorf("domain is required. Use -domain flag")
 	}
 
-	if !domainLabel.MatchString(domain) {
+	if !common.DomainLabel.MatchString(domain) {
 		return url.URL{}, fmt.Errorf("invalid domain %q: use lowercase letters, digits and hyphens (up to 63), with no dots", domain)
 	}
 

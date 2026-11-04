@@ -142,3 +142,17 @@ func (cm *ConnectionManager) CloseByEmail(email string) int {
 	}
 	return closed
 }
+
+// CloseUnlessOwnedBy closes the tunnel on domain unless email opened it, and
+// reports whether it closed one.
+func (cm *ConnectionManager) CloseUnlessOwnedBy(domain, email string) bool {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	c, ok := cm.connections[domain]
+	if !ok || !c.ready || c.owner.email == email {
+		return false
+	}
+	c.Close()
+	return true
+}

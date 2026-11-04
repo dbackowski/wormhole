@@ -179,6 +179,16 @@ The admin page also shows the server's state: active tunnels with their owner, c
 
 Removing a user revokes their client tokens and closes their open tunnels at once. Their client's reconnect is then refused, and it exits.
 
+### Reserved domains
+
+By default anyone on the allowlist can use any free subdomain. In the admin page's **Reserved domains** section you can reserve one for a user, say `damian` for `damian@example.com`: from then on only that user can open a tunnel on `damian.yourdomain.com`. Anyone else is refused with `403`, and their client exits with:
+
+```
+Domain "damian" is reserved for another user. Please choose another one with -domain.
+```
+
+Reserving a domain that someone else is using closes their tunnel at once. Admins are bound by reservations too; to hand a domain to someone else, release it and reserve it again. Removing a user releases their domains.
+
 ### Logging in from the client
 
 The first time you run the client against a server with login enabled, it opens your browser to log in with Google:

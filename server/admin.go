@@ -1,19 +1,26 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/dbackowski/wormhole/common"
 )
 
 // adminErrors are the banners /admin shows for ?error=. Only these fixed texts
 // are shown, so a crafted link cannot put its own words on the admin page.
 var adminErrors = map[string]string{
-	"invalid_email": "Enter an email address.",
-	"last_admin":    "There must always be at least one admin.",
-	"internal":      "Something went wrong. Try again.",
+	"invalid_email":  "Enter an email address.",
+	"last_admin":     "There must always be at least one admin.",
+	"internal":       "Something went wrong. Try again.",
+	"invalid_domain": "Enter a domain name: lowercase letters, digits and hyphens, up to 63.",
+	"unknown_user":   "Reserve domains only for users on the list.",
+	"domain_taken":   "That domain is already reserved. Release it first to give it to someone else.",
 }
 
 func redirectAdminError(w http.ResponseWriter, r *http.Request, code string) {
@@ -27,7 +34,13 @@ type userRow struct {
 
 type tunnelRow struct {
 	TunnelInfo
-	URL string
+	URL      string
+	Reserved bool
+}
+
+type domainRow struct {
+	Domain
+	InUseBy string // email of whoever has a tunnel open on it
 }
 
 // handleAdmin renders the dashboard straight from memory: the tunnels and
@@ -50,13 +63,31 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	domains, err := s.auth.store.Domains()
+	if err != nil {
+		s.Logger.Error("Listing domains failed", "error", err)
+		renderMessage(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+		return
+	}
+	reserved := map[string]bool{}
+	for _, d := range domains {
+		reserved[d.Name] = true
+	}
+
 	online := map[string]bool{}
+	inUseBy := map[string]string{}
 	webSockets := 0
 	var tunnels []tunnelRow
 	for _, t := range s.connManager.Snapshot() {
 		online[t.Email] = true
+		inUseBy[t.Domain] = t.Email
 		webSockets += t.WebSockets
-		tunnels = append(tunnels, tunnelRow{t, s.forwardedProto(r) + "://" + t.Domain + "." + r.Host})
+		tunnels = append(tunnels, tunnelRow{t, s.forwardedProto(r) + "://" + t.Domain + "." + r.Host, reserved[t.Domain]})
+	}
+
+	domainRows := make([]domainRow, len(domains))
+	for i, d := range domains {
+		domainRows[i] = domainRow{d, inUseBy[d.Name]}
 	}
 
 	admins := 0
@@ -75,11 +106,63 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"Users":        rows,
 		"Admins":       admins,
 		"Tunnels":      tunnels,
+		"Domains":      domainRows,
 		"WebSockets":   webSockets,
 		"Requests":     s.requests.Load(),
 		"TunnelErrors": s.tunnelErrors.Load(),
 		"Uptime":       time.Since(s.startedAt),
 	})
+}
+
+// handleAdminDomains reserves a domain for a user or releases it.
+func (s *Server) handleAdminDomains(w http.ResponseWriter, r *http.Request) {
+	admin, ok := s.checkAdminPost(w, r)
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+
+	name := strings.ToLower(strings.TrimSpace(r.PostFormValue("domain")))
+	action := r.PostFormValue("action")
+	if !common.DomainLabel.MatchString(name) {
+		redirectAdminError(w, r, "invalid_domain")
+		return
+	}
+
+	switch action {
+	case "reserve":
+		email := normalizeEmail(r.PostFormValue("email"))
+		if _, ok, err := s.auth.store.User(email); err != nil || !ok {
+			redirectAdminError(w, r, "unknown_user")
+			return
+		}
+		err := s.auth.store.ReserveDomain(name, email)
+		if errors.Is(err, errDomainReserved) {
+			redirectAdminError(w, r, "domain_taken")
+			return
+		}
+		if err != nil {
+			s.Logger.Error("Reserving domain failed", "domain", name, "email", email, "error", err)
+			redirectAdminError(w, r, "internal")
+			return
+		}
+		s.Logger.Info("Domain reserved", "by", admin, "domain", name, "email", email)
+		// Someone else may be using it right now. Their reconnect then gets a 403.
+		if s.connManager.CloseUnlessOwnedBy(name, email) {
+			s.Logger.Info("Closed tunnel on newly reserved domain", "domain", name)
+		}
+	case "release":
+		if err := s.auth.store.ReleaseDomain(name); err != nil {
+			s.Logger.Error("Releasing domain failed", "domain", name, "error", err)
+			redirectAdminError(w, r, "internal")
+			return
+		}
+		s.Logger.Info("Domain released", "by", admin, "domain", name)
+	default:
+		http.Error(w, "unknown action", http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 var templateFuncs = template.FuncMap{

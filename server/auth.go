@@ -240,6 +240,7 @@ func (s *Server) serveAuth(w http.ResponseWriter, r *http.Request) bool {
 		"/admin/login":   s.handleAdminLogin,
 		"/admin/setup":   s.handleAdminSetup,
 		"/admin/users":   s.handleAdminUsers,
+		"/admin/domains": s.handleAdminDomains,
 		"/admin/logout":  s.handleAdminLogout,
 	}
 	h, ok := handlers[r.URL.Path]

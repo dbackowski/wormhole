@@ -29,6 +29,8 @@ func main() {
 	if err != nil {
 		if errors.Is(err, client.ErrDomainTaken) {
 			fmt.Fprintf(os.Stderr, "Domain %q is already taken. Please choose another one with -domain.\n", clientCfg.Domain)
+		} else if errors.Is(err, client.ErrDomainReserved) {
+			fmt.Fprintf(os.Stderr, "Domain %q is reserved for another user. Please choose another one with -domain.\n", clientCfg.Domain)
 		} else {
 			fmt.Fprintf(os.Stderr, "Error creating client: %v\n", err)
 		}

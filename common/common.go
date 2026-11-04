@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/textproto"
+	"regexp"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -119,6 +120,11 @@ func RemoveHopByHopHeaders(h http.Header) {
 		h.Del(k)
 	}
 }
+
+// DomainLabel is a single DNS label, the form of a tunnel subdomain. The server
+// routes on the first label of the Host, so a dot would register only the
+// part before it.
+var DomainLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 func ValidatePort(port int) error {
 	if port < MinValidPort || port > MaxValidPort {

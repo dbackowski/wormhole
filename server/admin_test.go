@@ -127,3 +127,104 @@ func TestThousandsAndShortDuration(t *testing.T) {
 		}
 	}
 }
+
+func TestStore_Domains(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret")
+	st := s.auth.store
+
+	if err := st.ReserveDomain("app", "dev@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReserveDomain("app", "dev@example.com"); err != errDomainReserved {
+		t.Errorf("reserving twice: err = %v, want errDomainReserved", err)
+	}
+	if owner, ok, _ := st.DomainOwner("app"); !ok || owner != "dev@example.com" {
+		t.Errorf("DomainOwner(app) = %q, %v", owner, ok)
+	}
+
+	st.ReleaseDomain("app")
+	if _, ok, _ := st.DomainOwner("app"); ok {
+		t.Error("app still reserved after release")
+	}
+
+	st.ReserveDomain("app", "dev@example.com")
+	st.RemoveUser("dev@example.com")
+	if _, ok, _ := st.DomainOwner("app"); ok {
+		t.Error("app still reserved after its owner was removed")
+	}
+}
+
+func dialTunnel(t *testing.T, wsURL, token string) (*websocket.Conn, *http.Response, error) {
+	t.Helper()
+	header := http.Header{}
+	header.Set(common.ClientHeader, "1")
+	header.Set("Host", "app.localhost")
+	header.Set("Authorization", "Bearer "+token)
+	return websocket.DefaultDialer.Dial(wsURL+"/ws", header)
+}
+
+func TestReservedDomain_OnlyOwnerConnects(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret") // dev@example.com
+	session := adminSession(t, s)           // boss@example.com
+	wsURL, cleanup := startWSServer(t, s)
+	t.Cleanup(cleanup)
+
+	if w := serve(s, http.MethodPost, "/admin/domains", url.Values{"action": {"reserve"}, "domain": {" App "}, "email": {"boss@example.com"}}, session); w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/admin" {
+		t.Fatalf("reserve: %d %s", w.Code, w.Header().Get("Location"))
+	}
+
+	_, resp, err := dialTunnel(t, wsURL, "secret")
+	if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("other user claiming a reserved domain: err=%v resp=%v, want 403", err, resp)
+	}
+
+	// The owner gets in.
+	bossToken, _ := s.auth.store.CreateToken("boss@example.com")
+	conn, _, err := dialTunnel(t, wsURL, bossToken)
+	if err != nil {
+		t.Fatalf("owner dial: %v", err)
+	}
+	conn.Close()
+
+	if page := serve(s, http.MethodGet, "/admin", nil, session).Body.String(); !strings.Contains(page, ">app</td>") {
+		t.Error("/admin does not list the reserved domain")
+	}
+}
+
+func TestReserveDomain_ClosesSomeoneElsesTunnel(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret")
+	session := adminSession(t, s)
+	conn := connectTunnel(t, s) // dev@example.com on app
+
+	serve(s, http.MethodPost, "/admin/domains", url.Values{"action": {"reserve"}, "domain": {"app"}, "email": {"boss@example.com"}}, session)
+
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck
+	var msg common.Message
+	err := conn.ReadJSON(&msg)
+	var netErr net.Error
+	if err == nil || errors.As(err, &netErr) && netErr.Timeout() {
+		t.Errorf("tunnel on the newly reserved domain still open: %v", err)
+	}
+}
+
+func TestReserveDomain_Rejects(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret")
+	session := adminSession(t, s)
+
+	for _, tc := range []struct{ domain, email, want string }{
+		{"my.app", "dev@example.com", "invalid_domain"},
+		{"-app", "dev@example.com", "invalid_domain"},
+		{"app", "stranger@example.com", "unknown_user"},
+	} {
+		w := serve(s, http.MethodPost, "/admin/domains", url.Values{"action": {"reserve"}, "domain": {tc.domain}, "email": {tc.email}}, session)
+		if loc := w.Header().Get("Location"); loc != "/admin?error="+tc.want {
+			t.Errorf("reserve %q for %s: redirected to %q, want error=%s", tc.domain, tc.email, loc, tc.want)
+		}
+	}
+
+	serve(s, http.MethodPost, "/admin/domains", url.Values{"action": {"reserve"}, "domain": {"app"}, "email": {"dev@example.com"}}, session)
+	w := serve(s, http.MethodPost, "/admin/domains", url.Values{"action": {"reserve"}, "domain": {"app"}, "email": {"boss@example.com"}}, session)
+	if loc := w.Header().Get("Location"); loc != "/admin?error=domain_taken" {
+		t.Errorf("reserving a reserved domain: redirected to %q, want error=domain_taken", loc)
+	}
+}

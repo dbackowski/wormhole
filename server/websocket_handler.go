@@ -40,6 +40,20 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.auth != nil {
+		owner, reserved, err := s.auth.store.DomainOwner(domain)
+		if err != nil {
+			s.Logger.Error("Domain lookup failed", "domain", domain, "error", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		if reserved && owner != email {
+			s.Logger.Info("Refused reserved domain", "domain", domain, "email", email)
+			http.Error(w, fmt.Sprintf("domain %q is reserved for another user", domain), http.StatusForbidden)
+			return
+		}
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.Logger.Error("WebSocket upgrade failed", "error", err, "remote_addr", r.RemoteAddr)

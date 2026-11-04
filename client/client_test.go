@@ -686,25 +686,34 @@ func TestStopDisplay(t *testing.T) {
 // A rejected token cannot start working on retry, so the client must give up
 // after the first attempt instead of retrying for reconnectMaxElapsed.
 func TestReconnectWithBackoff_GivesUpOnAuthFailure(t *testing.T) {
-	var dials int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&dials, 1)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-	}))
-	t.Cleanup(server.Close)
+	for _, tc := range []struct {
+		status int
+		want   error
+	}{
+		{http.StatusUnauthorized, ErrUnauthorized},
+		// An admin reserved the domain for someone else.
+		{http.StatusForbidden, ErrDomainReserved},
+	} {
+		var dials int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt32(&dials, 1)
+			http.Error(w, http.StatusText(tc.status), tc.status)
+		}))
+		t.Cleanup(server.Close)
 
-	c := &Client{
-		tunnelURL: "https://test.example.com",
-		history:   NewRequestHistory(10),
-		display:   &mockDisplay{},
-		wsURL:     "ws" + server.URL[len("http"):],
-	}
+		c := &Client{
+			tunnelURL: "https://test.example.com",
+			history:   NewRequestHistory(10),
+			display:   &mockDisplay{},
+			wsURL:     "ws" + server.URL[len("http"):],
+		}
 
-	if err := c.ReconnectWithBackoff(nil); !errors.Is(err, ErrUnauthorized) {
-		t.Fatalf("ReconnectWithBackoff() error = %v, want ErrUnauthorized", err)
-	}
-	if got := atomic.LoadInt32(&dials); got != 1 {
-		t.Errorf("server saw %d dials, want 1", got)
+		if err := c.ReconnectWithBackoff(nil); !errors.Is(err, tc.want) {
+			t.Fatalf("status %d: ReconnectWithBackoff() error = %v, want %v", tc.status, err, tc.want)
+		}
+		if got := atomic.LoadInt32(&dials); got != 1 {
+			t.Errorf("status %d: server saw %d dials, want 1", tc.status, got)
+		}
 	}
 }
 

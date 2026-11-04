@@ -24,9 +24,17 @@ CREATE TABLE IF NOT EXISTS tokens (
 	email        TEXT NOT NULL REFERENCES users(email) ON DELETE CASCADE,
 	created_at   INTEGER NOT NULL,
 	last_used_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS domains (
+	name       TEXT PRIMARY KEY,
+	email      TEXT NOT NULL REFERENCES users(email) ON DELETE CASCADE,
+	created_at INTEGER NOT NULL
 );`
 
-var errLastAdmin = errors.New("cannot remove the last admin")
+var (
+	errLastAdmin      = errors.New("cannot remove the last admin")
+	errDomainReserved = errors.New("domain is already reserved")
+)
 
 // Store holds the allowlist and the CLI tokens issued to it.
 type Store struct {
@@ -161,4 +169,56 @@ func (st *Store) TokenEmail(token string) (email string, ok bool, err error) {
 		return "", false, nil
 	}
 	return email, err == nil, err
+}
+
+// Domain is a subdomain reserved for one user.
+type Domain struct {
+	Name  string
+	Email string
+}
+
+// DomainOwner returns who name is reserved for, or ok=false if it is free.
+func (st *Store) DomainOwner(name string) (email string, ok bool, err error) {
+	err = st.db.QueryRow(`SELECT email FROM domains WHERE name = ?`, name).Scan(&email)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	return email, err == nil, err
+}
+
+func (st *Store) Domains() ([]Domain, error) {
+	rows, err := st.db.Query(`SELECT name, email FROM domains ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var domains []Domain
+	for rows.Next() {
+		var d Domain
+		if err := rows.Scan(&d.Name, &d.Email); err != nil {
+			return nil, err
+		}
+		domains = append(domains, d)
+	}
+	return domains, rows.Err()
+}
+
+// ReserveDomain reserves name for email. A name reserved already, even for the
+// same user, gives errDomainReserved: reassigning means releasing it first.
+func (st *Store) ReserveDomain(name, email string) error {
+	res, err := st.db.Exec(`INSERT INTO domains (name, email, created_at) VALUES (?, ?, ?)
+		ON CONFLICT (name) DO NOTHING`, name, email, time.Now().Unix())
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return errDomainReserved
+	}
+	return nil
+}
+
+func (st *Store) ReleaseDomain(name string) error {
+	_, err := st.db.Exec(`DELETE FROM domains WHERE name = ?`, name)
+	return err
 }

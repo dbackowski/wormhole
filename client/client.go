@@ -23,6 +23,8 @@ const MaxConcurrentRequests = 64
 var (
 	ErrDomainTaken  = errors.New("domain is already taken")
 	ErrUnauthorized = errors.New("authentication failed: invalid or missing auth token")
+	// ErrDomainReserved: an admin reserved the domain for another user.
+	ErrDomainReserved = errors.New("domain is reserved for another user")
 
 	errReconnectCancelled = errors.New("reconnect cancelled")
 )
@@ -156,6 +158,9 @@ func dialAndRegister(wsURL string, headers http.Header) (*websocket.Conn, error)
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 			return nil, ErrUnauthorized
 		}
+		if resp != nil && resp.StatusCode == http.StatusForbidden {
+			return nil, ErrDomainReserved
+		}
 		// The server names the problem, e.g. a host outside its -host domain.
 		if resp != nil && resp.StatusCode == http.StatusBadRequest {
 			reason, _ := io.ReadAll(resp.Body)
@@ -190,7 +195,8 @@ func (c *Client) Reconnect() error {
 
 // ReconnectWithBackoff returns nil once reconnected. Otherwise it returns the
 // last dial error, which is shown in the status line between attempts. An auth
-// failure is returned at once since retrying cannot fix it; a taken domain is
+// failure or a reserved domain is returned at once since retrying cannot fix
+// it; a taken domain is
 // retried, as the server holds a dropped connection until its heartbeat expires.
 func (c *Client) ReconnectWithBackoff(cancel <-chan struct{}) error {
 	deadline := time.Now().Add(reconnectMaxElapsed)
@@ -223,7 +229,7 @@ func (c *Client) ReconnectWithBackoff(cancel <-chan struct{}) error {
 			return nil
 		}
 
-		if errors.Is(lastErr, ErrUnauthorized) || time.Now().After(deadline) {
+		if errors.Is(lastErr, ErrUnauthorized) || errors.Is(lastErr, ErrDomainReserved) || time.Now().After(deadline) {
 			return lastErr
 		}
 
