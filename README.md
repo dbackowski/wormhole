@@ -94,12 +94,12 @@ go run cmd/server/main.go -port=8080
 
 **Optional flags:**
 - `-port`: Port to run the server on (default: 8080)
-- `-host`: Public hostname of this server (e.g. `wormhole.tools`). When set, `/health` and `/metrics` are only served on this host (or when addressed by IP or as `localhost`, so health probes work); requests to `<name>.<host>` are tunneled to the matching client, and any other `Host` (a foreign domain, a nested subdomain) is rejected with `400`. **Required for any deployment on a real domain** — see the note below.
+- `-host`: Public hostname of this server (e.g. `wormhole.tools`). When set, `/health` and `/admin` are only served on this host (or when addressed by IP or as `localhost`, so health probes work); requests to `<name>.<host>` are tunneled to the matching client, and any other `Host` (a foreign domain, a nested subdomain) is rejected with `400`. **Required for any deployment on a real domain** — see the note below.
 - `-db`: SQLite database holding the allowlist and client tokens (default: `wormhole.db` in the working directory; the Docker image uses `/data/wormhole.db`). Only used when login is enabled, see [Authentication](#authentication)
 - `-debug`: Enable debug logging. Each request adds its header names and body sizes, never header values or bodies; query strings are left out at every level
 - `-version`: Print version and exit
 
-> **Note on `-host`:** When `-host` is unset, the server falls back to a heuristic — any `Host` containing a dot is treated as a tunnel subdomain. This works for local development (`*.localhost`) and bare-IP access, but on a real domain it has two consequences: requests to your apex (e.g. `wormhole.tools/health`) are treated as a tunnel and return `502` instead of serving health/metrics, and the apex's first label (`wormhole`) becomes a reserved subdomain that shadows any client claiming it. Set `-host` to your public hostname in production to route exactly.
+> **Note on `-host`:** When `-host` is unset, the server falls back to a heuristic — any `Host` containing a dot is treated as a tunnel subdomain. This works for local development (`*.localhost`) and bare-IP access, but on a real domain it has two consequences: requests to your apex (e.g. `wormhole.tools/health`) are treated as a tunnel and return `502` instead of serving `/health` and `/admin`, and the apex's first label (`wormhole`) becomes a reserved subdomain that shadows any client claiming it. Set `-host` to your public hostname in production to route exactly.
 
 ### Client Options
 ```bash
@@ -231,7 +231,6 @@ graph TD
 | Endpoint | Description |
 |----------|-------------|
 | `/health` | Health check, returns `OK`. Served on the server's own host only |
-| `/metrics` | Active connection count. Served on the server's own host only |
 | `/admin` | Admin panel: active tunnels, server stats, and the allowlist. Served on the server's own host only, when login is enabled |
 | `/cli/login`, `/cli/token`, `/auth/callback`, `/admin/*` | Google login for the client and the admin panel |
 | `/*` | Everything else is tunneled to the matching subdomain client |
@@ -256,7 +255,7 @@ To run your own Wormhole server, you need:
 
 1. **Wildcard DNS** - Point `*.yourdomain.com` to your server so that subdomain-based routing works
 2. **TLS termination** - Wormhole does not handle TLS natively. Use a reverse proxy like Caddy or nginx to terminate TLS
-3. **Run the server** with `-host` set to your public hostname so apex requests (health/metrics) are routed correctly:
+3. **Run the server** with `-host` set to your public hostname so apex requests (`/health`, `/admin`) are routed correctly:
    ```bash
    ./wormhole-server -port=8080 -host=yourdomain.com
    ```

@@ -94,8 +94,6 @@ func (s *Server) routeRequest(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/health":
 			s.handleHealth(w, r)
-		case "/metrics":
-			s.handleMetrics(w, r)
 		default:
 			if s.auth == nil || !s.serveAuth(w, r) {
 				http.NotFound(w, r)
@@ -121,10 +119,6 @@ func (s *Server) isBareHost(host string) bool {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.writeResponse(w, http.StatusOK, []byte("OK"))
-}
-
-func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "active_connections: %d\n", s.connManager.Count())
 }
 
 func (s *Server) setupAuth(cfg *Config) error {
