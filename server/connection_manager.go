@@ -8,23 +8,37 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dbackowski/wormhole/common"
 	"github.com/gorilla/websocket"
 )
 
 type ConnectionManager struct {
 	mu          sync.RWMutex
 	connections map[string]*Connection
+	departed    map[string]departedTunnel // by session; guarded by mu
+}
+
+// departedTunnel holds the stats of a tunnel whose connection dropped, for its
+// client to continue if it reconnects within common.ReconnectMaxElapsed.
+type departedTunnel struct {
+	domain string
+	stats  *tunnelStats
+	at     time.Time
 }
 
 func NewConnectionManager() *ConnectionManager {
 	return &ConnectionManager{
 		connections: make(map[string]*Connection),
+		departed:    make(map[string]departedTunnel),
 	}
 }
 
 // AddConnection claims domain for conn. A domain held by a connection with the
 // same non-empty session is reclaimed: that connection is returned as stale for
 // the caller to close. See common.SessionHeader.
+//
+// A reconnect continues the stats of the connection it replaces, or of one
+// with the same session that dropped within common.ReconnectMaxElapsed.
 func (cm *ConnectionManager) AddConnection(domain, session string, conn *websocket.Conn) (connection, stale *Connection, err error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -35,6 +49,13 @@ func (cm *ConnectionManager) AddConnection(domain, session string, conn *websock
 	}
 
 	connection = newConnection(conn, session)
+	if exists {
+		connection.stats = existing.stats.reconnected()
+	} else if d, ok := cm.departed[session]; ok && session != "" && d.domain == domain &&
+		time.Since(d.at) < common.ReconnectMaxElapsed {
+		connection.stats = d.stats.reconnected()
+	}
+	delete(cm.departed, session)
 	cm.connections[domain] = connection
 
 	return connection, existing, nil
@@ -70,9 +91,21 @@ func (cm *ConnectionManager) GetConnection(domain string) (*Connection, error) {
 func (cm *ConnectionManager) RemoveConnection(domain string, connection *Connection) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	if cm.connections[domain] == connection {
-		delete(cm.connections, domain)
+	if held, ok := cm.connections[domain]; !ok || held != connection {
+		return
 	}
+	delete(cm.connections, domain)
+
+	if connection.session == "" {
+		return
+	}
+	now := time.Now()
+	for s, d := range cm.departed {
+		if now.Sub(d.at) >= common.ReconnectMaxElapsed {
+			delete(cm.departed, s)
+		}
+	}
+	cm.departed[connection.session] = departedTunnel{domain: domain, stats: connection.stats, at: now}
 }
 
 func (cm *ConnectionManager) CloseAll() {
@@ -83,6 +116,7 @@ func (cm *ConnectionManager) CloseAll() {
 		connection.Close()
 	}
 	clear(cm.connections)
+	clear(cm.departed)
 }
 
 func (cm *ConnectionManager) Count() int {
@@ -93,13 +127,15 @@ func (cm *ConnectionManager) Count() int {
 
 // TunnelInfo is a copy of one tunnel's state for the admin page.
 type TunnelInfo struct {
-	Domain      string
-	Email       string
-	ClientIP    string
-	ConnectedAt time.Time
-	Requests    int64
-	InFlight    int
-	WebSockets  int
+	Domain        string
+	Email         string
+	ClientIP      string
+	ConnectedAt   time.Time // first connect, before any reconnects
+	Requests      int64
+	Reconnects    int
+	LastReconnect time.Time // zero if never
+	InFlight      int
+	WebSockets    int
 }
 
 // Snapshot returns the live tunnels sorted by domain. Copies, so the caller
@@ -113,15 +149,20 @@ func (cm *ConnectionManager) Snapshot() []TunnelInfo {
 		if !c.ready {
 			continue
 		}
-		tunnels = append(tunnels, TunnelInfo{
+		info := TunnelInfo{
 			Domain:      domain,
 			Email:       c.owner.email,
 			ClientIP:    c.owner.clientIP,
-			ConnectedAt: c.owner.connectedAt,
-			Requests:    c.served.Load(),
+			ConnectedAt: c.stats.firstConnected,
+			Requests:    c.stats.served.Load(),
+			Reconnects:  int(c.stats.reconnects.Load()),
 			InFlight:    c.requests.Len(),
 			WebSockets:  c.streams.Count(),
-		})
+		}
+		if ns := c.stats.lastReconnect.Load(); ns != 0 {
+			info.LastReconnect = time.Unix(0, ns)
+		}
+		tunnels = append(tunnels, info)
 	}
 	slices.SortFunc(tunnels, func(a, b TunnelInfo) int { return cmp.Compare(a.Domain, b.Domain) })
 	return tunnels

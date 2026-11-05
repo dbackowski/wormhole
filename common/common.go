@@ -121,6 +121,11 @@ func RemoveHopByHopHeaders(h http.Header) {
 	}
 }
 
+// ReconnectMaxElapsed is how long a client keeps trying to reconnect after its
+// connection drops. The server keeps a dropped tunnel's stats as long, for a
+// reconnect from the same client to continue them.
+const ReconnectMaxElapsed = 5 * time.Minute
+
 // DomainLabel is a single DNS label, the form of a tunnel subdomain. The server
 // routes on the first label of the Host, so a dot would register only the
 // part before it.

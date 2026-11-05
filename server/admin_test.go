@@ -228,3 +228,62 @@ func TestReserveDomain_Rejects(t *testing.T) {
 		t.Errorf("reserving a reserved domain: redirected to %q, want error=domain_taken", loc)
 	}
 }
+
+// The case from production: the server drops the tunnel (here the client just
+// vanishes), and the same client process reconnects. The dashboard shows one
+// tunnel that reconnected, not a new one.
+func TestDashboard_ReconnectContinuesTunnel(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret")
+	session := adminSession(t, s)
+	wsURL, cleanup := startWSServer(t, s)
+	t.Cleanup(cleanup)
+
+	dial := func() *websocket.Conn {
+		header := http.Header{}
+		header.Set(common.ClientHeader, "1")
+		header.Set(common.SessionHeader, "client-process-secret")
+		header.Set("Host", "app.localhost")
+		header.Set("Authorization", "Bearer secret")
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL+"/ws", header)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		var msg common.Message
+		if err := conn.ReadJSON(&msg); err != nil || msg.Type != common.MessageTypeDomainRegistered {
+			t.Fatalf("registration: %v %+v", err, msg)
+		}
+		return conn
+	}
+
+	conn := dial()
+	go func() {
+		var req common.Message
+		if conn.ReadJSON(&req) == nil {
+			conn.WriteJSON(&common.Message{Type: common.MessageTypeHTTPResponse, UUID: req.UUID, Status: 200}) //nolint:errcheck
+		}
+	}()
+	s.routeRequest(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "http://app.localhost/", nil))
+	firstConnected := s.connManager.Snapshot()[0].ConnectedAt
+
+	conn.Close()
+	for deadline := time.Now().Add(2 * time.Second); len(s.connManager.Snapshot()) != 0; {
+		if time.Now().After(deadline) {
+			t.Fatal("server never noticed the dropped tunnel")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	conn = dial()
+	t.Cleanup(func() { conn.Close() })
+
+	tunnels := s.connManager.Snapshot()
+	if len(tunnels) != 1 {
+		t.Fatalf("tunnels = %+v, want one", tunnels)
+	}
+	if got := tunnels[0]; got.Requests != 1 || got.Reconnects != 1 || !got.ConnectedAt.Equal(firstConnected) || got.LastReconnect.IsZero() {
+		t.Errorf("after reconnect: %+v, want the first connect time, 1 request and 1 reconnect", got)
+	}
+	if page := serve(s, http.MethodGet, "/admin", nil, session).Body.String(); !strings.Contains(page, "· 1 reconnect<") {
+		t.Error("/admin does not show the reconnect")
+	}
+}

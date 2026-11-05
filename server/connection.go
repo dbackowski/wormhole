@@ -23,14 +23,35 @@ type Connection struct {
 	// read for ready connections, under ConnectionManager.mu.
 	owner tunnelOwner
 
-	served atomic.Int64 // requests routed to this tunnel
+	// Set by AddConnection, possibly to the stats of the connection this one
+	// reconnects. Shown on the admin page.
+	stats *tunnelStats
 }
 
 // tunnelOwner is who opened a tunnel, shown on the admin page.
 type tunnelOwner struct {
-	email       string // empty with login disabled
-	clientIP    string
-	connectedAt time.Time
+	email    string // empty with login disabled
+	clientIP string
+}
+
+// tunnelStats outlive a single connection: a reconnect from the same client
+// process continues them, so a dropped connection does not look like a new
+// tunnel.
+type tunnelStats struct {
+	firstConnected time.Time
+	served         atomic.Int64 // requests routed to the tunnel
+	reconnects     atomic.Int32
+	lastReconnect  atomic.Int64 // unix nanoseconds, 0 if never
+}
+
+func newTunnelStats() *tunnelStats {
+	return &tunnelStats{firstConnected: time.Now()}
+}
+
+func (st *tunnelStats) reconnected() *tunnelStats {
+	st.reconnects.Add(1)
+	st.lastReconnect.Store(time.Now().UnixNano())
+	return st
 }
 
 func newConnection(conn *websocket.Conn, session string) *Connection {
@@ -40,6 +61,7 @@ func newConnection(conn *websocket.Conn, session string) *Connection {
 		requests: NewPendingRequests(),
 		streams:  common.NewStreams(),
 		done:     make(chan struct{}),
+		stats:    newTunnelStats(),
 	}
 }
 

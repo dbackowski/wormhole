@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/dbackowski/wormhole/common"
 	"github.com/gorilla/websocket"
@@ -60,7 +59,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owner := tunnelOwner{email: email, clientIP: clientIP(r), connectedAt: time.Now()}
+	owner := tunnelOwner{email: email, clientIP: clientIP(r)}
 	connection, err := s.registerClient(conn, domain, r.Header.Get(common.SessionHeader), owner)
 
 	if err != nil {

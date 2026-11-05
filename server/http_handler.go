@@ -36,7 +36,7 @@ func (s *Server) tunnelRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.requests.Add(1)
-	connection.served.Add(1)
+	connection.stats.served.Add(1)
 
 	if websocket.IsWebSocketUpgrade(r) {
 		s.tunnelUpgrade(w, r, connection, domain)

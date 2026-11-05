@@ -100,7 +100,7 @@ type rateSample struct {
 const (
 	reconnectInitialDelay = 500 * time.Millisecond
 	reconnectMaxDelay     = 30 * time.Second
-	reconnectMaxElapsed   = 5 * time.Minute
+	reconnectMaxElapsed   = common.ReconnectMaxElapsed
 )
 
 func NewClient(cfg *Config) (*Client, error) {

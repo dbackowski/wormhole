@@ -161,7 +161,7 @@
           <tr>
             <td><a class="mono" href="{{.URL}}" target="_blank" rel="noopener">{{.Domain}}</a>{{if .Reserved}} <span class="badge">reserved</span>{{end}}</td>
             <td>{{or .Email "—"}}</td>
-            <td>{{since .ConnectedAt}}</td>
+            <td>{{since .ConnectedAt}}{{if .Reconnects}} <span class="muted" title="Last reconnect {{since .LastReconnect}} ago">· {{.Reconnects}} reconnect{{if ne .Reconnects 1}}s{{end}}</span>{{end}}</td>
             <td class="mono">{{.ClientIP}}</td>
             <td class="n">{{num .Requests}}</td>
             <td class="n">{{.InFlight}}</td>

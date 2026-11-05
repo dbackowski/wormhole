@@ -173,7 +173,7 @@ When `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set, clients must log in 
    Open it and log in with Google: that account becomes the admin. A restart before then logs a new link, and the old one stops working.
 4. Manage the allowlist at `https://yourdomain.com/admin`: add or remove emails and make other users admins. There is always at least one admin. Admins are on the allowlist too.
 
-The admin page also shows the server's state: active tunnels with their owner, client IP and request counts, open WebSockets, who is online, and requests and errors since the server started. These numbers live in memory, so a restart or deploy resets them.
+The admin page also shows the server's state: active tunnels with their owner, client IP and request counts, open WebSockets, who is online, and requests and errors since the server started. A client that loses its connection and reconnects keeps its tunnel's connect time and request count, and the page shows how many times it reconnected. These numbers live in memory, so a restart or deploy resets them.
 
 ![Admin dashboard with active tunnels and users](docs/admin.png)
 

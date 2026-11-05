@@ -6,7 +6,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/dbackowski/wormhole/common"
 	"github.com/gorilla/websocket"
 )
 
@@ -206,5 +208,74 @@ func TestAddConnection_EmptySessionsDoNotMatch(t *testing.T) {
 	cm.AddConnection("a.com", "", nil) //nolint:errcheck
 	if _, _, err := cm.AddConnection("a.com", "", nil); err == nil {
 		t.Error("second AddConnection() without a session succeeded, want domain taken")
+	}
+}
+
+// A reconnect that finds its old connection still registered continues it.
+func TestAddConnection_ReclaimContinuesStats(t *testing.T) {
+	cm := NewConnectionManager()
+	first, _, _ := cm.AddConnection("a", "secret", nil)
+	first.stats.served.Add(5)
+
+	second, _, err := cm.AddConnection("a", "secret", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.stats != first.stats || second.stats.served.Load() != 5 || second.stats.reconnects.Load() != 1 {
+		t.Errorf("stats after reclaim: served=%d reconnects=%d, want 5 and 1",
+			second.stats.served.Load(), second.stats.reconnects.Load())
+	}
+
+	// The replaced connection's read loop ends later; that is not a departure.
+	cm.RemoveConnection("a", first)
+	if len(cm.departed) != 0 {
+		t.Errorf("departed = %v, want none for a replaced connection", cm.departed)
+	}
+}
+
+// A reconnect after the server already dropped the connection, as when the
+// heartbeat timed out first, continues it too.
+func TestAddConnection_ReconnectAfterDropContinuesStats(t *testing.T) {
+	cm := NewConnectionManager()
+	first, _, _ := cm.AddConnection("a", "secret", nil)
+	first.stats.served.Add(5)
+	cm.RemoveConnection("a", first)
+
+	second, _, _ := cm.AddConnection("a", "secret", nil)
+	if second.stats != first.stats || second.stats.reconnects.Load() != 1 {
+		t.Errorf("stats after reconnect: served=%d reconnects=%d, want 5 and 1",
+			second.stats.served.Load(), second.stats.reconnects.Load())
+	}
+	if len(cm.departed) != 0 {
+		t.Errorf("departed = %v, want it taken by the reconnect", cm.departed)
+	}
+}
+
+func TestAddConnection_FreshStats(t *testing.T) {
+	for _, tc := range []struct {
+		name                      string
+		session, domain, session2 string
+		age                       time.Duration
+	}{
+		{"new client process", "secret", "a", "other", 0},
+		{"no session (old client)", "", "a", "", 0},
+		{"other domain", "secret", "b", "secret", 0},
+		{"after the reconnect window", "secret", "a", "secret", common.ReconnectMaxElapsed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cm := NewConnectionManager()
+			first, _, _ := cm.AddConnection("a", tc.session, nil)
+			first.stats.served.Add(5)
+			cm.RemoveConnection("a", first)
+			if d, ok := cm.departed[tc.session]; ok {
+				d.at = d.at.Add(-tc.age)
+				cm.departed[tc.session] = d
+			}
+
+			second, _, _ := cm.AddConnection(tc.domain, tc.session2, nil)
+			if second.stats == first.stats || second.stats.served.Load() != 0 || second.stats.reconnects.Load() != 0 {
+				t.Errorf("stats continued, want fresh ones")
+			}
+		})
 	}
 }
