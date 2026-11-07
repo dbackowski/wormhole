@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -34,7 +35,8 @@ const (
 	cliCodeTTL = time.Minute
 	sessionTTL = 12 * time.Hour
 
-	// Caps each in-memory map, which unauthenticated requests can add to.
+	// Caps each in-memory map. Only allowlisted users add to them: a login
+	// in progress lives in its cookie, see pendingLogin.
 	maxPending = 1000
 )
 
@@ -203,13 +205,50 @@ func (t *ttlMap[V]) delete(key string) {
 	delete(t.m, key)
 }
 
-// pendingLogin is a Google login in progress, keyed by the OAuth state.
+// pendingLogin is a Google login in progress. It lives in the browser's
+// state cookie, signed, not on the server: anyone can start a login, so
+// keeping them would let anyone fill the server's memory, or any cap on it.
 type pendingLogin struct {
-	setupCode string // claims the first admin
+	State   string `json:"s"` // the OAuth state sent to Google
+	Expires int64  `json:"e"` // unix seconds
+
+	SetupCode string `json:"setup,omitempty"` // claims the first admin
 
 	// Set for a CLI login: where to send the browser back, and what to check
 	// the CLI's code exchange against.
-	cliPort, cliState, challenge string
+	CLIPort   string `json:"port,omitempty"`
+	CLIState  string `json:"cli,omitempty"`
+	Challenge string `json:"ch,omitempty"`
+}
+
+// sealLogin returns p as a cookie value that only this server process can
+// have made.
+func (a *auth) sealLogin(p pendingLogin) string {
+	data, _ := json.Marshal(p) // strings and an int: cannot fail
+	payload := base64.RawURLEncoding.EncodeToString(data)
+	return payload + "." + base64.RawURLEncoding.EncodeToString(a.loginMAC(payload))
+}
+
+// openLogin returns the login sealed in value, if this process sealed it and
+// it has not expired.
+func (a *auth) openLogin(value string) (pendingLogin, bool) {
+	payload, sig, _ := strings.Cut(value, ".")
+	got, err := base64.RawURLEncoding.DecodeString(sig)
+	if err != nil || !hmac.Equal(got, a.loginMAC(payload)) {
+		return pendingLogin{}, false
+	}
+	var p pendingLogin
+	data, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil || json.Unmarshal(data, &p) != nil || time.Now().Unix() > p.Expires {
+		return pendingLogin{}, false
+	}
+	return p, true
+}
+
+func (a *auth) loginMAC(payload string) []byte {
+	m := hmac.New(sha256.New, a.loginKey)
+	m.Write([]byte(payload))
+	return m.Sum(nil)
 }
 
 // cliCode is a one-time code the CLI exchanges for a token.
@@ -220,7 +259,7 @@ type cliCode struct {
 type auth struct {
 	store    *Store
 	google   *googleOAuth
-	logins   *ttlMap[pendingLogin]
+	loginKey []byte // signs pendingLogin; new on each start, which ends logins in progress
 	codes    *ttlMap[cliCode]
 	sessions *ttlMap[string] // session id -> admin email
 	csrf     http.CrossOriginProtection
@@ -259,15 +298,12 @@ func (s *Server) redirectURI(r *http.Request) string {
 }
 
 func (s *Server) startGoogleLogin(w http.ResponseWriter, r *http.Request, p pendingLogin) {
-	state, err := s.auth.logins.put(p)
-	if err != nil {
-		renderMessage(w, http.StatusServiceUnavailable, err.Error())
-		return
-	}
+	p.State = rand.Text()
+	p.Expires = time.Now().Add(loginTTL).Unix()
 	// Binds the login to this browser, so nobody can hand someone else a
 	// callback link that logs them in as the attacker.
-	setCookie(w, stateCookie, state, loginTTL)
-	http.Redirect(w, r, s.auth.google.authCodeURL(state, s.redirectURI(r)), http.StatusFound)
+	setCookie(w, stateCookie, s.auth.sealLogin(p), loginTTL)
+	http.Redirect(w, r, s.auth.google.authCodeURL(p.State, s.redirectURI(r)), http.StatusFound)
 }
 
 // handleCLILogin starts a login for the CLI listening on 127.0.0.1:port. Only
@@ -281,7 +317,7 @@ func (s *Server) handleCLILogin(w http.ResponseWriter, r *http.Request) {
 		renderMessage(w, http.StatusBadRequest, "Invalid login request. Run the wormhole client again.")
 		return
 	}
-	s.startGoogleLogin(w, r, pendingLogin{cliPort: strconv.Itoa(port), cliState: state, challenge: challenge})
+	s.startGoogleLogin(w, r, pendingLogin{CLIPort: strconv.Itoa(port), CLIState: state, Challenge: challenge})
 }
 
 func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
@@ -294,7 +330,7 @@ func (s *Server) handleAdminSetup(w http.ResponseWriter, r *http.Request) {
 		renderMessage(w, http.StatusNotFound, "This setup link is no longer valid. Use the latest link from the server logs.")
 		return
 	}
-	s.startGoogleLogin(w, r, pendingLogin{setupCode: code})
+	s.startGoogleLogin(w, r, pendingLogin{SetupCode: code})
 }
 
 func (s *Server) setupCodeValid(code string) bool {
@@ -311,25 +347,23 @@ func (s *Server) setupPending() bool {
 
 func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	state := q.Get("state")
 
+	var p pendingLogin
 	c, err := r.Cookie(stateCookie)
-	if err != nil || subtle.ConstantTimeCompare([]byte(c.Value), []byte(state)) != 1 {
+	ok := err == nil
+	if ok {
+		p, ok = s.auth.openLogin(c.Value)
+	}
+	if !ok || subtle.ConstantTimeCompare([]byte(p.State), []byte(q.Get("state"))) != 1 {
 		renderMessage(w, http.StatusBadRequest, "This login has expired or was started in another browser. Start again.")
 		return
 	}
 	setCookie(w, stateCookie, "", -1)
 
-	p, ok := s.auth.logins.take(state)
-	if !ok {
-		renderMessage(w, http.StatusBadRequest, "This login has expired. Start again.")
-		return
-	}
-
 	email, err := s.googleEmail(r)
 	if err != nil {
 		s.Logger.Warn("Google login failed", "error", err)
-		if p.cliPort != "" {
+		if p.CLIPort != "" {
 			redirectToCLI(w, r, p, url.Values{"error": {"login_failed"}})
 			return
 		}
@@ -338,9 +372,9 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
-	case p.setupCode != "":
-		s.finishSetup(w, r, p.setupCode, email)
-	case p.cliPort != "":
+	case p.SetupCode != "":
+		s.finishSetup(w, r, p.SetupCode, email)
+	case p.CLIPort != "":
 		s.finishCLILogin(w, r, p, email)
 	default:
 		s.finishAdminLogin(w, r, email)
@@ -356,8 +390,8 @@ func (s *Server) googleEmail(r *http.Request) (string, error) {
 }
 
 func redirectToCLI(w http.ResponseWriter, r *http.Request, p pendingLogin, v url.Values) {
-	v.Set("state", p.cliState)
-	http.Redirect(w, r, "http://127.0.0.1:"+p.cliPort+"/?"+v.Encode(), http.StatusFound)
+	v.Set("state", p.CLIState)
+	http.Redirect(w, r, "http://127.0.0.1:"+p.CLIPort+"/?"+v.Encode(), http.StatusFound)
 }
 
 func (s *Server) finishCLILogin(w http.ResponseWriter, r *http.Request, p pendingLogin, email string) {
@@ -373,7 +407,7 @@ func (s *Server) finishCLILogin(w http.ResponseWriter, r *http.Request, p pendin
 		return
 	}
 
-	code, err := s.auth.codes.put(cliCode{email: email, challenge: p.challenge})
+	code, err := s.auth.codes.put(cliCode{email: email, challenge: p.Challenge})
 	if err != nil {
 		renderMessage(w, http.StatusServiceUnavailable, err.Error())
 		return

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeGoogle stands in for Google's token and userinfo endpoints. The
@@ -166,6 +167,83 @@ func TestCallback_RequiresStateCookie(t *testing.T) {
 	w = serve(s, http.MethodGet, "/auth/callback?state="+loc.Query().Get("state")+"&code=dev@example.com", nil)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("callback without the state cookie: status %d, want 400", w.Code)
+	}
+}
+
+// Logins anyone can start must not use up anything on the server: when they
+// were kept in a capped map, 1000 requests locked everyone out for 10 minutes.
+func TestStartLogin_KeepsNothingOnServer(t *testing.T) {
+	s := newTestServerWithAuth(t, "unused")
+	fakeGoogle(t, s)
+
+	for i := range 2 * maxPending {
+		if w := serve(s, http.MethodGet, "/admin/login", nil); w.Code != http.StatusFound {
+			t.Fatalf("login %d: status %d, want a redirect to Google", i, w.Code)
+		}
+	}
+	// A real login still goes through.
+	q := cliLogin(t, s, "dev@example.com")
+	if q.Get("code") == "" {
+		t.Errorf("CLI login after the flood: redirect query = %v, want a code", q)
+	}
+}
+
+// startCLILogin starts a CLI login and returns the state sent to Google and
+// the state cookie.
+func startCLILogin(t *testing.T, s *Server) (string, *http.Cookie) {
+	t.Helper()
+	start := "/cli/login?" + url.Values{"port": {"4321"}, "state": {"cli-state"}, "challenge": {challengeFor(verifier)}}.Encode()
+	w := serve(s, http.MethodGet, start, nil)
+	loc, _ := url.Parse(w.Header().Get("Location"))
+	return loc.Query().Get("state"), cookie(t, w, stateCookie)
+}
+
+func callback(s *Server, state string, c *http.Cookie) *httptest.ResponseRecorder {
+	return serve(s, http.MethodGet, "/auth/callback?"+url.Values{"state": {state}, "code": {"dev@example.com"}}.Encode(), nil, c)
+}
+
+// The cookie is in the browser's hands, so the server must not trust what it
+// says unless it signed it: an edited port would send the code elsewhere.
+func TestCallback_RejectsEditedCookie(t *testing.T) {
+	s := newTestServerWithAuth(t, "unused")
+	fakeGoogle(t, s)
+	state, c := startCLILogin(t, s)
+
+	payload, sig, _ := strings.Cut(c.Value, ".")
+	data, _ := base64.RawURLEncoding.DecodeString(payload)
+	edited := strings.Replace(string(data), `"port":"4321"`, `"port":"9999"`, 1)
+	if edited == string(data) {
+		t.Fatalf("cookie payload %s has no port to edit", data)
+	}
+	c.Value = base64.RawURLEncoding.EncodeToString([]byte(edited)) + "." + sig
+
+	w := callback(s, state, c)
+	if w.Code != http.StatusBadRequest || strings.Contains(w.Header().Get("Location"), "9999") {
+		t.Errorf("edited cookie: status %d, Location %q, want 400", w.Code, w.Header().Get("Location"))
+	}
+}
+
+func TestCallback_RejectsExpiredLogin(t *testing.T) {
+	s := newTestServerWithAuth(t, "unused")
+	fakeGoogle(t, s)
+
+	c := &http.Cookie{Name: stateCookie, Value: s.auth.sealLogin(pendingLogin{
+		State: "st", Expires: time.Now().Add(-time.Second).Unix(), CLIPort: "4321", CLIState: "cli-state",
+	})}
+	if w := callback(s, "st", c); w.Code != http.StatusBadRequest {
+		t.Errorf("expired login: status %d, want 400", w.Code)
+	}
+}
+
+// A restart ends the logins in progress, as it did when they were in memory.
+func TestCallback_RejectsLoginFromAnotherProcess(t *testing.T) {
+	before := newTestServerWithAuth(t, "unused")
+	state, c := startCLILogin(t, before)
+
+	s := newTestServerWithAuth(t, "unused")
+	fakeGoogle(t, s)
+	if w := callback(s, state, c); w.Code != http.StatusBadRequest {
+		t.Errorf("cookie from another server process: status %d, want 400", w.Code)
 	}
 }
 

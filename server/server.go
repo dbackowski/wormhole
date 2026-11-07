@@ -145,10 +145,12 @@ func (s *Server) setupAuth(cfg *Config) error {
 	s.auth = &auth{
 		store:    store,
 		google:   newGoogleOAuth(cfg.GoogleClientID, cfg.GoogleClientSecret),
-		logins:   newTTLMap[pendingLogin](loginTTL),
+		loginKey: make([]byte, 32),
 		codes:    newTTLMap[cliCode](cliCodeTTL),
 		sessions: newTTLMap[string](sessionTTL),
 	}
+
+	rand.Read(s.auth.loginKey) //nolint:errcheck // never fails, see crypto/rand
 
 	if !hasAdmin {
 		s.auth.setupCode = rand.Text()
