@@ -3,12 +3,14 @@ package server
 import (
 	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
@@ -265,31 +267,32 @@ func TestPrepareRequestHeaders_ForwardedProtoPreserved(t *testing.T) {
 	}
 }
 
-func TestBuildRequestMessage_Normal(t *testing.T) {
+func TestPrepareRequestHeaders_BodyFraming(t *testing.T) {
 	s := newTestServer(t)
-	body := []byte("hello body")
-	r := httptest.NewRequest(http.MethodPost, "/path?q=1", bytes.NewReader(body))
-	r.Host = "foo.localhost"
-	w := httptest.NewRecorder()
+	for _, tc := range []struct {
+		name          string
+		contentLength int64
+		wantLength    string
+		wantEncoding  string
+	}{
+		{"no body", 0, "", ""},
+		{"known length", 5, "5", ""},
+		{"chunked", -1, "", "chunked"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/", nil)
+			r.Host = "foo.localhost"
+			r.ContentLength = tc.contentLength
+			r.Header.Set("Content-Length", "999") // whatever the browser claimed
+			h := http.Header(s.prepareRequestHeaders(r))
 
-	msg, err := s.buildRequestMessage(w, r)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if msg.Type != common.MessageTypeHTTPRequest {
-		t.Errorf("Type = %q, want %q", msg.Type, common.MessageTypeHTTPRequest)
-	}
-	if msg.Method != http.MethodPost {
-		t.Errorf("Method = %q, want %q", msg.Method, http.MethodPost)
-	}
-	if msg.URL != "/path?q=1" {
-		t.Errorf("URL = %q, want %q", msg.URL, "/path?q=1")
-	}
-	if string(msg.Body) != "hello body" {
-		t.Errorf("Body = %q, want %q", msg.Body, "hello body")
-	}
-	if msg.UUID == "" {
-		t.Error("expected non-empty UUID")
+			if got := h.Get("Content-Length"); got != tc.wantLength {
+				t.Errorf("Content-Length = %q, want %q", got, tc.wantLength)
+			}
+			if got := h.Get("Transfer-Encoding"); got != tc.wantEncoding {
+				t.Errorf("Transfer-Encoding = %q, want %q", got, tc.wantEncoding)
+			}
+		})
 	}
 }
 
@@ -321,16 +324,21 @@ func TestWriteTimeoutResponse(t *testing.T) {
 	}
 }
 
-func TestWriteSuccessResponse(t *testing.T) {
+func writeStreamed(s *Server, w *httptest.ResponseRecorder, msg *common.Message, body io.Reader) bool {
+	return s.writeStreamedResponse(w, http.NewResponseController(w), msg, body)
+}
+
+func TestWriteStreamedResponse(t *testing.T) {
 	s := newTestServer(t)
 	w := httptest.NewRecorder()
 	msg := &common.Message{
 		Status:  http.StatusOK,
-		Body:    []byte("success"),
 		Headers: http.Header{"Content-Type": []string{"text/plain"}},
 	}
 
-	s.writeSuccessResponse(w, msg)
+	if !writeStreamed(s, w, msg, strings.NewReader("success")) {
+		t.Error("writeStreamedResponse() = false for a complete body")
+	}
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
@@ -341,78 +349,108 @@ func TestWriteSuccessResponse(t *testing.T) {
 	if ct := w.Header().Get("Content-Type"); ct != "text/plain" {
 		t.Errorf("Content-Type = %q, want %q", ct, "text/plain")
 	}
+	if !w.Flushed {
+		t.Error("response not flushed")
+	}
 }
 
-func TestHandleResponse_MessageReceived(t *testing.T) {
+// A cut body must abort the response: finishing it normally would end a
+// chunked response cleanly, and the browser would take the part for the whole.
+func TestWriteStreamedResponse_CutBodyAborts(t *testing.T) {
+	s := newTestServer(t)
+	w := httptest.NewRecorder()
+	body := io.MultiReader(strings.NewReader("part"), iotest.ErrReader(common.ErrStreamReset))
+
+	defer func() {
+		if r := recover(); r != http.ErrAbortHandler {
+			t.Errorf("recovered %v, want http.ErrAbortHandler", r)
+		}
+		if got := w.Body.String(); got != "part" {
+			t.Errorf("body = %q, want %q", got, "part")
+		}
+	}()
+	writeStreamed(s, w, &common.Message{Status: http.StatusOK}, body)
+}
+
+func never() bool { return false }
+
+func bodySentNow() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
+
+func TestAwaitResponse_MessageReceived(t *testing.T) {
 	s := newTestServer(t)
 	w := httptest.NewRecorder()
 	ch := make(chan *common.Message, 1)
-	ch <- &common.Message{Status: http.StatusOK, Body: []byte("ok")}
+	want := &common.Message{Status: http.StatusOK}
+	ch <- want
 
-	s.handleResponse(context.Background(), w, newConnection(nil, ""), ch)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	if got := s.awaitResponse(context.Background(), w, newConnection(nil, ""), ch, bodySentNow(), never); got != want {
+		t.Errorf("awaitResponse() = %v, want %v", got, want)
 	}
 }
 
-func TestHandleResponse_ChannelClosed(t *testing.T) {
+func TestAwaitResponse_ContextCancelled(t *testing.T) {
 	s := newTestServer(t)
 	w := httptest.NewRecorder()
-	ch := make(chan *common.Message)
-	close(ch)
-
-	s.handleResponse(context.Background(), w, newConnection(nil, ""), ch)
-
-	if w.Code != http.StatusGatewayTimeout {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusGatewayTimeout)
-	}
-}
-
-func TestHandleResponse_ContextCancelled(t *testing.T) {
-	s := newTestServer(t)
-	w := httptest.NewRecorder()
-	ch := make(chan *common.Message)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	s.handleResponse(ctx, w, newConnection(nil, ""), ch)
-
+	if s.awaitResponse(ctx, w, newConnection(nil, ""), make(chan *common.Message), bodySentNow(), never) != nil {
+		t.Error("awaitResponse() returned a response")
+	}
 	if w.Code != http.StatusGatewayTimeout {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusGatewayTimeout)
 	}
 }
 
-func TestHandleResponse_NilMessage(t *testing.T) {
+// The local app cannot answer before it has the body, so a long upload must
+// not use up the time it gets to respond.
+func TestAwaitResponse_TimeoutStartsOnceBodyIsSent(t *testing.T) {
 	s := newTestServer(t)
+	s.responseTimeout = 50 * time.Millisecond
 	w := httptest.NewRecorder()
+	bodySent := make(chan struct{})
 	ch := make(chan *common.Message, 1)
-	ch <- nil
 
-	s.handleResponse(context.Background(), w, newConnection(nil, ""), ch)
+	go func() {
+		time.Sleep(4 * s.responseTimeout) // still uploading
+		ch <- &common.Message{Status: http.StatusOK}
+	}()
+	if s.awaitResponse(context.Background(), w, newConnection(nil, ""), ch, bodySent, never) == nil {
+		t.Fatalf("timed out during the upload with %d", w.Code)
+	}
 
-	if w.Code != http.StatusGatewayTimeout {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusGatewayTimeout)
+	close(bodySent)
+	start := time.Now()
+	if s.awaitResponse(context.Background(), w, newConnection(nil, ""), make(chan *common.Message), bodySent, never) != nil {
+		t.Fatal("awaitResponse() returned a response")
+	}
+	if w.Code != http.StatusGatewayTimeout || time.Since(start) < s.responseTimeout {
+		t.Errorf("status = %d after %v, want %d after %v", w.Code, time.Since(start), http.StatusGatewayTimeout, s.responseTimeout)
 	}
 }
 
-func TestForwardAndWaitForResponse_SendFails(t *testing.T) {
+func TestTunnelHTTP_SendFails(t *testing.T) {
 	s := newTestServer(t)
 	ws, cleanup := newTestWSPair(t)
 	ws.Close()
 	cleanup()
 
 	conn := newConnection(ws, "")
-	msg := &common.Message{UUID: "u1", Type: common.MessageTypeHTTPRequest}
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Host = "foo.localhost"
 	w := httptest.NewRecorder()
 
-	s.forwardAndWaitForResponse(context.Background(), w, conn, msg, "foo")
+	s.tunnelHTTP(w, r, conn, "foo")
 
 	if w.Code != http.StatusBadGateway {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadGateway)
 	}
-	if _, exists := conn.requests.pending["u1"]; exists {
-		t.Error("pending request not cleaned up after send failure")
+	if conn.requests.Len() != 0 || conn.bodies.Count() != 0 {
+		t.Error("request or stream not cleaned up after send failure")
 	}
 }
 
@@ -442,24 +480,33 @@ func TestTunnelRequest_DomainNotFound(t *testing.T) {
 	}
 }
 
-func TestTunnelRequest_BodyTooLarge(t *testing.T) {
-	dialer, _, cleanup := newWSPair(t)
-	defer cleanup()
-
-	s := newTestServer(t)
-	s.connManager.AddConnection("foo", "", dialer) //nolint:errcheck
-	s.connManager.ActivateConnection("foo")
-
-	body := bytes.Repeat([]byte("a"), common.MaxRequestBodySize+1)
-	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
-	r.Host = "foo.localhost"
-	w := httptest.NewRecorder()
-
-	s.tunnelRequest(w, r)
-
-	if w.Code != http.StatusRequestEntityTooLarge {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusRequestEntityTooLarge)
-	}
+// playClient answers the next request on the tunnel the way a client does:
+// headers, then the body on the request's stream. It returns the messages the
+// server sent for the request.
+func playClient(t *testing.T, s *Server, acceptor *websocket.Conn, domain, body string) <-chan []common.Message {
+	t.Helper()
+	got := make(chan []common.Message, 1)
+	go func() {
+		var msgs []common.Message
+		for {
+			var m common.Message
+			if err := acceptor.ReadJSON(&m); err != nil {
+				got <- msgs
+				return
+			}
+			msgs = append(msgs, m)
+			if m.Type == common.MessageTypeStreamClose {
+				break
+			}
+		}
+		conn, _ := s.connManager.GetConnection(domain)
+		id := msgs[0].UUID
+		conn.requests.Deliver(&common.Message{UUID: id, Status: http.StatusOK}) //nolint:errcheck
+		conn.bodies.Deliver(id, []byte(body))
+		conn.bodies.Finish(id)
+		got <- msgs
+	}()
+	return got
 }
 
 func TestTunnelRequest_Success(t *testing.T) {
@@ -469,21 +516,9 @@ func TestTunnelRequest_Success(t *testing.T) {
 	s := newTestServer(t)
 	s.connManager.AddConnection("foo", "", dialer) //nolint:errcheck
 	s.connManager.ActivateConnection("foo")
+	sent := playClient(t, s, acceptor, "foo", "proxied response")
 
-	go func() {
-		var req common.Message
-		if err := acceptor.ReadJSON(&req); err != nil {
-			return
-		}
-		conn, _ := s.connManager.GetConnection("foo")
-		conn.requests.Deliver(&common.Message{ //nolint:errcheck
-			UUID:   req.UUID,
-			Status: http.StatusOK,
-			Body:   []byte("proxied response"),
-		})
-	}()
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("uploaded"))
 	r.Host = "foo.localhost"
 	w := httptest.NewRecorder()
 
@@ -495,9 +530,19 @@ func TestTunnelRequest_Success(t *testing.T) {
 	if body := w.Body.String(); body != "proxied response" {
 		t.Errorf("body = %q, want %q", body, "proxied response")
 	}
+
+	msgs := <-sent
+	if len(msgs) != 3 || msgs[0].Type != common.MessageTypeHTTPRequest || len(msgs[0].Body) != 0 ||
+		msgs[1].Type != common.MessageTypeStreamData || string(msgs[1].Body) != "uploaded" {
+		t.Errorf("sent %+v, want request headers, then the body as stream_data and stream_close", msgs)
+	}
+	conn, _ := s.connManager.GetConnection("foo")
+	if conn.bodies.Count() != 0 {
+		t.Errorf("%d streams left open", conn.bodies.Count())
+	}
 }
 
-func TestWriteSuccessResponse_InvalidStatus(t *testing.T) {
+func TestWriteStreamedResponse_InvalidStatus(t *testing.T) {
 	for _, status := range []int{0, -1, 99, 1000, 99999} {
 		t.Run("status_"+strconv.Itoa(status), func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -505,10 +550,11 @@ func TestWriteSuccessResponse_InvalidStatus(t *testing.T) {
 				Type:    common.MessageTypeHTTPResponse,
 				Status:  status,
 				Headers: map[string][]string{"Content-Length": {"5"}, "Content-Encoding": {"gzip"}},
-				Body:    []byte("hello"),
 			}
 
-			newTestServer(t).writeSuccessResponse(w, msg)
+			if writeStreamed(newTestServer(t), w, msg, strings.NewReader("hello")) {
+				t.Error("writeStreamedResponse() = true for an invalid status")
+			}
 
 			if w.Code != http.StatusBadGateway {
 				t.Errorf("code = %d, want %d", w.Code, http.StatusBadGateway)
@@ -526,12 +572,11 @@ func TestWriteSuccessResponse_InvalidStatus(t *testing.T) {
 	}
 }
 
-func TestWriteSuccessResponse_ValidStatusBoundaries(t *testing.T) {
-	for _, status := range []int{100, 200, 404, 599, 999} {
+func TestWriteStreamedResponse_ValidStatusBoundaries(t *testing.T) {
+	for _, status := range []int{200, 404, 599, 999} {
 		w := httptest.NewRecorder()
-		msg := &common.Message{Status: status, Body: []byte("ok")}
 
-		newTestServer(t).writeSuccessResponse(w, msg)
+		writeStreamed(newTestServer(t), w, &common.Message{Status: status}, strings.NewReader("ok"))
 
 		if w.Code != status {
 			t.Errorf("code = %d, want %d", w.Code, status)
@@ -542,7 +587,7 @@ func TestWriteSuccessResponse_ValidStatusBoundaries(t *testing.T) {
 	}
 }
 
-func TestHandleResponse_ConnectionClosed(t *testing.T) {
+func TestAwaitResponse_ConnectionClosed(t *testing.T) {
 	s := newTestServer(t)
 	w := httptest.NewRecorder()
 	conn := newConnection(nil, "")
@@ -551,7 +596,7 @@ func TestHandleResponse_ConnectionClosed(t *testing.T) {
 	done := make(chan time.Duration, 1)
 	start := time.Now()
 	go func() {
-		s.handleResponse(context.Background(), w, conn, make(chan *common.Message))
+		s.awaitResponse(context.Background(), w, conn, make(chan *common.Message), bodySentNow(), never)
 		done <- time.Since(start)
 	}()
 
@@ -561,7 +606,7 @@ func TestHandleResponse_ConnectionClosed(t *testing.T) {
 			t.Errorf("took %v, want immediate", d)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("handleResponse blocked after the tunnel closed")
+		t.Fatal("awaitResponse blocked after the tunnel closed")
 	}
 
 	if w.Code != http.StatusBadGateway {
@@ -570,7 +615,7 @@ func TestHandleResponse_ConnectionClosed(t *testing.T) {
 }
 
 // A response delivered just before the tunnel closes must win over the 502.
-func TestHandleResponse_ClosedConnectionPrefersBufferedResponse(t *testing.T) {
+func TestAwaitResponse_ClosedConnectionPrefersBufferedResponse(t *testing.T) {
 	s := newTestServer(t)
 	conn := newConnection(nil, "")
 	conn.closeOnce.Do(func() { close(conn.done) })
@@ -578,19 +623,17 @@ func TestHandleResponse_ClosedConnectionPrefersBufferedResponse(t *testing.T) {
 	for range 50 {
 		w := httptest.NewRecorder()
 		ch := make(chan *common.Message, 1)
-		ch <- &common.Message{Status: http.StatusOK, Body: []byte("ok")}
+		ch <- &common.Message{Status: http.StatusOK}
 
-		s.handleResponse(context.Background(), w, conn, ch)
-
-		if w.Code != http.StatusOK {
-			t.Fatalf("status = %d, want %d (buffered response lost to close race)", w.Code, http.StatusOK)
+		if s.awaitResponse(context.Background(), w, conn, ch, bodySentNow(), never) == nil {
+			t.Fatalf("status = %d, want the buffered response (lost to close race)", w.Code)
 		}
 	}
 }
 
-// End-to-end: a request in flight when the tunnel drops must fail fast with 502
-// instead of parking until RequestTimeoutBuffer expires.
-func TestForwardAndWaitForResponse_ClientDisconnects(t *testing.T) {
+// A request in flight when the tunnel drops must fail fast with 502 instead
+// of parking until the response timeout expires.
+func TestTunnelHTTP_ClientDisconnects(t *testing.T) {
 	dialer, acceptor, cleanup := newWSPair(t)
 	defer cleanup()
 
@@ -608,8 +651,7 @@ func TestForwardAndWaitForResponse_ClientDisconnects(t *testing.T) {
 	done := make(chan time.Duration, 1)
 	start := time.Now()
 	go func() {
-		msg := &common.Message{Type: common.MessageTypeHTTPRequest, UUID: "uuid-1", Method: http.MethodGet, URL: "/"}
-		s.forwardAndWaitForResponse(r.Context(), w, connection, msg, "foo")
+		s.tunnelHTTP(w, r, connection, "foo")
 		done <- time.Since(start)
 	}()
 
@@ -626,7 +668,7 @@ func TestForwardAndWaitForResponse_ClientDisconnects(t *testing.T) {
 			t.Errorf("responded after %v, want immediate", d)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatalf("still waiting after 5s (RequestTimeoutBuffer is %v)", common.RequestTimeoutBuffer)
+		t.Fatalf("still waiting after 5s (response timeout is %v)", s.responseTimeout)
 	}
 
 	if w.Code != http.StatusBadGateway {
@@ -649,27 +691,29 @@ func TestRequestLogging_LeavesOutSecrets(t *testing.T) {
 			"Authorization": {"Bearer HEADER-SECRET"},
 			"Cookie":        {"sessionid=COOKIE-SECRET"},
 		},
-		Body: []byte(`{"password":"BODY-SECRET"}`),
 	})
 
 	connection := newConnection(nil, "")
-	_, cancel := connection.requests.Register(context.Background(), "req-1")
-	defer cancel()
-	err := s.newTunnelHandlers("myapp", connection).Dispatch(&common.Message{
-		Type: common.MessageTypeHTTPResponse, UUID: "req-1", Status: 200,
-		Body: []byte(`{"session":"RESPONSE-SECRET"}`),
-	})
-	if err != nil {
-		t.Fatalf("Dispatch() error = %v", err)
+	_, stop := connection.requests.Register("req-1")
+	defer stop()
+	connection.bodies.Open("req-1", nil) //nolint:errcheck
+	handlers := s.newTunnelHandlers("myapp", connection)
+	for _, m := range []*common.Message{
+		{Type: common.MessageTypeHTTPResponse, UUID: "req-1", Status: 200},
+		{Type: common.MessageTypeStreamData, UUID: "req-1", Body: []byte(`{"session":"RESPONSE-SECRET"}`)},
+	} {
+		if err := handlers.Dispatch(m); err != nil {
+			t.Fatalf("Dispatch() error = %v", err)
+		}
 	}
 
 	out := logs.String()
-	for _, secret := range []string{"QUERY-SECRET", "HEADER-SECRET", "COOKIE-SECRET", "BODY-SECRET", "RESPONSE-SECRET"} {
+	for _, secret := range []string{"QUERY-SECRET", "HEADER-SECRET", "COOKIE-SECRET", "RESPONSE-SECRET"} {
 		if strings.Contains(out, secret) {
 			t.Errorf("log contains %s:\n%s", secret, out)
 		}
 	}
-	for _, want := range []string{"path=/reset", "Authorization", "body_bytes=26", "HTTP response details"} {
+	for _, want := range []string{"path=/reset", "Authorization", "HTTP response received"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("log missing %q:\n%s", want, out)
 		}

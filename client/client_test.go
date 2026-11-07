@@ -16,133 +16,51 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func TestResolveProxyResponse_Success(t *testing.T) {
-	resp := &ProxyResponse{
-		StatusCode: http.StatusOK,
-		Headers:    map[string][]string{"Content-Type": {"text/plain"}},
-		Body:       []byte("hello"),
-	}
-
-	result := resolveProxyResponse(resp, nil)
-
-	if result.StatusCode != http.StatusOK {
-		t.Errorf("StatusCode = %d, want %d", result.StatusCode, http.StatusOK)
-	}
-	if string(result.Body) != "hello" {
-		t.Errorf("Body = %q, want %q", string(result.Body), "hello")
-	}
-	if result.Headers["Content-Type"][0] != "text/plain" {
-		t.Errorf("Headers Content-Type = %q, want %q", result.Headers["Content-Type"][0], "text/plain")
-	}
-}
-
-func TestResolveProxyResponse_Error(t *testing.T) {
-	result := resolveProxyResponse(nil, errors.New("connection refused"))
-
-	if result.StatusCode != http.StatusBadGateway {
-		t.Errorf("StatusCode = %d, want %d", result.StatusCode, http.StatusBadGateway)
-	}
-	if string(result.Body) != http.StatusText(http.StatusBadGateway) {
-		t.Errorf("Body = %q, want %q", string(result.Body), http.StatusText(http.StatusBadGateway))
-	}
-	if result.Headers != nil {
-		t.Errorf("Headers = %v, want nil", result.Headers)
-	}
-}
-
-func TestResolveProxyResponse_ResponseTooLarge(t *testing.T) {
-	result := resolveProxyResponse(nil, ErrResponseTooLarge)
-
-	if result.StatusCode != http.StatusBadGateway {
-		t.Errorf("StatusCode = %d, want %d", result.StatusCode, http.StatusBadGateway)
-	}
-	if string(result.Body) != "response body too large" {
-		t.Errorf("Body = %q, want %q", string(result.Body), "response body too large")
-	}
-}
-
-func TestResolveProxyResponse_ErrorIgnoresResponse(t *testing.T) {
-	resp := &ProxyResponse{
-		StatusCode: http.StatusOK,
-		Body:       []byte("this should be ignored"),
-	}
-
-	result := resolveProxyResponse(resp, errors.New("some error"))
-
-	if result.StatusCode != http.StatusBadGateway {
-		t.Errorf("StatusCode = %d, want %d", result.StatusCode, http.StatusBadGateway)
-	}
-}
-
-func TestSendResponse(t *testing.T) {
+// A response the client makes up arrives the way a relayed one does: headers,
+// then its body on the request's stream.
+func TestSendWholeResponse(t *testing.T) {
 	clientConn, wsServer, serverConn := setupTestWebsocket(t)
 	defer wsServer.Close()
 	defer clientConn.Close()
 	defer serverConn.Close()
 
-	client := &Client{
-		domain: "myapp",
-		Conn:   clientConn,
-	}
+	client := &Client{domain: "myapp", Conn: clientConn}
 
-	msg := &common.Message{
-		UUID:   "resp-uuid-1",
-		Method: "POST",
-		URL:    "/api/data",
-	}
-
-	resolved := ProxyResponse{
-		StatusCode: http.StatusCreated,
-		Headers:    map[string][]string{"X-Custom": {"value"}},
-		Body:       []byte("created"),
-	}
-
-	err := client.sendResponse(msg, resolved)
-	if err != nil {
-		t.Fatalf("sendResponse() error = %v, want nil", err)
+	if err := client.sendWholeResponse("resp-uuid-1", http.StatusServiceUnavailable); err != nil {
+		t.Fatalf("sendWholeResponse() error = %v, want nil", err)
 	}
 
 	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	var received common.Message
-	if err := serverConn.ReadJSON(&received); err != nil {
-		t.Fatalf("failed to read response: %v", err)
+	var got []common.Message
+	for range 3 {
+		var m common.Message
+		if err := serverConn.ReadJSON(&m); err != nil {
+			t.Fatalf("failed to read response: %v", err)
+		}
+		got = append(got, m)
 	}
 
-	if received.Type != common.MessageTypeHTTPResponse {
-		t.Errorf("Type = %q, want %q", received.Type, common.MessageTypeHTTPResponse)
+	if got[0].Type != common.MessageTypeHTTPResponse || got[0].UUID != "resp-uuid-1" || got[0].Status != http.StatusServiceUnavailable {
+		t.Errorf("first message = %+v, want http_response 503 for resp-uuid-1", got[0])
 	}
-	if received.UUID != "resp-uuid-1" {
-		t.Errorf("UUID = %q, want %q", received.UUID, "resp-uuid-1")
+	if got[1].Type != common.MessageTypeStreamData || string(got[1].Body) != http.StatusText(http.StatusServiceUnavailable) {
+		t.Errorf("second message = %+v, want the status text as stream_data", got[1])
 	}
-	if received.Method != "POST" {
-		t.Errorf("Method = %q, want %q", received.Method, "POST")
-	}
-	if received.URL != "/api/data" {
-		t.Errorf("URL = %q, want %q", received.URL, "/api/data")
-	}
-	if received.Status != http.StatusCreated {
-		t.Errorf("Status = %d, want %d", received.Status, http.StatusCreated)
-	}
-	if string(received.Body) != "created" {
-		t.Errorf("Body = %q, want %q", string(received.Body), "created")
+	if got[2].Type != common.MessageTypeStreamClose || got[2].UUID != "resp-uuid-1" {
+		t.Errorf("third message = %+v, want stream_close", got[2])
 	}
 }
 
-func TestSendResponse_ClosedConnection(t *testing.T) {
+func TestSendWholeResponse_ClosedConnection(t *testing.T) {
 	clientConn, wsServer, serverConn := setupTestWebsocket(t)
 	defer wsServer.Close()
 	defer serverConn.Close()
 
-	client := &Client{
-		domain: "test",
-		Conn:   clientConn,
-	}
-
+	client := &Client{domain: "test", Conn: clientConn}
 	clientConn.Close()
 
-	err := client.sendResponse(&common.Message{UUID: "x"}, ProxyResponse{StatusCode: 200})
-	if err == nil {
-		t.Error("sendResponse() on closed connection should return error")
+	if err := client.sendWholeResponse("x", http.StatusOK); err == nil {
+		t.Error("sendWholeResponse() on closed connection should return error")
 	}
 }
 
@@ -492,14 +410,20 @@ func TestHandleConnection_RequestsRunConcurrently(t *testing.T) {
 	}
 
 	serverConn.SetReadDeadline(time.Now().Add(readDeadline))
-	for i := range numRequests {
+	// Each response is its headers, then its body's stream messages, which
+	// concurrent requests interleave.
+	for i := 0; i < numRequests; {
 		var resp common.Message
 		if err := serverConn.ReadJSON(&resp); err != nil {
 			t.Fatalf("read response %d: %v", i, err)
 		}
+		if resp.Type != common.MessageTypeHTTPResponse {
+			continue
+		}
 		if resp.Status != http.StatusOK {
 			t.Errorf("response %d status = %d, want %d", i, resp.Status, http.StatusOK)
 		}
+		i++
 	}
 	elapsed := time.Since(start)
 
@@ -591,7 +515,7 @@ func reconnectTestServer(t *testing.T) (*httptest.Server, string, *int32) {
 	upgrader := websocket.Upgrader{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := upgrader.Upgrade(w, r, http.Header{common.ProtocolHeader: {common.ProtocolVersion}})
 		if err != nil {
 			return
 		}

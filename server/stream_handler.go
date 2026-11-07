@@ -30,7 +30,7 @@ func (s *Server) tunnelUpgrade(w http.ResponseWriter, r *http.Request, connectio
 
 	// Opened before the request is sent: the client may relay the app's first
 	// frames right behind its 101, before w is hijacked.
-	stream, err := connection.streams.Open(id)
+	stream, err := connection.streams.Open(id, connection.SendMessage)
 	if err != nil {
 		http.Error(w, "too many open WebSocket connections", http.StatusServiceUnavailable)
 		return
@@ -41,14 +41,14 @@ func (s *Server) tunnelUpgrade(w http.ResponseWriter, r *http.Request, connectio
 	// this is a no-op once it has run.
 	defer func() {
 		if connection.streams.Abort(id) {
-			connection.SendMessage(&common.Message{Type: common.MessageTypeStreamClose, UUID: id}) //nolint:errcheck
+			connection.SendMessage(&common.Message{Type: common.MessageTypeStreamReset, UUID: id}) //nolint:errcheck
 		}
 	}()
 
 	s.logRequest(domain, requestMsg)
 
-	responseChan, cancelCleanup := connection.requests.Register(r.Context(), id)
-	defer cancelCleanup()
+	responseChan, stopWaiting := connection.requests.Register(id)
+	defer stopWaiting()
 
 	if err := connection.SendMessage(requestMsg); err != nil {
 		s.Logger.Debug("failed to forward upgrade to tunnel client", "domain", domain, "uuid", id, "error", err)
@@ -56,12 +56,16 @@ func (s *Server) tunnelUpgrade(w http.ResponseWriter, r *http.Request, connectio
 		return
 	}
 
-	responseMsg := s.awaitResponse(r.Context(), w, connection, responseChan)
+	noBody := make(chan struct{})
+	close(noBody)
+	responseMsg := s.awaitResponse(r.Context(), w, connection, responseChan, noBody, func() bool { return false })
 	if responseMsg == nil {
 		return
 	}
+	// A refused handshake is an ordinary response, its body streamed on the
+	// same UUID.
 	if responseMsg.Status != http.StatusSwitchingProtocols {
-		s.writeSuccessResponse(w, responseMsg)
+		s.writeStreamedResponse(w, http.NewResponseController(w), responseMsg, stream)
 		return
 	}
 
@@ -97,6 +101,6 @@ func (s *Server) tunnelUpgrade(w http.ResponseWriter, r *http.Request, connectio
 		io.Closer
 	}{brw.Reader, conn, conn}
 
-	connection.streams.Pipe(id, stream, browser, connection.SendMessage)
+	connection.streams.Pipe(id, stream, browser)
 	s.Logger.Info("WebSocket closed", "domain", domain, "uuid", id)
 }

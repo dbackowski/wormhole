@@ -211,8 +211,9 @@ func TestTunnelUpgrade_RejectedHandshakePassesThrough(t *testing.T) {
 		Type:   common.MessageTypeHTTPResponse,
 		UUID:   req.UUID,
 		Status: http.StatusForbidden,
-		Body:   []byte("nope"),
 	})
+	tunnel.WriteJSON(common.Message{Type: common.MessageTypeStreamData, UUID: req.UUID, Body: []byte("nope")}) //nolint:errcheck
+	tunnel.WriteJSON(common.Message{Type: common.MessageTypeStreamClose, UUID: req.UUID})                      //nolint:errcheck
 
 	resp, err := http.ReadResponse(br, nil)
 	if err != nil {
@@ -228,7 +229,7 @@ func TestTunnelUpgrade_TooManyStreams(t *testing.T) {
 	s, srv, _ := startTunnel(t)
 	connection, _ := s.connManager.GetConnection("foo")
 	for i := range common.MaxStreamsPerTunnel {
-		connection.streams.Open(fmt.Sprint("busy-", i)) //nolint:errcheck
+		connection.streams.Open(fmt.Sprint("busy-", i), nil) //nolint:errcheck
 	}
 
 	_, br := dialBrowser(t, srv)

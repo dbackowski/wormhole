@@ -101,8 +101,51 @@ func newTestClient(t *testing.T, proxyServerURL string) (*Client, *mockDisplay, 
 		WebUIPort: 4040,
 		redraw:    make(chan struct{}, 1),
 	}
+	client.setupMessageHandlers()
 
 	return client, display, wsServer, serverConn
+}
+
+// runHTTPRequest handles msg the way the message loop does, its body arriving
+// on the request's stream as the server would send it.
+func runHTTPRequest(t *testing.T, client *Client, msg *common.Message) {
+	t.Helper()
+	st, err := client.bodies.Open(msg.UUID, client.safeWriteJSON)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	client.bodies.Deliver(msg.UUID, msg.Body)
+	client.bodies.Finish(msg.UUID)
+	client.handleHTTPRequest(msg, st)
+}
+
+// readTunnelResponse reads what the server would: the response headers, then
+// the body up to stream_close.
+func readTunnelResponse(t *testing.T, serverConn *websocket.Conn) (common.Message, []byte) {
+	t.Helper()
+	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var head common.Message
+	if err := serverConn.ReadJSON(&head); err != nil {
+		t.Fatalf("failed to read response: %v", err)
+	}
+	var body []byte
+	for {
+		var m common.Message
+		if err := serverConn.ReadJSON(&m); err != nil {
+			t.Fatalf("failed to read response body: %v", err)
+		}
+		if m.UUID != head.UUID {
+			t.Fatalf("message %+v for another request in the middle of a body", m)
+		}
+		switch m.Type {
+		case common.MessageTypeStreamData:
+			body = append(body, m.Body...)
+		case common.MessageTypeStreamClose:
+			return head, body
+		default:
+			t.Fatalf("unexpected %q in a response body", m.Type)
+		}
+	}
 }
 
 func TestHandleHTTPRequest(t *testing.T) {
@@ -130,16 +173,9 @@ func TestHandleHTTPRequest(t *testing.T) {
 		},
 	}
 
-	err := client.handleHTTPRequest(msg)
-	if err != nil {
-		t.Fatalf("handleHTTPRequest() error = %v, want nil", err)
-	}
+	runHTTPRequest(t, client, msg)
 
-	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	var responseMsg common.Message
-	if err := serverConn.ReadJSON(&responseMsg); err != nil {
-		t.Fatalf("failed to read response message: %v", err)
-	}
+	responseMsg, responseBody := readTunnelResponse(t, serverConn)
 	if responseMsg.Type != common.MessageTypeHTTPResponse {
 		t.Errorf("response Type = %q, want %q", responseMsg.Type, common.MessageTypeHTTPResponse)
 	}
@@ -149,8 +185,8 @@ func TestHandleHTTPRequest(t *testing.T) {
 	if responseMsg.Status != http.StatusOK {
 		t.Errorf("response Status = %d, want %d", responseMsg.Status, http.StatusOK)
 	}
-	if string(responseMsg.Body) != "proxy response" {
-		t.Errorf("response Body = %q, want %q", string(responseMsg.Body), "proxy response")
+	if string(responseBody) != "proxy response" {
+		t.Errorf("response Body = %q, want %q", string(responseBody), "proxy response")
 	}
 
 	logs := client.history.GetRecent(10)
@@ -198,21 +234,14 @@ func TestHandleHTTPRequestProxyError(t *testing.T) {
 		},
 	}
 
-	err := client.handleHTTPRequest(msg)
-	if err != nil {
-		t.Fatalf("handleHTTPRequest() error = %v, want nil (proxy errors return 502)", err)
-	}
+	runHTTPRequest(t, client, msg)
 
-	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	var responseMsg common.Message
-	if err := serverConn.ReadJSON(&responseMsg); err != nil {
-		t.Fatalf("failed to read response: %v", err)
-	}
+	responseMsg, responseBody := readTunnelResponse(t, serverConn)
 	if responseMsg.Status != http.StatusBadGateway {
 		t.Errorf("response Status = %d, want %d", responseMsg.Status, http.StatusBadGateway)
 	}
-	if string(responseMsg.Body) != http.StatusText(http.StatusBadGateway) {
-		t.Errorf("response Body = %q, want %q", string(responseMsg.Body), http.StatusText(http.StatusBadGateway))
+	if string(responseBody) != http.StatusText(http.StatusBadGateway) {
+		t.Errorf("response Body = %q, want %q", string(responseBody), http.StatusText(http.StatusBadGateway))
 	}
 
 	logs := client.history.GetRecent(10)
@@ -240,8 +269,9 @@ func TestHandleHTTPRequestPreservesRequestDetails(t *testing.T) {
 	defer serverConn.Close()
 
 	reqHeaders := map[string][]string{
-		"Host":         {"test.example.com"},
-		"Content-Type": {"application/json"},
+		"Host":           {"test.example.com"},
+		"Content-Type":   {"application/json"},
+		"Content-Length": {"15"},
 	}
 	reqBody := []byte(`{"name":"test"}`)
 
@@ -254,14 +284,9 @@ func TestHandleHTTPRequestPreservesRequestDetails(t *testing.T) {
 		Body:    reqBody,
 	}
 
-	err := client.handleHTTPRequest(msg)
-	if err != nil {
-		t.Fatalf("handleHTTPRequest() error = %v, want nil", err)
-	}
+	runHTTPRequest(t, client, msg)
 
-	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	var responseMsg common.Message
-	serverConn.ReadJSON(&responseMsg)
+	readTunnelResponse(t, serverConn)
 
 	logs := client.history.GetRecent(10)
 	if len(logs) != 1 {
@@ -310,19 +335,15 @@ func TestDispatchHTTPRequestSheds503WhenSaturated(t *testing.T) {
 		t.Fatal("dispatchHTTPRequest blocked while saturated; expected immediate 503")
 	}
 
-	serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	var responseMsg common.Message
-	if err := serverConn.ReadJSON(&responseMsg); err != nil {
-		t.Fatalf("failed to read response: %v", err)
-	}
+	responseMsg, responseBody := readTunnelResponse(t, serverConn)
 	if responseMsg.UUID != "saturated-uuid" {
 		t.Errorf("response UUID = %q, want %q", responseMsg.UUID, "saturated-uuid")
 	}
 	if responseMsg.Status != http.StatusServiceUnavailable {
 		t.Errorf("response Status = %d, want %d", responseMsg.Status, http.StatusServiceUnavailable)
 	}
-	if string(responseMsg.Body) != http.StatusText(http.StatusServiceUnavailable) {
-		t.Errorf("response Body = %q, want %q", string(responseMsg.Body), http.StatusText(http.StatusServiceUnavailable))
+	if string(responseBody) != http.StatusText(http.StatusServiceUnavailable) {
+		t.Errorf("response Body = %q, want %q", string(responseBody), http.StatusText(http.StatusServiceUnavailable))
 	}
 
 	// A shed request never reaches the proxy, so it should not be logged.
@@ -427,11 +448,7 @@ func TestRequestsCompleteWhileTerminalIsFrozen(t *testing.T) {
 			t.Fatalf("request %d: dispatchHTTPRequest() error = %v", i, err)
 		}
 
-		serverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		var resp common.Message
-		if err := serverConn.ReadJSON(&resp); err != nil {
-			t.Fatalf("request %d: failed to read response: %v", i, err)
-		}
+		resp, _ := readTunnelResponse(t, serverConn)
 		if resp.Status != http.StatusOK {
 			t.Fatalf("request %d: status = %d, want %d", i, resp.Status, http.StatusOK)
 		}

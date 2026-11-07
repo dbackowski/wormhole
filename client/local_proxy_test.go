@@ -1,7 +1,10 @@
 package client
 
 import (
-	"errors"
+	"bytes"
+	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,12 +32,30 @@ func TestNewLocalProxy(t *testing.T) {
 	if lp.tunnelURL != "https://tunnel.example.com" {
 		t.Errorf("tunnelURL = %q, want %q", lp.tunnelURL, "https://tunnel.example.com")
 	}
-	if lp.httpClient == nil {
-		t.Fatal("httpClient is nil")
+	// An overall timeout would cut off streamed bodies; only the wait for
+	// response headers is bounded.
+	if lp.client.Timeout != 0 {
+		t.Errorf("Timeout = %v, want none", lp.client.Timeout)
 	}
-	if lp.httpClient.Timeout != 5*time.Second {
-		t.Errorf("Timeout = %v, want %v", lp.httpClient.Timeout, 5*time.Second)
+	if got := lp.client.Transport.(*http.Transport).ResponseHeaderTimeout; got != 5*time.Second {
+		t.Errorf("ResponseHeaderTimeout = %v, want %v", got, 5*time.Second)
 	}
+}
+
+// forward calls Forward with msg.Body as the body, the way the client feeds
+// it from the request's stream, and reads the whole response body.
+func forward(t *testing.T, lp *LocalProxy, msg *common.Message) (*http.Response, []byte, error) {
+	t.Helper()
+	resp, err := lp.Forward(context.Background(), msg, bytes.NewReader(msg.Body))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading response body: %v", err)
+	}
+	return resp, body, nil
 }
 
 func TestForward(t *testing.T) {
@@ -76,7 +97,7 @@ func TestForward(t *testing.T) {
 			request: &common.Message{
 				Method:  "POST",
 				URL:     "/submit",
-				Headers: map[string][]string{"Host": {"example.com"}},
+				Headers: map[string][]string{"Host": {"example.com"}, "Content-Length": {"12"}},
 				Body:    []byte("request-body"),
 			},
 			wantStatusCode: http.StatusCreated,
@@ -173,7 +194,7 @@ func TestForward(t *testing.T) {
 			request: &common.Message{
 				Method:  "PUT",
 				URL:     "/resource/1",
-				Headers: map[string][]string{"Host": {"example.com"}},
+				Headers: map[string][]string{"Host": {"example.com"}, "Content-Length": {"11"}},
 				Body:    []byte("update-data"),
 			},
 			wantStatusCode: http.StatusOK,
@@ -201,7 +222,7 @@ func TestForward(t *testing.T) {
 			defer server.Close()
 
 			lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
-			resp, err := lp.Forward(tt.request)
+			resp, body, err := forward(t, lp, tt.request)
 
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("Forward() error = %v, wantErr %v", err, tt.wantErr)
@@ -217,8 +238,8 @@ func TestForward(t *testing.T) {
 			if resp.StatusCode != tt.wantStatusCode {
 				t.Errorf("StatusCode = %d, want %d", resp.StatusCode, tt.wantStatusCode)
 			}
-			if tt.wantBody != "" && string(resp.Body) != tt.wantBody {
-				t.Errorf("Body = %q, want %q", string(resp.Body), tt.wantBody)
+			if tt.wantBody != "" && string(body) != tt.wantBody {
+				t.Errorf("Body = %q, want %q", body, tt.wantBody)
 			}
 		})
 	}
@@ -231,7 +252,7 @@ func TestForwardRedirectNotFollowed(t *testing.T) {
 	defer redirectServer.Close()
 
 	lp := NewLocalProxy(mustParseURL(t, redirectServer.URL), "https://tunnel.example.com", 5*time.Second)
-	resp, err := lp.Forward(&common.Message{
+	resp, _, err := forward(t, lp, &common.Message{
 		Method:  "GET",
 		URL:     "/original",
 		Headers: map[string][]string{"Host": {"example.com"}},
@@ -243,57 +264,81 @@ func TestForwardRedirectNotFollowed(t *testing.T) {
 	if resp.StatusCode != http.StatusFound {
 		t.Errorf("StatusCode = %d, want %d (redirect should not be followed)", resp.StatusCode, http.StatusFound)
 	}
-	if loc := http.Header(resp.Headers).Get("Location"); loc != "/redirected" {
+	if loc := resp.Header.Get("Location"); loc != "/redirected" {
 		t.Errorf("Location header = %q, want %q", loc, "/redirected")
 	}
 }
 
-func TestForwardResponseTooLarge(t *testing.T) {
+// The server says how the body is framed; the local app must see the same.
+func TestForwardBodyFraming(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(make([]byte, 101)) // one byte over the limit set below
+		body, _ := io.ReadAll(r.Body)
+		fmt.Fprintf(w, "%d %v %s", r.ContentLength, r.TransferEncoding, body)
 	}))
 	defer server.Close()
-
 	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
-	lp.maxResponseBytes = 100
 
-	_, err := lp.Forward(&common.Message{
-		Method:  "GET",
-		URL:     "/big",
-		Headers: map[string][]string{"Host": {"example.com"}},
-	})
-
-	if !errors.Is(err, ErrResponseTooLarge) {
-		t.Fatalf("Forward() error = %v, want ErrResponseTooLarge", err)
+	for _, tc := range []struct {
+		name    string
+		headers map[string][]string
+		body    string
+		want    string
+	}{
+		{"no body", map[string][]string{}, "", "0 [] "},
+		{"known length", map[string][]string{"Content-Length": {"5"}}, "hello", "5 [] hello"},
+		{"chunked", map[string][]string{"Transfer-Encoding": {"chunked"}}, "hello", "-1 [chunked] hello"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.headers["Host"] = []string{"example.com"}
+			_, body, err := forward(t, lp, &common.Message{Method: "POST", URL: "/", Headers: tc.headers, Body: []byte(tc.body)})
+			if err != nil {
+				t.Fatalf("Forward() error = %v", err)
+			}
+			if string(body) != tc.want {
+				t.Errorf("local app saw %q, want %q", body, tc.want)
+			}
+		})
 	}
 }
 
-func TestForwardResponseAtLimit(t *testing.T) {
+// A body may take longer than the timeout, which only bounds the wait for
+// the response headers: an event stream would be cut off otherwise.
+func TestForwardStreamsPastTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(make([]byte, 100)) // exactly at the limit is allowed
+		w.Write([]byte("first ")) //nolint:errcheck
+		w.(http.Flusher).Flush()
+		time.Sleep(300 * time.Millisecond)
+		w.Write([]byte("second")) //nolint:errcheck
 	}))
 	defer server.Close()
 
-	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
-	lp.maxResponseBytes = 100
-
-	resp, err := lp.Forward(&common.Message{
-		Method:  "GET",
-		URL:     "/exact",
-		Headers: map[string][]string{"Host": {"example.com"}},
-	})
-
+	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 100*time.Millisecond)
+	_, body, err := forward(t, lp, &common.Message{Method: "GET", URL: "/", Headers: map[string][]string{"Host": {"example.com"}}})
 	if err != nil {
-		t.Fatalf("Forward() unexpected error: %v", err)
+		t.Fatalf("Forward() error = %v", err)
 	}
-	if len(resp.Body) != 100 {
-		t.Errorf("Body length = %d, want 100", len(resp.Body))
+	if string(body) != "first second" {
+		t.Errorf("body = %q, want %q", body, "first second")
+	}
+}
+
+func TestForwardResponseHeaderTimeout(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer server.Close()
+	defer close(release)
+
+	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 100*time.Millisecond)
+	if _, _, err := forward(t, lp, &common.Message{Method: "GET", URL: "/", Headers: map[string][]string{"Host": {"example.com"}}}); err == nil {
+		t.Fatal("Forward() succeeded without response headers")
 	}
 }
 
 func TestForwardRequestToUnreachableServer(t *testing.T) {
 	lp := NewLocalProxy(mustParseURL(t, "http://127.0.0.1:1"), "https://tunnel.example.com", 1*time.Second)
-	_, err := lp.Forward(&common.Message{
+	_, _, err := forward(t, lp, &common.Message{
 		Method:  "GET",
 		URL:     "/path",
 		Headers: map[string][]string{"Host": {"example.com"}},
@@ -317,7 +362,7 @@ func TestForwardResponseHeaders(t *testing.T) {
 	defer server.Close()
 
 	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
-	resp, err := lp.Forward(&common.Message{
+	resp, _, err := forward(t, lp, &common.Message{
 		Method:  "GET",
 		URL:     "/",
 		Headers: map[string][]string{"Host": {"example.com"}},
@@ -326,7 +371,7 @@ func TestForwardResponseHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Forward() unexpected error: %v", err)
 	}
-	headers := http.Header(resp.Headers)
+	headers := resp.Header
 	if got := headers.Get("X-Custom-Header"); got != "custom-value" {
 		t.Errorf("X-Custom-Header = %q, want %q", got, "custom-value")
 	}
@@ -345,7 +390,7 @@ func TestForwardStripsHopByHopResponseHeaders(t *testing.T) {
 	defer server.Close()
 
 	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
-	resp, err := lp.Forward(&common.Message{
+	resp, _, err := forward(t, lp, &common.Message{
 		Method:  "GET",
 		URL:     "/",
 		Headers: map[string][]string{"Host": {"example.com"}},
@@ -354,7 +399,7 @@ func TestForwardStripsHopByHopResponseHeaders(t *testing.T) {
 		t.Fatalf("Forward() unexpected error: %v", err)
 	}
 
-	headers := http.Header(resp.Headers)
+	headers := resp.Header
 	if got := headers.Get("Keep-Alive"); got != "" {
 		t.Errorf("Keep-Alive should have been stripped, got %q", got)
 	}
@@ -372,7 +417,7 @@ func TestForwardURLPath(t *testing.T) {
 	defer server.Close()
 
 	lp := NewLocalProxy(mustParseURL(t, server.URL), "https://tunnel.example.com", 5*time.Second)
-	_, err := lp.Forward(&common.Message{
+	_, _, err := forward(t, lp, &common.Message{
 		Method:  "GET",
 		URL:     "/api/v1/users",
 		Headers: map[string][]string{"Host": {"example.com"}},

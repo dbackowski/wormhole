@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"strings"
@@ -25,6 +26,13 @@ func isClientRegistration(r *http.Request) bool {
 }
 
 func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
+	// First, so that an old client is told to upgrade rather than sent to log
+	// in again. Clients up to v1.0.9 send no version.
+	if r.Header.Get(common.ProtocolHeader) != common.ProtocolVersion {
+		http.Error(w, "this wormhole client does not match the server's version; upgrade the client", http.StatusUpgradeRequired)
+		return
+	}
+
 	email, ok := s.authenticateRequest(r)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -53,7 +61,7 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := upgrader.Upgrade(w, r, http.Header{common.ProtocolHeader: {common.ProtocolVersion}})
 	if err != nil {
 		s.Logger.Error("WebSocket upgrade failed", "error", err, "remote_addr", r.RemoteAddr)
 		return
@@ -109,7 +117,8 @@ func disconnectReason(err error) string {
 }
 
 func (s *Server) newTunnelHandlers(domain string, connection *Connection) common.Handlers {
-	return common.Handlers{
+	handlers := common.StreamHandlers(connection.bodies, connection.streams)
+	maps.Copy(handlers, common.Handlers{
 		common.MessageTypeHTTPResponse: func(msg *common.Message) error {
 			if err := connection.requests.Deliver(msg); err != nil {
 				// The waiter is gone: the request timed out, or the browser hung up.
@@ -120,18 +129,10 @@ func (s *Server) newTunnelHandlers(domain string, connection *Connection) common
 				return nil
 			}
 			s.Logger.Info("HTTP response received", "domain", domain, "uuid", msg.UUID, "status", msg.Status)
-			s.Logger.Debug("HTTP response details", "uuid", msg.UUID, "body_bytes", len(msg.Body))
 			return nil
 		},
-		common.MessageTypeStreamData: func(msg *common.Message) error {
-			connection.streams.Deliver(msg.UUID, msg.Body)
-			return nil
-		},
-		common.MessageTypeStreamClose: func(msg *common.Message) error {
-			connection.streams.Finish(msg.UUID)
-			return nil
-		},
-	}
+	})
+	return handlers
 }
 
 func (s *Server) handleWebSocketConnection(domain string, remoteAddr string, connection *Connection) {

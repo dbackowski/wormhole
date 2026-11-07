@@ -13,7 +13,8 @@ type Connection struct {
 	conn      *websocket.Conn
 	session   string
 	requests  *PendingRequests
-	streams   *common.Streams
+	streams   *common.Streams // WebSockets
+	bodies    *common.Streams // HTTP request and response bodies
 	mu        sync.Mutex
 	ready     bool // guarded by ConnectionManager.mu
 	done      chan struct{}
@@ -59,7 +60,8 @@ func newConnection(conn *websocket.Conn, session string) *Connection {
 		conn:     conn,
 		session:  session,
 		requests: NewPendingRequests(),
-		streams:  common.NewStreams(),
+		streams:  common.NewStreams(common.MaxStreamsPerTunnel),
+		bodies:   common.NewStreams(common.MaxConcurrentRequests),
 		done:     make(chan struct{}),
 		stats:    newTunnelStats(),
 	}
@@ -79,6 +81,7 @@ func (c *Connection) Close() error {
 	c.closeOnce.Do(func() {
 		close(c.done)
 		c.streams.AbortAll()
+		c.bodies.AbortAll()
 	})
 	return c.conn.Close()
 }

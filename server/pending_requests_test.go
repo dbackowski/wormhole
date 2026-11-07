@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
@@ -11,7 +10,7 @@ import (
 
 func TestDeliver_Success(t *testing.T) {
 	pr := NewPendingRequests()
-	ch, cancel := pr.Register(context.Background(), "uuid-1")
+	ch, cancel := pr.Register("uuid-1")
 	defer cancel()
 
 	msg := &common.Message{UUID: "uuid-1"}
@@ -39,7 +38,7 @@ func TestDeliver_UnknownUUID(t *testing.T) {
 
 func TestDeliver_AfterCleanupDoesNotPanic(t *testing.T) {
 	pr := NewPendingRequests()
-	_, cancel := pr.Register(context.Background(), "uuid-1")
+	_, cancel := pr.Register("uuid-1")
 	cancel()
 
 	err := pr.Deliver(&common.Message{UUID: "uuid-1"})
@@ -50,7 +49,7 @@ func TestDeliver_AfterCleanupDoesNotPanic(t *testing.T) {
 
 func TestDeliver_ChannelFull(t *testing.T) {
 	pr := NewPendingRequests()
-	_, cancel := pr.Register(context.Background(), "uuid-1")
+	_, cancel := pr.Register("uuid-1")
 	defer cancel()
 
 	if err := pr.Deliver(&common.Message{UUID: "uuid-1"}); err != nil {
@@ -65,7 +64,7 @@ func TestDeliver_RaceWithCleanup(t *testing.T) {
 	const iterations = 500
 	for range iterations {
 		pr := NewPendingRequests()
-		_, cancel := pr.Register(context.Background(), "uuid-1")
+		_, cancel := pr.Register("uuid-1")
 
 		var wg sync.WaitGroup
 		wg.Add(2)
@@ -83,7 +82,7 @@ func TestDeliver_RaceWithCleanup(t *testing.T) {
 
 func TestCleanup_Idempotent(t *testing.T) {
 	pr := NewPendingRequests()
-	_, cancel := pr.Register(context.Background(), "uuid-1")
+	_, cancel := pr.Register("uuid-1")
 	cancel()
 	cancel()
 }

@@ -26,11 +26,15 @@ const (
 	ServerIdleTimeout        = 120 * time.Second
 	ServerBodyReadTimeout    = 30 * time.Second
 	ServerWriteTimeout       = 60 * time.Second
-	MaxRequestBodySize       = 10 << 20 // 10 MB
 	MaxWebSocketMessageSize  = 16 << 20 // 16 MB
 	PongWait                 = 30 * time.Second
 	PingPeriod               = (PongWait * 9) / 10
 	WriteWait                = 10 * time.Second
+
+	// HTTP requests one tunnel carries at once, enforced by both sides. A
+	// request holds its slot until its response body has been sent, so each
+	// open Server-Sent Events connection takes one.
+	MaxConcurrentRequests = 64
 )
 
 type Heartbeat struct {
@@ -59,6 +63,14 @@ const ClientHeader = "X-Wormhole-Client"
 // server replaces it instead of reporting the domain as taken.
 const SessionHeader = "X-Wormhole-Session"
 
+// ProtocolHeader carries ProtocolVersion on the client's dial and the server's
+// handshake response. Each side refuses a peer that speaks another version,
+// rather than misreading its messages.
+const (
+	ProtocolHeader  = "X-Wormhole-Protocol"
+	ProtocolVersion = "2" // 2: bodies are streamed
+)
+
 type MessageType string
 
 const (
@@ -69,10 +81,16 @@ const (
 
 	// A WebSocket handshake. The client answers with an http_response; on 101
 	// both sides then carry the raw connection as stream_data until one of them
-	// sends stream_close. See Streams.
+	// sends stream_close.
 	MessageTypeUpgradeRequest MessageType = "upgrade_request"
-	MessageTypeStreamData     MessageType = "stream_data"
-	MessageTypeStreamClose    MessageType = "stream_close"
+
+	// Bodies follow their http_request or http_response under the same UUID, as
+	// stream_data chunks ended by stream_close, or by stream_reset when cut
+	// short. stream_ack returns credit to the sender. See Stream.
+	MessageTypeStreamData  MessageType = "stream_data"
+	MessageTypeStreamClose MessageType = "stream_close"
+	MessageTypeStreamReset MessageType = "stream_reset"
+	MessageTypeStreamAck   MessageType = "stream_ack"
 )
 
 type Message struct {
@@ -83,6 +101,7 @@ type Message struct {
 	Headers map[string][]string `json:"headers,omitempty"`
 	Body    []byte              `json:"body,omitempty"`
 	Status  int                 `json:"status,omitempty"`
+	Ack     int                 `json:"ack,omitempty"` // stream_ack: bytes consumed
 }
 
 func CopyHTTPHeaders(src http.Header, dest http.Header) {

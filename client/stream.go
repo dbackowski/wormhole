@@ -2,7 +2,6 @@ package client
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -12,41 +11,31 @@ import (
 )
 
 // dispatchUpgradeRequest opens the stream before returning to the message
-// loop, so a stream_close the server sends right behind the request finds it.
+// loop, so a stream_reset the server sends right behind the request finds it.
 func (c *Client) dispatchUpgradeRequest(msg *common.Message) error {
-	stream, err := c.streams.Open(msg.UUID)
+	stream, err := c.streams.Open(msg.UUID, c.safeWriteJSON)
 	if err != nil {
-		if err := c.sendResponse(msg, ProxyResponse{
-			StatusCode: http.StatusServiceUnavailable,
-			Body:       []byte(http.StatusText(http.StatusServiceUnavailable)),
-		}); err != nil {
-			return fmt.Errorf("failed to send 503 for %s: %w", msg.UUID, err)
-		}
-		return nil
+		return c.sendWholeResponse(msg.UUID, http.StatusServiceUnavailable)
 	}
 
-	go c.handleUpgradeRequest(msg, stream) //nolint:errcheck // nowhere to report it, see HandleConnection
+	go c.handleUpgradeRequest(msg, stream)
 	return nil
 }
 
-func (c *Client) handleUpgradeRequest(msg *common.Message, stream *common.Stream) error {
+func (c *Client) handleUpgradeRequest(msg *common.Message, stream *common.Stream) {
 	// A no-op once Pipe has run, which removes the stream itself.
 	defer c.streams.Abort(msg.UUID)
 
 	start := time.Now()
 	httpResp, err := c.proxy.Upgrade(msg)
-	if err != nil || httpResp.StatusCode != http.StatusSwitchingProtocols {
-		var proxyResp *ProxyResponse
-		if err == nil {
-			proxyResp, err = c.proxy.readResponse(httpResp)
-		}
-		duration := time.Since(start)
-		resolved := resolveProxyResponse(proxyResp, err)
-		if sendErr := c.sendResponse(msg, resolved); sendErr != nil {
-			return sendErr
-		}
-		c.recordRequest(msg, resolved, err, StreamInfo{}, duration)
-		return nil
+	if err != nil {
+		c.relayError(msg, nil, err, start)
+		return
+	}
+	if httpResp.StatusCode != http.StatusSwitchingProtocols {
+		common.RemoveHopByHopHeaders(httpResp.Header)
+		c.relayResponse(msg, stream, httpResp, nil, start)
+		return
 	}
 
 	duration := time.Since(start)
@@ -54,34 +43,35 @@ func (c *Client) handleUpgradeRequest(msg *common.Message, stream *common.Stream
 	conn, ok := httpResp.Body.(io.ReadWriteCloser)
 	if !ok {
 		httpResp.Body.Close()
-		resolved := resolveProxyResponse(nil, errors.New("upgraded connection is not writable"))
-		return c.sendResponse(msg, resolved)
+		c.relayError(msg, nil, errors.New("upgraded connection is not writable"), start)
+		return
 	}
 
 	// Sent as is: the browser needs Upgrade, Connection and the
 	// Sec-WebSocket-* headers that a plain response would drop as hop-by-hop.
-	resolved := ProxyResponse{StatusCode: httpResp.StatusCode, Headers: httpResp.Header}
-	if err := c.sendResponse(msg, resolved); err != nil {
+	if err := c.safeWriteJSON(&common.Message{
+		Type:    common.MessageTypeHTTPResponse,
+		UUID:    msg.UUID,
+		Status:  httpResp.StatusCode,
+		Headers: httpResp.Header,
+	}); err != nil {
 		conn.Close()
-		return err
+		return
 	}
-	c.recordRequest(msg, resolved, nil, StreamInfo{Open: true}, duration)
+	c.recordRequest(msg, httpResp.StatusCode, httpResp.Header, nil, StreamInfo{Open: true}, duration)
 
 	tapped := &tapConn{
 		ReadWriteCloser: conn,
 		onRead:          c.streamRecorder(msg.UUID, true),
 		onWrite:         c.streamRecorder(msg.UUID, false),
 	}
-	c.streams.Pipe(msg.UUID, stream, tapped, func(m *common.Message) error {
-		return c.safeWriteJSON(m)
-	})
+	c.streams.Pipe(msg.UUID, stream, tapped)
 
 	c.history.Update(msg.UUID, func(log *RequestLog) {
 		log.Stream.Open = false
 		log.Stream.ClosedAt = time.Now()
 	})
 	c.requestRedraw()
-	return nil
 }
 
 // streamRecorder returns a tap that counts the bytes going one way through a

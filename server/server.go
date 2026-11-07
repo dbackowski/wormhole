@@ -25,6 +25,7 @@ type Server struct {
 	heartbeat       common.Heartbeat
 	bodyReadTimeout time.Duration
 	writeTimeout    time.Duration
+	responseTimeout time.Duration // for response headers, once the request body is sent
 
 	// For the admin page; reset on restart.
 	startedAt    time.Time
@@ -51,6 +52,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		heartbeat:       common.DefaultHeartbeat(),
 		bodyReadTimeout: common.ServerBodyReadTimeout,
 		writeTimeout:    common.ServerWriteTimeout,
+		responseTimeout: common.RequestTimeoutBuffer,
 		startedAt:       time.Now(),
 	}
 

@@ -18,6 +18,7 @@ func dialWS(t *testing.T, url string, host string) *websocket.Conn {
 	t.Helper()
 	header := http.Header{}
 	header.Set(common.ClientHeader, "1")
+	header.Set(common.ProtocolHeader, common.ProtocolVersion)
 	if host != "" {
 		header.Set("Host", host)
 	}
@@ -65,6 +66,7 @@ func TestServeWebSocket_InvalidHostRejectedBeforeUpgrade(t *testing.T) {
 
 	header := http.Header{}
 	header.Set(common.ClientHeader, "1")
+	header.Set(common.ProtocolHeader, common.ProtocolVersion)
 	header.Set("Host", "a.b.localhost") // nested subdomain, outside -host
 	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
 	if err == nil {
@@ -165,7 +167,7 @@ func TestServeWebSocket_ResponseDeliveredToOriginatingConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetConnection() error = %v", err)
 	}
-	respChan, cancelReq := connection.requests.Register(context.Background(), "req-uuid")
+	respChan, cancelReq := connection.requests.Register("req-uuid")
 	defer cancelReq()
 
 	// The client replies. Delivery is keyed solely on the connection the
@@ -199,6 +201,7 @@ func TestServeWebSocket_AuthRequired_NoToken(t *testing.T) {
 	// Try to connect without a token — should get HTTP 401, not a WebSocket upgrade
 	header := http.Header{}
 	header.Set(common.ClientHeader, "1")
+	header.Set(common.ProtocolHeader, common.ProtocolVersion)
 	header.Set("Host", "app.localhost")
 	_, resp, err := websocket.DefaultDialer.Dial(wsURL+"/ws", header)
 
@@ -217,6 +220,7 @@ func TestServeWebSocket_AuthRequired_WrongToken(t *testing.T) {
 
 	header := http.Header{}
 	header.Set(common.ClientHeader, "1")
+	header.Set(common.ProtocolHeader, common.ProtocolVersion)
 	header.Set("Host", "app.localhost")
 	header.Set("Authorization", "Bearer wrong")
 	_, resp, err := websocket.DefaultDialer.Dial(wsURL+"/ws", header)
@@ -236,6 +240,7 @@ func TestServeWebSocket_AuthRequired_ValidToken(t *testing.T) {
 
 	header := http.Header{}
 	header.Set(common.ClientHeader, "1")
+	header.Set(common.ProtocolHeader, common.ProtocolVersion)
 	header.Set("Host", "app.localhost")
 	header.Set("Authorization", "Bearer secret")
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL+"/ws", header)
@@ -424,7 +429,7 @@ func TestTunnelDispatcher_DeliversToWaitingRequest(t *testing.T) {
 	conn, cleanup := newTestConnection(t)
 	defer cleanup()
 
-	ch, cancel := conn.requests.Register(context.Background(), "u1")
+	ch, cancel := conn.requests.Register("u1")
 	defer cancel()
 
 	msg := &common.Message{Type: common.MessageTypeHTTPResponse, UUID: "u1", Status: http.StatusOK}
@@ -458,7 +463,7 @@ func TestTunnelDispatcher_UndeliverableResponseIsNotAnError(t *testing.T) {
 	})
 
 	t.Run("duplicate response", func(t *testing.T) {
-		_, cancel := conn.requests.Register(context.Background(), "u2")
+		_, cancel := conn.requests.Register("u2")
 		defer cancel()
 
 		msg := &common.Message{Type: common.MessageTypeHTTPResponse, UUID: "u2", Status: http.StatusOK}
@@ -493,6 +498,7 @@ func TestServeWebSocket_MarkedClientRegistersOnAnyPath(t *testing.T) {
 	header := http.Header{}
 	header.Set("Host", "marked.localhost")
 	header.Set(common.ClientHeader, "1")
+	header.Set(common.ProtocolHeader, common.ProtocolVersion)
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL+"/anything", header)
 	if err != nil {
@@ -545,6 +551,7 @@ func TestServeWebSocket_SameSessionReclaimsDomain(t *testing.T) {
 		t.Helper()
 		header := http.Header{}
 		header.Set(common.ClientHeader, "1")
+		header.Set(common.ProtocolHeader, common.ProtocolVersion)
 		header.Set(common.SessionHeader, session)
 		header.Set("Host", "reclaim.localhost")
 		conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)

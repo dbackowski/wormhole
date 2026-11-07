@@ -1,65 +1,49 @@
 package client
 
 import (
-	"bytes"
-	"errors"
+	"context"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dbackowski/wormhole/common"
 )
 
-var ErrResponseTooLarge = errors.New("local server response body too large")
-
-type ProxyResponse struct {
-	StatusCode int
-	Headers    map[string][]string
-	Body       []byte
-}
-
 type LocalProxy struct {
-	httpClient       *http.Client
-	upgradeClient    *http.Client
-	baseURL          url.URL
-	tunnelURL        string
-	maxResponseBytes int64
+	client    *http.Client
+	baseURL   url.URL
+	tunnelURL string
 }
 
 func NewLocalProxy(baseURL url.URL, tunnelURL string, timeout time.Duration) *LocalProxy {
-	transport := &http.Transport{
-		DisableKeepAlives: true,
-		// Bound the handshake for upgrades, whose client has no overall Timeout.
-		DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
-		TLSHandshakeTimeout:   timeout,
-		ResponseHeaderTimeout: timeout,
-	}
-	noRedirects := func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-
 	return &LocalProxy{
-		baseURL:          baseURL,
-		tunnelURL:        tunnelURL,
-		maxResponseBytes: common.MaxRequestBodySize,
-		httpClient: &http.Client{
-			Timeout:       timeout,
-			Transport:     transport,
-			CheckRedirect: noRedirects,
-		},
-		// No Timeout: it would also cut off the upgraded connection, which
-		// lives for as long as the socket does.
-		upgradeClient: &http.Client{
-			Transport:     transport,
-			CheckRedirect: noRedirects,
+		baseURL:   baseURL,
+		tunnelURL: tunnelURL,
+		// No overall Timeout: a body streams for as long as it runs, and an
+		// event stream or an upgraded connection indefinitely. timeout bounds
+		// connecting and waiting for the response headers.
+		client: &http.Client{
+			Transport: &http.Transport{
+				DisableKeepAlives:     true,
+				DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
+				TLSHandshakeTimeout:   timeout,
+				ResponseHeaderTimeout: timeout,
+			},
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		},
 	}
 }
 
-func (lp *LocalProxy) newRequest(req *common.Message) (*http.Request, error) {
+// newRequest builds the local request for req, with body as its body if the
+// server said one follows: a Content-Length, or Transfer-Encoding chunked.
+func (lp *LocalProxy) newRequest(ctx context.Context, req *common.Message, body io.Reader) (*http.Request, error) {
 	hostHeader, ok := req.Headers["Host"]
 	if !ok || len(hostHeader) == 0 {
 		return nil, fmt.Errorf("missing required Host header")
@@ -68,34 +52,50 @@ func (lp *LocalProxy) newRequest(req *common.Message) (*http.Request, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to build URL: %w", err)
 	}
-	httpReq, err := http.NewRequest(req.Method, url, bytes.NewReader(req.Body))
+	httpReq, err := http.NewRequestWithContext(ctx, req.Method, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build request: %w", err)
 	}
 
 	httpReq.Host = hostHeader[0]
 	common.CopyHTTPHeaders(req.Headers, httpReq.Header)
+
+	headers := http.Header(req.Headers)
+	length, _ := strconv.ParseInt(headers.Get("Content-Length"), 10, 64)
+	chunked := strings.EqualFold(headers.Get("Transfer-Encoding"), "chunked")
+	if body != nil && (length > 0 || chunked) {
+		httpReq.Body = io.NopCloser(body)
+		httpReq.ContentLength = length
+		if chunked {
+			httpReq.ContentLength = -1
+		}
+	}
 	return httpReq, nil
 }
 
-func (lp *LocalProxy) Forward(req *common.Message) (*ProxyResponse, error) {
-	httpReq, err := lp.newRequest(req)
+// Forward sends req to the local app with body, and returns its response with
+// the hop-by-hop headers removed. The caller must close the response Body.
+func (lp *LocalProxy) Forward(ctx context.Context, req *common.Message, body io.Reader) (*http.Response, error) {
+	httpReq, err := lp.newRequest(ctx, req, body)
 	if err != nil {
 		return nil, err
 	}
 
-	httpResp, err := lp.httpClient.Do(httpReq)
+	httpResp, err := lp.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	return lp.readResponse(httpResp)
+	common.RemoveHopByHopHeaders(httpResp.Header)
+	return httpResp, nil
 }
 
 // Upgrade sends a WebSocket handshake to the local app. On 101 the response
 // Body is the open connection, an io.ReadWriteCloser the caller must close;
-// any other status is an ordinary response for readResponse.
+// any other status is an ordinary response, hop-by-hop headers included.
 func (lp *LocalProxy) Upgrade(req *common.Message) (*http.Response, error) {
-	httpReq, err := lp.newRequest(req)
+	// Not tied to the tunnel's stream: cancelling it could take the upgraded
+	// connection down with it.
+	httpReq, err := lp.newRequest(context.Background(), req, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -106,31 +106,9 @@ func (lp *LocalProxy) Upgrade(req *common.Message) (*http.Response, error) {
 	// in frameParser instead if the bandwidth matters.
 	httpReq.Header.Del("Sec-WebSocket-Extensions")
 
-	httpResp, err := lp.upgradeClient.Do(httpReq)
+	httpResp, err := lp.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	return httpResp, nil
-}
-
-func (lp *LocalProxy) readResponse(httpResp *http.Response) (*ProxyResponse, error) {
-	defer httpResp.Body.Close()
-
-	// Read one byte past the limit so an exactly-at-limit body is allowed while
-	// anything larger is detected and rejected instead of buffered in full.
-	body, err := io.ReadAll(io.LimitReader(httpResp.Body, lp.maxResponseBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	if int64(len(body)) > lp.maxResponseBytes {
-		return nil, ErrResponseTooLarge
-	}
-
-	common.RemoveHopByHopHeaders(httpResp.Header)
-
-	return &ProxyResponse{
-		StatusCode: httpResp.StatusCode,
-		Headers:    httpResp.Header,
-		Body:       body,
-	}, nil
 }

@@ -96,7 +96,7 @@ go run cmd/server/main.go -port=8080
 - `-port`: Port to run the server on (default: 8080)
 - `-host`: Public hostname of this server (e.g. `wormhole.tools`). When set, `/health` and `/admin` are only served on this host (or when addressed by IP or as `localhost`, so health probes work); requests to `<name>.<host>` are tunneled to the matching client, and any other `Host` (a foreign domain, a nested subdomain) is rejected with `400`. **Required for any deployment on a real domain** — see the note below.
 - `-db`: SQLite database holding the allowlist and client tokens (default: `wormhole.db` in the working directory; the Docker image uses `/data/wormhole.db`). Only used when login is enabled, see [Authentication](#authentication)
-- `-debug`: Enable debug logging. Each request adds its header names and body sizes, never header values or bodies; query strings are left out at every level
+- `-debug`: Enable debug logging. Each request adds its header names, never header values or bodies; query strings are left out at every level
 - `-version`: Print version and exit
 
 > **Note on `-host`:** When `-host` is unset, the server falls back to a heuristic — any `Host` containing a dot is treated as a tunnel subdomain. This works for local development (`*.localhost`) and bare-IP access, but on a real domain it has two consequences: requests to your apex (e.g. `wormhole.tools/health`) are treated as a tunnel and return `502` instead of serving `/health` and `/admin`, and the apex's first label (`wormhole`) becomes a reserved subdomain that shadows any client claiming it. Set `-host` to your public hostname in production to route exactly.
@@ -122,6 +122,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 
 ✅ **Custom Subdomains** - Choose your own subdomain name  
 ✅ **Real-time Tunneling** - Instant request forwarding via WebSockets  
+✅ **Streaming** - Request and response bodies stream through the tunnel with no size limit, so large uploads and downloads work, and Server-Sent Events reach the browser as your app writes them  
 ✅ **WebSocket Passthrough** - WebSockets your app serves work through the tunnel, with their messages shown in the Web UI  
 ✅ **Header Forwarding** - End-to-end headers are forwarded; hop-by-hop headers are stripped, `Host` is set to the tunnel host, and `X-Forwarded-For`/`-Proto`/`-Host` are added so your local app sees the original client IP and public URL (standard proxy behavior)  
 ✅ **Multiple Clients** - Support for multiple simultaneous tunnels  
@@ -223,7 +224,7 @@ graph TD
 1. The server listens for client connections and HTTP requests
 2. Clients connect via WebSocket and claim a subdomain
 3. HTTP requests to `subdomain.server:port` are forwarded to the client over WebSocket
-4. The client forwards requests to your local server and returns responses
+4. The client forwards requests to your local server and returns responses. Bodies in both directions travel in 32 KB chunks as they arrive, so neither side holds a whole body in memory
 5. A WebSocket handshake is forwarded the same way. Once your local server accepts it, the raw connection is relayed in both directions over the same tunnel until either side closes it
 
 ## Server Endpoints
@@ -244,10 +245,10 @@ Statuses the server returns for tunneled requests, rather than passing through f
 | Status | Meaning |
 |--------|---------|
 | `400 Bad Request` | The `Host` header has no subdomain to route on |
-| `413 Request Entity Too Large` | Request body exceeds 10 MB |
-| `502 Bad Gateway` | No client is connected for the subdomain, the tunnel dropped mid-request, or the local server was unreachable, too slow, or returned a body over 10 MB |
-| `503 Service Unavailable` | The client is already handling 64 concurrent requests, or the tunnel already has 100 open WebSockets |
-| `504 Gateway Timeout` | No response from the client within 15 seconds |
+| `502 Bad Gateway` | No client is connected for the subdomain, the tunnel dropped mid-request, or the local server was unreachable or sent no response headers within 10 seconds |
+| `400 Bad Request` | The request body stalled for 30 seconds or broke off mid-upload |
+| `503 Service Unavailable` | The tunnel is already carrying 64 concurrent requests, or already has 100 open WebSockets |
+| `504 Gateway Timeout` | No response headers from the client within 15 seconds of the request body arriving |
 
 ## Self-Hosting
 
@@ -291,22 +292,19 @@ The database is SQLite on that volume, so the app must run on a single machine.
 
 - **WebSockets are uncompressed** - The client removes `Sec-WebSocket-Extensions` from the handshake so that `permessage-deflate` is never negotiated, which lets the Web UI read the messages. Your app sees no compression offered
 - **100 open WebSockets per tunnel** - Beyond that the server returns `503 Service Unavailable`
-- **Slow WebSocket readers are disconnected** - The tunnel has no per-socket flow control. If one side of a socket stops reading while about 2 MB is waiting for it, that socket is closed so it cannot stall the rest of the tunnel
+- **Throughput per request is bounded by the window** - Each body and WebSocket may have 256 KB in flight before the receiving side acknowledges it, so one transfer moves at most 256 KB per round trip to the server, about 8 MB/s at 30 ms. A slow reader slows only its own transfer, never the rest of the tunnel
 - **WebSockets end when the tunnel drops** - If the client loses its connection to the server, its open sockets are closed; your app's own reconnect logic takes over from there
 - **No built-in TLS** - Requires a reverse proxy for HTTPS
-- **10 MB request body limit** - Requests larger than 10 MB are rejected with `413 Request Entity Too Large`
-- **10 MB response body limit** - Responses larger than 10 MB from your local server are rejected with `502 Bad Gateway`. Bodies travel base64-encoded inside a WebSocket frame capped at 16 MB, which is what sets both limits
-- **10 second request timeout** - The client gives up on your local server after 10 seconds and returns `502 Bad Gateway`. The server independently stops waiting after 15 seconds and returns `504 Gateway Timeout`
-- **64 concurrent requests per tunnel** - Beyond that the client returns `503 Service Unavailable` until a slot frees up
+- **10 second response header timeout** - Your local server has 10 seconds from receiving the whole request body to send its response headers, or the client returns `502 Bad Gateway`; the server independently stops waiting after 15 seconds and returns `504 Gateway Timeout`. The body itself has no time limit, so a long download or an event stream runs as long as it needs. An upload that stalls for 30 seconds is cut off with `400 Bad Request`
+- **64 concurrent requests per tunnel** - Beyond that the tunnel returns `503 Service Unavailable` until a slot frees up. A request holds its slot until its response body has been sent, so each open Server-Sent Events connection takes one. Requests reach your local app as soon as their headers arrive, so a burst opens as many connections to it at once; a server with a tiny connection queue (Python's `http.server` queues 5) may refuse some
 - **Request history keeps the last 500 requests** - Older ones drop out of the terminal view and the Web UI. Each stored body is cut to its first 64 KB; the Web UI says when one was truncated. Your app always receives the full body
 - **Redirects are passed through unchanged** - The client does not follow redirects from your local server. A `Location` header pointing at `http://localhost:3000` is sent to the browser as-is, taking it off the tunnel. Configure your app to emit relative redirects, or to build absolute URLs from the `X-Forwarded-Host` and `X-Forwarded-Proto` headers
-- **Reconnect is time-limited** - If the connection drops, the client retries with exponential backoff (500 ms up to 30 s) for 5 minutes, then exits with status 1, so a supervisor such as systemd `Restart=on-failure` can restart it. If the server rejects the token (say an admin removed you), the client stops retrying immediately; run it again to log in. Requests in flight when the connection drops fail with `502 Bad Gateway`
-- **Older clients can be delayed reconnecting after an unclean drop** - If the connection dies without closing cleanly (laptop sleep, Wi-Fi drop), the server only notices when its heartbeat times out, up to 30 seconds later. Current clients reclaim their own subdomain immediately: each client process sends a random session secret on every dial, and the server replaces a stale connection registered with the same secret. Clients up to `v1.0.5` do not send it, so they see the subdomain as taken until the timeout and keep retrying, so they recover on their own
+- **Reconnect is time-limited** - If the connection drops, the client retries with exponential backoff (500 ms up to 30 s) for 5 minutes, then exits with status 1, so a supervisor such as systemd `Restart=on-failure` can restart it. If the server rejects the token (say an admin removed you), the client stops retrying immediately; run it again to log in. Requests in flight when the connection drops fail with `502 Bad Gateway`, or are cut off if their response had started
 
 ## Requirements
 
 - Go 1.25 or later
-- A client and server from the same release line. A client older than the server's WebSocket support does not answer WebSocket handshakes, so they fail with `504 Gateway Timeout` after 15 seconds. Clients up to `v1.0.5` identified themselves by connecting to `/ws`; the server now requires the `X-Wormhole-Client` header, so those clients cannot register and fail with `websocket: bad handshake`. Upgrade the client
+- A client and server from the same release. Client and server check each other's protocol version when the client connects: since bodies are streamed, the server refuses clients up to `v1.0.9` with `426 Upgrade Required`, and a current client refuses a server up to `v1.0.9`. Upgrade both together
 - Available port for the server (default: 8080)
 - Local development server to tunnel
 

@@ -51,26 +51,15 @@ func RunMessageLoop(conn *websocket.Conn, handlers Handlers, hb Heartbeat, onRea
 	}
 }
 
-// MinWriteRate is the slowest uplink a tunnel write is allowed, in bytes per
-// second. A timed-out write leaves a gorilla connection unusable, so a flat
-// WriteWait would kill the whole tunnel whenever a large body crosses a slow
-// link.
-// ponytail: one rate for every link; measure throughput if 2 Mbit/s is too
-// generous to catch a dead peer quickly or too tight for real uplinks.
-const MinWriteRate = 256 << 10
-
-func writeTimeout(size int) time.Duration {
-	return WriteWait + time.Duration(size)*time.Second/MinWriteRate
-}
-
-// WriteJSON writes v as one text message, with a deadline sized to fit it.
+// WriteJSON writes v as one text message. Messages stay small, a body chunk
+// at most, so one deadline fits all.
 // Callers must serialize writes.
 func WriteJSON(conn *websocket.Conn, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	if err := conn.SetWriteDeadline(time.Now().Add(writeTimeout(len(data)))); err != nil {
+	if err := conn.SetWriteDeadline(time.Now().Add(WriteWait)); err != nil {
 		return err
 	}
 	return conn.WriteMessage(websocket.TextMessage, data)

@@ -18,7 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const MaxConcurrentRequests = 64
+const MaxConcurrentRequests = common.MaxConcurrentRequests
 
 var (
 	ErrDomainTaken  = errors.New("domain is already taken")
@@ -75,7 +75,8 @@ type Client struct {
 	displayMu  sync.Mutex
 	statusMu   sync.Mutex
 	requestSem chan struct{}
-	streams    *common.Streams
+	streams    *common.Streams // WebSockets
+	bodies     *common.Streams // HTTP request and response bodies
 	proxy      *LocalProxy
 	history    *RequestHistory
 	display    Display
@@ -120,6 +121,7 @@ func NewClient(cfg *Config) (*Client, error) {
 
 	dialHeaders := http.Header{}
 	dialHeaders.Set(common.ClientHeader, "1")
+	dialHeaders.Set(common.ProtocolHeader, common.ProtocolVersion)
 	dialHeaders.Set(common.SessionHeader, rand.Text())
 	if cfg.AuthToken != "" {
 		dialHeaders.Set("Authorization", "Bearer "+cfg.AuthToken)
@@ -161,12 +163,20 @@ func dialAndRegister(wsURL string, headers http.Header) (*websocket.Conn, error)
 		if resp != nil && resp.StatusCode == http.StatusForbidden {
 			return nil, ErrDomainReserved
 		}
-		// The server names the problem, e.g. a host outside its -host domain.
-		if resp != nil && resp.StatusCode == http.StatusBadRequest {
+		// The server names the problem, e.g. a host outside its -host domain,
+		// or a client too old for it.
+		if resp != nil && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUpgradeRequired) {
 			reason, _ := io.ReadAll(resp.Body)
 			return nil, fmt.Errorf("server rejected %s: %s", wsURL, strings.TrimSpace(string(reason)))
 		}
 		return nil, fmt.Errorf("failed to connect to %s: %w", wsURL, err)
+	}
+
+	// A server up to v1.0.9 sends no version and would misread this client's
+	// responses, losing their bodies.
+	if resp.Header.Get(common.ProtocolHeader) != common.ProtocolVersion {
+		conn.Close()
+		return nil, fmt.Errorf("server at %s does not match this client's version; use a client from the same release as the server", wsURL)
 	}
 
 	if err := awaitRegistration(conn); err != nil {
@@ -241,6 +251,7 @@ func (c *Client) HandleConnection() {
 	// Streams belong to the connection that carried them: the server has
 	// already dropped its side of each one when that connection ends.
 	defer c.streams.AbortAll()
+	defer c.bodies.AbortAll()
 
 	// Errors are dropped: anything written to the terminal is wiped by the next
 	// refresh of the alt screen. Errors worth seeing go to the status line.
@@ -261,44 +272,10 @@ func (c *Client) Shutdown() error {
 	return c.Conn.Close()
 }
 
-func (c *Client) safeWriteJSON(v any) error {
+func (c *Client) safeWriteJSON(v *common.Message) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	return common.WriteJSON(c.Conn, v)
-}
-
-func resolveProxyResponse(proxyResp *ProxyResponse, proxyErr error) ProxyResponse {
-	if proxyErr != nil {
-		if errors.Is(proxyErr, ErrResponseTooLarge) {
-			return ProxyResponse{
-				StatusCode: http.StatusBadGateway,
-				Body:       []byte("response body too large"),
-			}
-		}
-		return ProxyResponse{
-			StatusCode: http.StatusBadGateway,
-			Body:       []byte(http.StatusText(http.StatusBadGateway)),
-		}
-	}
-	return *proxyResp
-}
-
-func (c *Client) sendResponse(msg *common.Message, resolved ProxyResponse) error {
-	responseMsg := common.Message{
-		Type:    common.MessageTypeHTTPResponse,
-		UUID:    msg.UUID,
-		Method:  msg.Method,
-		URL:     msg.URL,
-		Status:  resolved.StatusCode,
-		Body:    resolved.Body,
-		Headers: resolved.Headers,
-	}
-
-	if err := c.safeWriteJSON(responseMsg); err != nil {
-		return fmt.Errorf("failed to send response: %w", err)
-	}
-
-	return nil
 }
 
 func (c *Client) ClearHistory() {

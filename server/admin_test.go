@@ -36,6 +36,7 @@ func connectTunnel(t *testing.T, s *Server) *websocket.Conn {
 
 	header := http.Header{}
 	header.Set(common.ClientHeader, "1")
+	header.Set(common.ProtocolHeader, common.ProtocolVersion)
 	header.Set("Host", "app.localhost")
 	header.Set("Authorization", "Bearer secret")
 	header.Set("Fly-Client-IP", "203.0.113.7")
@@ -62,6 +63,7 @@ func TestAdminDashboard(t *testing.T) {
 		var req common.Message
 		if conn.ReadJSON(&req) == nil {
 			conn.WriteJSON(&common.Message{Type: common.MessageTypeHTTPResponse, UUID: req.UUID, Status: 200}) //nolint:errcheck
+			conn.WriteJSON(&common.Message{Type: common.MessageTypeStreamClose, UUID: req.UUID})               //nolint:errcheck
 		}
 	}()
 	r := httptest.NewRequest(http.MethodGet, "http://app.localhost/", nil)
@@ -158,6 +160,7 @@ func dialTunnel(t *testing.T, wsURL, token string) (*websocket.Conn, *http.Respo
 	t.Helper()
 	header := http.Header{}
 	header.Set(common.ClientHeader, "1")
+	header.Set(common.ProtocolHeader, common.ProtocolVersion)
 	header.Set("Host", "app.localhost")
 	header.Set("Authorization", "Bearer "+token)
 	return websocket.DefaultDialer.Dial(wsURL+"/ws", header)
@@ -241,6 +244,7 @@ func TestDashboard_ReconnectContinuesTunnel(t *testing.T) {
 	dial := func() *websocket.Conn {
 		header := http.Header{}
 		header.Set(common.ClientHeader, "1")
+		header.Set(common.ProtocolHeader, common.ProtocolVersion)
 		header.Set(common.SessionHeader, "client-process-secret")
 		header.Set("Host", "app.localhost")
 		header.Set("Authorization", "Bearer secret")
@@ -260,6 +264,7 @@ func TestDashboard_ReconnectContinuesTunnel(t *testing.T) {
 		var req common.Message
 		if conn.ReadJSON(&req) == nil {
 			conn.WriteJSON(&common.Message{Type: common.MessageTypeHTTPResponse, UUID: req.UUID, Status: 200}) //nolint:errcheck
+			conn.WriteJSON(&common.Message{Type: common.MessageTypeStreamClose, UUID: req.UUID})               //nolint:errcheck
 		}
 	}()
 	s.routeRequest(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "http://app.localhost/", nil))

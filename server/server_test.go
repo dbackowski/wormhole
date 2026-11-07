@@ -243,7 +243,7 @@ func TestSetRequestDeadlines_UnsupportedResponseWriter(t *testing.T) {
 	}
 }
 
-// A body trickled in below MaxRequestBodySize must not hold the handler open
+// A body trickled in must not hold the handler open
 // indefinitely: the read deadline cuts it short.
 func TestTunnelRequest_SlowBodyIsCutOff(t *testing.T) {
 	s := newTestServer(t)
