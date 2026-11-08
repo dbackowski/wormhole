@@ -58,8 +58,15 @@ func main() {
 		}
 	}()
 
-	client.EnterAltScreen()
-	defer client.ExitAltScreen()
+	// Without a terminal (CI, a service, a file) the screen would be redrawn
+	// into the log every second; a line per request is what a log wants.
+	terminal := client.IsTerminal()
+	if terminal {
+		client.EnterAltScreen()
+		defer client.ExitAltScreen()
+	} else {
+		c.SetDisplay(client.NewLineDisplay(os.Stdout))
+	}
 	defer c.StopDisplay() // runs first: no frame may follow ExitAltScreen
 
 	c.RefreshTerminalOutput()
@@ -69,8 +76,11 @@ func main() {
 
 	go c.RunDisplay()
 
+	// q and c need a terminal; elsewhere a signal stops the client.
 	quitCh := make(chan struct{})
-	go client.WaitForInput(quitCh, c.ClearHistory)
+	if terminal {
+		go client.WaitForInput(quitCh, c.ClearHistory)
+	}
 
 	// Closed on any way out (q, a signal, a lost connection), so the drop that
 	// Shutdown causes is not taken for one to reconnect from.

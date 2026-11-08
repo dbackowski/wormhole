@@ -42,6 +42,8 @@ type RequestLog struct {
 	Error           string        // reason the local forward failed, empty on success
 	Duration        time.Duration // time the local app took to respond; for a WebSocket, its handshake
 
+	Done bool `json:"-"` // bodies relayed; a WebSocket stays not Done
+
 	RequestBodySize  int // full size before truncation
 	ResponseBodySize int
 
@@ -276,6 +278,13 @@ func (c *Client) safeWriteJSON(v *common.Message) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	return common.WriteJSON(c.Conn, v)
+}
+
+// SetDisplay replaces the terminal view, before RunDisplay starts.
+func (c *Client) SetDisplay(d Display) {
+	c.displayMu.Lock()
+	defer c.displayMu.Unlock()
+	c.display = d
 }
 
 func (c *Client) ClearHistory() {

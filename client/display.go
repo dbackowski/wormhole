@@ -2,7 +2,9 @@ package client
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -113,6 +115,64 @@ type Frame struct {
 }
 
 type TerminalDisplay struct{}
+
+// IsTerminal reports whether stdout is a terminal, which TerminalDisplay and
+// the keys need. In CI, under a service manager or redirected to a file it is
+// not, and LineDisplay is used instead.
+func IsTerminal() bool {
+	_, err := unix.IoctlGetTermios(int(os.Stdout.Fd()), ioctlGetTermios)
+	return err == nil
+}
+
+// LineDisplay writes a line per request and per status change, with no
+// escape codes, for output that is a log rather than a screen. It is driven by
+// the same redraws as TerminalDisplay and prints only what changed. A request
+// is printed once finished, so its line has the final size, duration and any
+// error; a WebSocket once open.
+type LineDisplay struct {
+	out     io.Writer
+	started bool
+	printed map[string]bool // of the requests still in the history
+	status  string
+}
+
+func NewLineDisplay(out io.Writer) *LineDisplay {
+	return &LineDisplay{out: out, printed: map[string]bool{}}
+}
+
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+
+// A log line is never cut to fit, so this is wider than any line gets.
+const logLineWidth = 1 << 20
+
+func (d *LineDisplay) Render(f Frame) {
+	var b strings.Builder
+	if !d.started {
+		fmt.Fprintf(&b, "Tunnel: %s → %s (Web UI: http://localhost:%d)\n", f.TunnelURL, f.LocalURL, f.WebUIPort)
+		d.started = true
+	}
+	printed := make(map[string]bool, len(d.printed))
+	for _, rl := range f.Logs {
+		if d.printed[rl.UUID] || !rl.Done && rl.Stream == (StreamInfo{}) {
+			printed[rl.UUID] = d.printed[rl.UUID]
+			continue
+		}
+		line := ansiEscape.ReplaceAllString(requestLine(rl, logLineWidth), "")
+		b.WriteString(strings.TrimSpace(line) + "\n")
+		printed[rl.UUID] = true
+	}
+	d.printed = printed
+	// After the requests: those that finished before a drop come first.
+	if f.Status != d.status {
+		if f.Status != "" {
+			b.WriteString(f.Status + "\n")
+		} else {
+			b.WriteString("reconnected\n")
+		}
+		d.status = f.Status
+	}
+	fmt.Fprint(d.out, b.String())
+}
 
 func (TerminalDisplay) Render(f Frame) {
 	rows, cols := terminalSize()

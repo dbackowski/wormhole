@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -31,11 +30,9 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
-var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
-
 // frameLines returns what a frame shows, one string per terminal row.
 func frameLines(frame string) []string {
-	return strings.Split(ansiPattern.ReplaceAllString(frame, ""), "\n")
+	return strings.Split(ansiEscape.ReplaceAllString(frame, ""), "\n")
 }
 
 func testLogs(n int) []RequestLog {
@@ -165,7 +162,7 @@ func TestRequestLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ansiPattern.ReplaceAllString(requestLine(tt.log, tt.cols), "")
+			got := ansiEscape.ReplaceAllString(requestLine(tt.log, tt.cols), "")
 
 			if width := len([]rune(got)); width >= tt.cols {
 				t.Errorf("line is %d columns wide, want under %d: %q", width, tt.cols, got)
@@ -275,5 +272,66 @@ func TestEnterExitAltScreen(t *testing.T) {
 	wantExit := wrapOn + showCursor + altScreenOff
 	if exitOutput != wantExit {
 		t.Errorf("ExitAltScreen() wrote %q, want %q", exitOutput, wantExit)
+	}
+}
+
+// A log gets each request once, as plain text, when it has finished, and the
+// status when it changes, however often the display loop redraws.
+func TestLineDisplay(t *testing.T) {
+	var out bytes.Buffer
+	d := NewLineDisplay(&out)
+	ts := time.Date(2026, 1, 2, 14, 2, 11, 0, time.UTC)
+	f := Frame{TunnelURL: "https://app.example.com", LocalURL: "http://localhost:3000", WebUIPort: 4040}
+	render := func() []string {
+		out.Reset()
+		d.Render(f)
+		if strings.Contains(out.String(), "\x1b") {
+			t.Errorf("escape codes in log output: %q", out.String())
+		}
+		return strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	}
+
+	if got := render(); len(got) != 1 || got[0] != "Tunnel: https://app.example.com → http://localhost:3000 (Web UI: http://localhost:4040)" {
+		t.Errorf("first frame = %q, want the tunnel line", got)
+	}
+	if render(); out.Len() != 0 {
+		t.Errorf("unchanged frame printed %q", out.String())
+	}
+
+	f.Logs = []RequestLog{
+		{UUID: "a", Timestamp: ts, Method: "GET", URL: "/done", StatusCode: 200, ResponseBodySize: 2048, Done: true},
+		{UUID: "b", Timestamp: ts, Method: "GET", URL: "/events", StatusCode: 200},
+		{UUID: "c", Timestamp: ts, Method: "POST", URL: "/webhook/" + strings.Repeat("x", 300), StatusCode: 502, Error: "request failed", Done: true},
+		{UUID: "d", Timestamp: ts, Method: "GET", URL: "/socket", StatusCode: 101, Stream: StreamInfo{Open: true}},
+	}
+	got := render()
+	if len(got) != 3 || !strings.HasPrefix(got[0], "14:02:11  GET     200") || !strings.Contains(got[0], "2.0KB  /done") ||
+		!strings.HasSuffix(got[1], strings.Repeat("x", 300)+"  request failed") || !strings.Contains(got[2], "/socket  websocket open") {
+		t.Errorf("lines = %q, want /done with its size, /webhook uncut, /socket, and not the unfinished /events", got)
+	}
+
+	// A response still streaming is printed once it ends, with its error.
+	f.Logs[1].Done, f.Logs[1].Error = true, "browser closed the connection"
+	f.Logs[3].Stream = StreamInfo{ClosedAt: ts}
+	if got := render(); len(got) != 1 || !strings.HasSuffix(got[0], "/events  browser closed the connection") {
+		t.Errorf("after /events ended = %q, want only it", got)
+	}
+
+	// Entries the history has dropped are forgotten, not printed again.
+	f.Logs = f.Logs[3:]
+	if render(); out.Len() != 0 || len(d.printed) != 1 {
+		t.Errorf("after the history moved on: printed %q, remembering %d", out.String(), len(d.printed))
+	}
+
+	f.Status = "reconnecting... (attempt 1)"
+	if got := render(); len(got) != 1 || got[0] != f.Status {
+		t.Errorf("status change = %q, want %q", got, f.Status)
+	}
+	if render(); out.Len() != 0 {
+		t.Errorf("unchanged status printed again: %q", out.String())
+	}
+	f.Status = ""
+	if got := render(); len(got) != 1 || got[0] != "reconnected" {
+		t.Errorf("status cleared = %q, want reconnected", got)
 	}
 }

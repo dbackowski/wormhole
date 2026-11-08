@@ -128,7 +128,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 ✅ **Multiple Clients** - Support for multiple simultaneous tunnels  
 ✅ **Automatic Cleanup** - Domains are released when clients disconnect  
 ✅ **Automatic Reconnect** - The client retries with exponential backoff if the connection drops  
-✅ **Live Terminal View** - The client lists recent requests in the terminal, as many as fit the window; press `q` to quit, `c` to clear  
+✅ **Live Terminal View** - The client lists recent requests in the terminal, as many as fit the window; press `q` to quit, `c` to clear. Without a terminal (CI, a service manager, output redirected to a file) it prints a plain line per finished request and per connection change instead  
 ✅ **Web UI Dashboard** - Monitor tunneled requests in a browser at `http://localhost:4040`  
 ✅ **Google Login** - Only emails on an allowlist you manage at `/admin` can open tunnels  
 

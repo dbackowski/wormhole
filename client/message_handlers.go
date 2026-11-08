@@ -145,6 +145,7 @@ func (c *Client) finishRecord(uuid string, reqBody, respBody *bodyCapture, err e
 		}
 		log.ResponseBody, log.ResponseBodySize = respBody.get()
 		log.Duration = duration
+		log.Done = true
 		if err != nil {
 			log.Error = err.Error()
 		}
