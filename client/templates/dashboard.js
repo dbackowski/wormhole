@@ -53,7 +53,9 @@ function formatBody(body, size) {
     if (!body || body.length === 0) {
         return '<span class="no-content">No body</span>';
     }
-    const decoded = atob(body);
+    // atob gives one character per byte; the byte count is what size compares with.
+    const raw = atob(body);
+    const decoded = decodeUTF8(raw);
     let text;
     try {
         text = JSON.stringify(JSON.parse(decoded), null, 2);
@@ -61,9 +63,9 @@ function formatBody(body, size) {
         text = decoded;
     }
     let html = escapeHtml(text);
-    if (size > decoded.length) {
+    if (size > raw.length) {
         html += '\n\n<span class="no-content">Truncated: showing first ' +
-            decoded.length.toLocaleString() + ' of ' + size.toLocaleString() + ' bytes</span>';
+            raw.length.toLocaleString() + ' of ' + size.toLocaleString() + ' bytes</span>';
     }
     return html;
 }
@@ -310,9 +312,9 @@ function renderDetails(inHistory) {
         contentType.split(';')[0].trim().toLowerCase() === 'application/x-www-form-urlencoded';
     document.getElementById('formDataSection').classList.toggle('hidden', !isForm);
     if (isForm) {
-        const form = atob(req.RequestBody);
-        let html = formatRows([...new URLSearchParams(form)]);
-        if (req.RequestBodySize > form.length) {
+        const raw = atob(req.RequestBody);
+        let html = formatRows([...new URLSearchParams(decodeUTF8(raw))]);
+        if (req.RequestBodySize > raw.length) {
             html += '<div class="no-content">Truncated: the last field may be cut short</div>';
         }
         document.getElementById('formData').innerHTML = html;
