@@ -36,6 +36,14 @@ Your local server is now available at: `http://myapp.localhost:8080`
 
 Download the latest release for your platform from the [Releases](https://github.com/dbackowski/wormhole/releases) page. Pre-built binaries are provided for Linux and macOS (amd64 and arm64). Archives are named `wormhole-<client|server>-<linux|darwin>-<amd64|arm64>.tar.gz`; the client archive contains `wormhole`, the server archive `wormhole-server`.
 
+To check a download, get `checksums.txt` from the same release and run, in the folder holding both:
+
+```bash
+shasum -a 256 -c checksums.txt --ignore-missing
+```
+
+On Linux, `sha256sum -c checksums.txt --ignore-missing` does the same.
+
 The client's default server, `wormhole.tools`, is private and requires a token. Run your own (see [Quick Start](#quick-start) or [Self-Hosting](#self-hosting)) and point the client at it with `-server`.
 
 **Other platforms:** The client also builds from source on FreeBSD, OpenBSD, NetBSD and DragonFly BSD. Windows is not supported natively; run the Linux binary under [WSL](https://learn.microsoft.com/windows/wsl/) instead. The server builds on any platform Go supports.

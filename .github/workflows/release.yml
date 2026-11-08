@@ -78,7 +78,9 @@ jobs:
         run: |
           mkdir -p release
           find artifacts -name '*.tar.gz' -exec mv {} release/ \;
+          (cd release && sha256sum *.tar.gz > checksums.txt)
           ls -la release/
+          cat release/checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2

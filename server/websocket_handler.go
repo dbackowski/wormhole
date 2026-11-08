@@ -33,12 +33,6 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	email, ok := s.authenticateRequest(r)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	// Checked before the upgrade, so the client gets a status it can report
 	// rather than a connection closed without a reason.
 	domain, err := s.extractDomain(r.Host)
@@ -46,19 +40,16 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// The client checks too, but the server cannot count on it.
+	if !common.DomainLabel.MatchString(domain) {
+		http.Error(w, fmt.Sprintf("invalid domain %q: use lowercase letters, digits and hyphens (up to 63), with no dots", domain), http.StatusBadRequest)
+		return
+	}
 
-	if s.auth != nil {
-		owner, reserved, err := s.auth.store.DomainOwner(domain)
-		if err != nil {
-			s.Logger.Error("Domain lookup failed", "domain", domain, "error", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
-		if reserved && owner != email {
-			s.Logger.Info("Refused reserved domain", "domain", domain, "email", email)
-			http.Error(w, fmt.Sprintf("domain %q is reserved for another user", domain), http.StatusForbidden)
-			return
-		}
+	email, status, msg := s.admit(r, domain)
+	if status != 0 {
+		http.Error(w, msg, status)
+		return
 	}
 
 	conn, err := upgrader.Upgrade(w, r, http.Header{common.ProtocolHeader: {common.ProtocolVersion}})
@@ -75,8 +66,42 @@ func (s *Server) ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An admin who removed the user or reserved the domain after admit closed
+	// the matching tunnels, but this one was not active yet to be among them.
+	// It is now, so the change is either seen here or will close it.
+	if _, status, _ := s.admit(r, domain); status != 0 {
+		s.Logger.Info("Tunnel closed: refused after registering", "domain", domain, "email", email, "status", status)
+		s.connManager.RemoveConnection(domain, connection)
+		connection.Close()
+		return
+	}
+
 	s.Logger.Info("Client connected", "domain", domain, "email", email, "remote_addr", r.RemoteAddr)
 	s.handleWebSocketConnection(domain, r.RemoteAddr, connection)
+}
+
+// admit checks that r may open a tunnel on domain. It returns the user's
+// email (empty with login disabled), or the status and message to refuse it
+// with.
+func (s *Server) admit(r *http.Request, domain string) (email string, status int, msg string) {
+	email, ok := s.authenticateRequest(r)
+	if !ok {
+		return "", http.StatusUnauthorized, "Unauthorized"
+	}
+	if s.auth == nil {
+		return email, 0, ""
+	}
+
+	owner, reserved, err := s.auth.store.DomainOwner(domain)
+	if err != nil {
+		s.Logger.Error("Domain lookup failed", "domain", domain, "error", err)
+		return "", http.StatusInternalServerError, "Internal server error"
+	}
+	if reserved && owner != email {
+		s.Logger.Info("Refused reserved domain", "domain", domain, "email", email)
+		return "", http.StatusForbidden, fmt.Sprintf("domain %q is reserved for another user", domain)
+	}
+	return email, 0, ""
 }
 
 func (s *Server) registerClient(conn *websocket.Conn, domain, session string, owner tunnelOwner) (*Connection, error) {

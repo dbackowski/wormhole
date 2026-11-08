@@ -597,3 +597,65 @@ func TestServeWebSocket_SameSessionReclaimsDomain(t *testing.T) {
 		t.Errorf("domain not held after reclaim: %v", err)
 	}
 }
+
+// The client validates its domain, but a modified one need not: names the
+// admin page cannot reserve or release must not get in either.
+func TestServeWebSocket_InvalidDomainRejectedBeforeUpgrade(t *testing.T) {
+	s := newTestServer(t)
+	wsURL, cleanup := startWSServer(t, s)
+	defer cleanup()
+
+	for _, host := range []string{"foo_bar.localhost", "-x.localhost", strings.Repeat("a", 64) + ".localhost"} {
+		header := http.Header{}
+		header.Set(common.ClientHeader, "1")
+		header.Set(common.ProtocolHeader, common.ProtocolVersion)
+		header.Set("Host", host)
+		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+		if err == nil {
+			conn.Close()
+			t.Errorf("%s: dial succeeded, want handshake rejected", host)
+			continue
+		}
+		if resp == nil || resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: response = %v, want 400", host, resp)
+		}
+	}
+	if s.connManager.Count() != 0 {
+		t.Errorf("connection count = %d, want 0", s.connManager.Count())
+	}
+}
+
+// admit runs again once a tunnel is active, so it must see an admin's change
+// made while the tunnel was registering.
+func TestAdmit(t *testing.T) {
+	s := newTestServerWithAuth(t, "secret")
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "Bearer secret")
+
+	if email, status, _ := s.admit(r, "app"); status != 0 || email != "dev@example.com" {
+		t.Fatalf("admit() = %q, %d, want dev@example.com admitted", email, status)
+	}
+
+	if err := s.auth.store.AddUser("other@example.com", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.auth.store.ReserveDomain("app", "other@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, _ := s.admit(r, "app"); status != http.StatusForbidden {
+		t.Errorf("domain reserved for someone else: status %d, want 403", status)
+	}
+	if err := s.auth.store.ReserveDomain("mine", "dev@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, _ := s.admit(r, "mine"); status != 0 {
+		t.Errorf("domain reserved for the user: status %d, want admitted", status)
+	}
+
+	if err := s.auth.store.RemoveUser("dev@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, _ := s.admit(r, "mine"); status != http.StatusUnauthorized {
+		t.Errorf("removed user: status %d, want 401", status)
+	}
+}
