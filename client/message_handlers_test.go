@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -258,6 +259,9 @@ func TestHandleHTTPRequestProxyError(t *testing.T) {
 
 func TestHandleHTTPRequestPreservesRequestDetails(t *testing.T) {
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Read the body before answering: the transport only passes it through the
+		// capture as the app reads it.
+		io.Copy(io.Discard, r.Body)
 		w.WriteHeader(http.StatusCreated)
 		w.Write([]byte("created"))
 	}))
