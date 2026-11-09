@@ -338,7 +338,7 @@ For automatic deploys on push to main, set `FLY_API_TOKEN` as a GitHub secret.
 
 ## Requirements
 
-- Go 1.25 or later, to build from source or use `go run`. The pre-built binaries need nothing else
+- Go 1.26 or later, to build from source or use `go run`. The pre-built binaries need nothing else
 - A client and server from the same release. Client and server check each other's protocol version when the client connects: since bodies are streamed, the server refuses clients up to `v1.0.9` with `426 Upgrade Required`, and a current client refuses a server up to `v1.0.9`. Upgrade both together
 - Available port for the server (default: 8080)
 - Local development server to tunnel

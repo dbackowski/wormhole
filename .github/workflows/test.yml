@@ -19,13 +19,18 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'go.mod'
+          go-version: stable
 
       - name: Check go.mod is tidy
         run: go mod tidy -diff
 
       - name: Run tests
         run: go test -race ./...
+
+      # Fails on a vulnerability the code actually reaches, in a dependency or
+      # in the Go standard library.
+      - name: Check for known vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   # Lives here rather than in its own workflow so `needs: test` can gate it:
   # a push to main only reaches production once the tests pass.
