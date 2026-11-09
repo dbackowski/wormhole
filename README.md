@@ -263,11 +263,27 @@ Statuses the server returns for tunneled requests, rather than passing through f
 To run your own Wormhole server, you need:
 
 1. **Wildcard DNS** - Point `*.yourdomain.com` to your server so that subdomain-based routing works
-2. **TLS termination** - Wormhole does not handle TLS natively. Use a reverse proxy like Caddy or nginx to terminate TLS
+2. **TLS termination** - Wormhole does not handle TLS natively. Use a reverse proxy like Caddy or nginx to terminate TLS. It needs a certificate for `*.yourdomain.com` as well as `yourdomain.com`, and Let's Encrypt issues wildcard certificates only through a DNS challenge, so the proxy needs API access to your DNS provider
 3. **Run the server** with `-host` set to your public hostname so apex requests (`/health`, `/admin`) are routed correctly:
    ```bash
    ./wormhole-server -port=8080 -host=yourdomain.com
    ```
+
+For example with Caddy and Cloudflare DNS. The DNS challenge needs a Caddy built with its DNS module: `xcaddy build --with github.com/caddy-dns/cloudflare`.
+
+```
+yourdomain.com, *.yourdomain.com {
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	}
+	reverse_proxy localhost:8080 {
+		# Pass streamed responses, such as Server-Sent Events, on at once.
+		flush_interval -1
+	}
+}
+```
+
+Caddy forwards WebSockets and sets `X-Forwarded-For`, `-Proto` and `-Host` itself. With nginx, forward the `Upgrade` and `Connection` headers for WebSockets, and turn off `proxy_buffering` and `proxy_request_buffering`: by default nginx holds whole bodies, which delays streamed responses and uploads.
 
 > **Shared servers and cookies:** All tunnels on your server are subdomains of one domain, so unless that domain is on the [Public Suffix List](https://publicsuffix.org/), browsers treat them as one site. Any tunnel can then set cookies (via `Set-Cookie` or JavaScript) that every other tunnel receives, enabling session fixation and CSRF-token overwrites, and `SameSite` does not separate them. This does not matter if only you or your team use the server. If untrusted users share it, [submit your domain to the list](https://github.com/publicsuffix/list/wiki/Guidelines) (private section).
 
@@ -285,16 +301,27 @@ The server reads `WORMHOLE_HOST` from the environment (equivalent to the `-host`
 
 ### Fly.io
 
-The repository includes a `fly.toml` for deployment to Fly.io. Set your `FLY_API_TOKEN` as a GitHub secret for automatic deploys on push to main.
-
-Before the first deploy with login enabled, create the volume for the database and set the Google credentials:
+The repository includes a `fly.toml` for deployment to Fly.io. It is the configuration of `wormhole.tools`, so first change `app` to a name of your own and `WORMHOLE_HOST` to your domain. Then:
 
 ```bash
-fly volumes create wormhole_data --region fra --size 1
+fly apps create your-app-name
+fly volumes create wormhole_data --region fra --size 1   # same region as primary_region
 fly secrets set GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...
+fly deploy
 ```
 
 The database is SQLite on that volume, so the app must run on a single machine.
+
+Fly terminates TLS, but it needs a certificate for each name the server answers on:
+
+```bash
+fly certs add yourdomain.com
+fly certs add "*.yourdomain.com"
+```
+
+Point `yourdomain.com` and `*.yourdomain.com` at the addresses `fly ips list` shows. The wildcard certificate is validated through DNS: add the `_acme-challenge` record that `fly certs show "*.yourdomain.com"` lists. Once deployed, `fly logs` shows the one-time admin setup link (see [Authentication](#setting-up-google-login)).
+
+For automatic deploys on push to main, set `FLY_API_TOKEN` as a GitHub secret.
 
 ## Limitations
 
@@ -311,7 +338,7 @@ The database is SQLite on that volume, so the app must run on a single machine.
 
 ## Requirements
 
-- Go 1.25 or later
+- Go 1.25 or later, to build from source or use `go run`. The pre-built binaries need nothing else
 - A client and server from the same release. Client and server check each other's protocol version when the client connects: since bodies are streamed, the server refuses clients up to `v1.0.9` with `426 Upgrade Required`, and a current client refuses a server up to `v1.0.9`. Upgrade both together
 - Available port for the server (default: 8080)
 - Local development server to tunnel
