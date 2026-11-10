@@ -104,13 +104,14 @@ func TestHandleStatusEmptyFields(t *testing.T) {
 func TestHandleRequests(t *testing.T) {
 	history := NewRequestHistory(100)
 	history.Add(RequestLog{
-		UUID:           "abc-123",
-		Timestamp:      time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
-		Method:         "GET",
-		URL:            "/hello",
-		StatusCode:     200,
-		RequestHeaders: map[string][]string{"Accept": {"*/*"}},
-		ResponseBody:   []byte("hello body"),
+		UUID:             "abc-123",
+		Timestamp:        time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
+		Method:           "GET",
+		URL:              "/hello",
+		StatusCode:       200,
+		RequestHeaders:   map[string][]string{"Accept": {"*/*"}},
+		ResponseBody:     []byte("hello body"),
+		ResponseBodySize: len("hello body"),
 	})
 	history.Add(RequestLog{
 		UUID:       "def-456",

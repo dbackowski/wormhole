@@ -495,3 +495,18 @@ func TestSetStatusWhileTerminalIsFrozen(t *testing.T) {
 		t.Fatal("setStatus blocked on the frozen terminal")
 	}
 }
+
+// The history keeps only the head of a body, however it arrives, but counts
+// all of it.
+func TestBodyCaptureKeepsHeadAndCountsAll(t *testing.T) {
+	b := &bodyCapture{}
+	chunk := make([]byte, 40<<10)
+	for range 3 {
+		b.Write(chunk) //nolint:errcheck // never fails
+	}
+
+	head, size := b.get()
+	if len(head) != MaxStoredBodySize || size != 3*len(chunk) {
+		t.Errorf("head %d bytes, size %d; want %d and %d", len(head), size, MaxStoredBodySize, 3*len(chunk))
+	}
+}

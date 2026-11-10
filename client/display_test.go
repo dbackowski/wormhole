@@ -207,7 +207,10 @@ func TestFormatBytes(t *testing.T) {
 		{10<<10 - 1, "10.0KB"},
 		{10 << 10, "10KB"},
 		{1<<20 - 1, "1023KB"},
-		{10 << 20, "10.0MB"},
+		{10<<20 - 1, "10.0MB"},
+		{150 << 20, "150MB"},
+		{1<<30 - 1, "1023MB"},
+		{1 << 30, "1.0GB"}, // larger constants would not compile for a 32-bit int
 	}
 
 	for _, tt := range tests {

@@ -291,8 +291,7 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%.1fs", d.Seconds())
 }
 
-// formatBytes fits the 6 columns the terminal gives it up to 99.9 MB, past
-// the 10 MB response limit.
+// formatBytes fits the 6 columns the terminal gives it, up to 99,999 GB.
 func formatBytes(n int) string {
 	switch {
 	case n < 1<<10:
@@ -301,8 +300,14 @@ func formatBytes(n int) string {
 		return fmt.Sprintf("%.1fKB", float64(n)/(1<<10))
 	case n < 1<<20:
 		return fmt.Sprintf("%dKB", n>>10)
-	default:
+	case n < 10<<20:
 		return fmt.Sprintf("%.1fMB", float64(n)/(1<<20))
+	case n < 1<<30:
+		return fmt.Sprintf("%dMB", n>>20)
+	case int64(n) < 10<<30: // int64: the constant overflows a 32-bit int
+		return fmt.Sprintf("%.1fGB", float64(n)/(1<<30))
+	default:
+		return fmt.Sprintf("%dGB", n>>30)
 	}
 }
 

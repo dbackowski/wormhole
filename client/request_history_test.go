@@ -151,28 +151,6 @@ func TestConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
-func TestAdd_CapsAndCopiesLargeBodies(t *testing.T) {
-	rh := NewRequestHistory(5)
-	large := make([]byte, MaxStoredBodySize+1000)
-	small := []byte("small")
-
-	rh.Add(RequestLog{RequestBody: small, ResponseBody: large})
-	got := rh.GetRecent(1)[0]
-
-	if len(got.ResponseBody) != MaxStoredBodySize {
-		t.Errorf("stored response body = %d bytes, want %d", len(got.ResponseBody), MaxStoredBodySize)
-	}
-	if got.ResponseBodySize != len(large) {
-		t.Errorf("ResponseBodySize = %d, want %d", got.ResponseBodySize, len(large))
-	}
-	if cap(got.ResponseBody) >= len(large) {
-		t.Error("truncated body still references the original buffer")
-	}
-	if string(got.RequestBody) != "small" || got.RequestBodySize != len(small) {
-		t.Errorf("small body = %q (size %d), want unchanged", got.RequestBody, got.RequestBodySize)
-	}
-}
-
 // Entries no longer visible must not stay reachable through the backing array,
 // or their bodies cannot be garbage collected.
 func TestTotalCountsEvictedAndClearedEntries(t *testing.T) {
