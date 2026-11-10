@@ -398,7 +398,8 @@ func (s *Server) finishCLILogin(w http.ResponseWriter, r *http.Request, p pendin
 	_, allowed, err := s.auth.store.User(email)
 	if err != nil {
 		s.Logger.Error("User lookup failed", "error", err)
-		renderMessage(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+		// Back to the CLI, which otherwise waits out its login timeout.
+		redirectToCLI(w, r, p, url.Values{"error": {"login_failed"}})
 		return
 	}
 	if !allowed {
@@ -409,7 +410,8 @@ func (s *Server) finishCLILogin(w http.ResponseWriter, r *http.Request, p pendin
 
 	code, err := s.auth.codes.put(cliCode{email: email, challenge: p.Challenge})
 	if err != nil {
-		renderMessage(w, http.StatusServiceUnavailable, err.Error())
+		s.Logger.Warn("CLI login failed", "email", email, "error", err)
+		redirectToCLI(w, r, p, url.Values{"error": {"login_failed"}})
 		return
 	}
 	redirectToCLI(w, r, p, url.Values{"code": {code}})

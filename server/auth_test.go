@@ -144,6 +144,19 @@ func TestCLILogin_NotAllowed(t *testing.T) {
 	}
 }
 
+// A server-side failure must still send the browser back to the CLI, which
+// would otherwise wait out its login timeout.
+func TestCLILogin_ServerErrorReturnsToCLI(t *testing.T) {
+	s := newTestServerWithAuth(t, "unused")
+	fakeGoogle(t, s)
+	s.auth.store.Close() // the allowlist lookup now fails
+
+	q := cliLogin(t, s, "dev@example.com")
+	if q.Get("error") != "login_failed" || q.Get("code") != "" {
+		t.Errorf("redirect query = %v, want error=login_failed and no code", q)
+	}
+}
+
 func TestCLILogin_RejectsBadRequests(t *testing.T) {
 	s := newTestServerWithAuth(t, "unused")
 	for _, q := range []string{
