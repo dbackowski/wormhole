@@ -28,9 +28,10 @@ jobs:
         run: go test -race ./...
 
       # Fails on a vulnerability the code actually reaches, in a dependency or
-      # in the Go standard library.
+      # in the Go standard library. The tool's version is pinned in go.mod and
+      # bumped by Dependabot; the vulnerability database is fetched fresh.
       - name: Check for known vulnerabilities
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: go tool govulncheck ./...
 
   # Lives here rather than in its own workflow so `needs: test` can gate it:
   # a push to main only reaches production once the tests pass.

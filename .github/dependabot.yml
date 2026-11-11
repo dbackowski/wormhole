@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # Go modules, including the govulncheck tool pinned in go.mod.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Actions used in .github/workflows, including the commit-pinned ones.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
