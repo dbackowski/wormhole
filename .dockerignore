@@ -1,0 +1,4 @@
+# Local files the server build does not need. .git stays: Go reads the
+# version from it.
+bin/
+**/wormhole.db*
