@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/dbackowski/wormhole/common"
@@ -23,7 +24,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv.Logger.Info("wormhole-server", "version", version)
+	srv.Logger.Info("wormhole-server", "version", version, "go", runtime.Version())
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
