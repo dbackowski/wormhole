@@ -42,11 +42,17 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency: deploy-group
+    # Only whether the secret is set, not the secret itself: a job-level if
+    # cannot read secrets, and the token stays scoped to the deploy step.
+    env:
+      HAS_FLY_TOKEN: ${{ secrets.FLY_API_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
       # Pinned to a commit: this action installs the flyctl binary that then
       # runs with FLY_API_TOKEN.
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
+      # A fork without its own token skips the deploy instead of failing.
       - run: flyctl deploy --remote-only
+        if: env.HAS_FLY_TOKEN == 'true'
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
