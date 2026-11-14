@@ -252,9 +252,8 @@ Statuses the server returns for tunneled requests, rather than passing through f
 
 | Status | Meaning |
 |--------|---------|
-| `400 Bad Request` | The `Host` header has no subdomain to route on |
+| `400 Bad Request` | The `Host` is not `<name>.<host>` for the server's `-host`, such as a foreign domain or a nested subdomain; or the request body stalled for 30 seconds or broke off mid-upload |
 | `502 Bad Gateway` | No client is connected for the subdomain, the tunnel dropped mid-request, or the local server was unreachable or sent no response headers within 10 seconds |
-| `400 Bad Request` | The request body stalled for 30 seconds or broke off mid-upload |
 | `503 Service Unavailable` | The tunnel is already carrying 64 concurrent requests, or already has 100 open WebSockets |
 | `504 Gateway Timeout` | No response headers from the client within 15 seconds of the request body arriving |
 
