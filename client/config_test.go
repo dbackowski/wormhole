@@ -91,7 +91,12 @@ func TestParseFlags(t *testing.T) {
 			if cfg.ServerURL != tt.wantServerURL {
 				t.Errorf("ServerURL = %q, want %q", cfg.ServerURL, tt.wantServerURL)
 			}
-			if cfg.Domain != tt.wantDomain {
+			if tt.wantDomain == "" {
+				// No -domain: a random one, valid and 8 characters long.
+				if !common.DomainLabel.MatchString(cfg.Domain) || len(cfg.Domain) != 8 {
+					t.Errorf("random Domain = %q, want 8 chars matching DomainLabel", cfg.Domain)
+				}
+			} else if cfg.Domain != tt.wantDomain {
 				t.Errorf("Domain = %q, want %q", cfg.Domain, tt.wantDomain)
 			}
 			if cfg.Local != tt.wantLocal {

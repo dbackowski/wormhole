@@ -115,10 +115,10 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 ```
 
 **Required flags:**
-- `-domain`: Your unique subdomain name: lowercase letters, digits and hyphens, up to 63 characters, no dots
 - `-local`: URL of your local development server
 
 **Optional flags:**
+- `-domain`: Your unique subdomain name: lowercase letters, digits and hyphens, up to 63 characters, no dots. When omitted, the client picks a random 8-character one (e.g. `k3x9q2ma`), shown in the terminal and the Web UI; it stays the same across reconnects but changes on every run
 - `-server`: Server URL (default: https://wormhole.tools, a private server that requires a token)
 - `-auth-token`: Client token to connect with, instead of logging in through the browser (for scripts and CI). A rejected token makes the client exit rather than start a login
 - `-webui-port`: Port for the Web UI dashboard (default: 4040)
@@ -128,7 +128,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 
 ## Features
 
-✅ **Custom Subdomains** - Choose your own subdomain name  
+✅ **Custom Subdomains** - Choose your own subdomain name, or get a random one  
 ✅ **Real-time Tunneling** - Instant request forwarding via WebSockets  
 ✅ **Streaming** - Request and response bodies stream through the tunnel with no size limit, so large uploads and downloads work, and Server-Sent Events reach the browser as your app writes them  
 ✅ **WebSocket Passthrough** - WebSockets your app serves work through the tunnel, with their messages shown in the Web UI  

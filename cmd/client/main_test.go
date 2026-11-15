@@ -48,12 +48,13 @@ func TestMain_VersionFlag(t *testing.T) {
 	}
 }
 
-func TestMain_MissingDomain_ExitsWithError(t *testing.T) {
+func TestMain_MissingLocal_ExitsWithError(t *testing.T) {
 	bin := buildBinary(t, "dev")
 
-	// No -domain provided: NewClient must fail validation before any
-	// network call, main prints the error and exits 1.
-	cmd := exec.Command(bin, "-local", "http://localhost:8080")
+	// No -local provided: NewClient must fail validation before any
+	// network call, main prints the error and exits 1. No -domain either,
+	// which is fine: a random one is picked.
+	cmd := exec.Command(bin)
 	out, err := cmd.CombinedOutput()
 
 	exitErr, ok := err.(*exec.ExitError)
@@ -67,7 +68,7 @@ func TestMain_MissingDomain_ExitsWithError(t *testing.T) {
 	if !strings.Contains(string(out), "Error creating client") {
 		t.Errorf("output missing error prefix; got: %s", out)
 	}
-	if !strings.Contains(string(out), "domain is required") {
+	if !strings.Contains(string(out), "local is required") {
 		t.Errorf("output missing validation message; got: %s", out)
 	}
 }

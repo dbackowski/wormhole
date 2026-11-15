@@ -3,6 +3,7 @@ package client
 import (
 	"flag"
 	"fmt"
+	"math/rand/v2"
 	"net/url"
 	"os"
 	"slices"
@@ -67,7 +68,7 @@ func validateClientConfig(domain, local string, port int) (url.URL, error) {
 
 func ParseFlags(version string) *Config {
 	server := flag.String("server", common.DefaultClientServerURL, "Server URL")
-	domain := flag.String("domain", "", "Domain to register (e.g., myapp)")
+	domain := flag.String("domain", "", "Domain to register (e.g., myapp); random if omitted")
 	local := flag.String("local", "", "Local service URL to expose")
 	webUIPort := flag.Int("webui-port", common.DefaultWebUIPort, "Port for the Web UI")
 	authToken := flag.String("auth-token", "", "Authentication token for server connection")
@@ -88,9 +89,26 @@ func ParseFlags(version string) *Config {
 		AuthToken: *authToken,
 	}
 
+	if cfg.Domain == "" {
+		cfg.Domain = randomDomain()
+	}
+
 	if cfg.AuthToken == "" {
 		cfg.AuthToken = common.AuthTokenFromConfigFile()
 	}
 
 	return cfg
+}
+
+// randomDomain picks a subdomain when -domain is omitted. Picked once per run,
+// so a reconnect keeps the same URL. 36^8 names make a clash with a taken one
+// unlikely, and the top-level generator is seeded from the OS, so names are
+// not guessable.
+func randomDomain() string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 8)
+	for i := range b {
+		b[i] = alphabet[rand.N(len(alphabet))]
+	}
+	return string(b)
 }
