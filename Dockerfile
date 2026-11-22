@@ -7,7 +7,7 @@ RUN go mod download && go mod verify
 COPY . .
 # CGO_ENABLED=0 produces a fully static binary (pure-Go net/user resolvers, no
 # libc), so it can run on a base image with no shared libraries at all.
-RUN cd cmd/server && CGO_ENABLED=0 GOOS=linux go build -v -o /run-app .
+RUN cd cmd/server && CGO_ENABLED=0 GOOS=linux go build -trimpath -v -o /run-app .
 
 # distroless static: no shell, no package manager. It runs as root because Fly
 # mounts the volume holding the database (/data) owned by root.
