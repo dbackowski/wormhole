@@ -27,10 +27,18 @@ go run cmd/server/main.go
 go run cmd/client/main.go -server=http://localhost:8080 -domain=myapp -local=http://localhost:3000
 ```
 
+If the client fails with `lookup myapp.localhost ...: no such host`, your system does not resolve subdomains of `localhost` (common on Linux without systemd-resolved, and in containers). Add the name to `/etc/hosts`, which takes no wildcards, so pass `-domain` to keep it the same:
+
+```bash
+echo '127.0.0.1 myapp.localhost' | sudo tee -a /etc/hosts
+```
+
 ### 3. Access your app
 Your local server is now available at: `http://myapp.localhost:8080`
 
 ## Installation
+
+The client's default server, `wormhole.tools`, is private and requires a token. Run your own (see [Quick Start](#quick-start) or [Self-Hosting](#self-hosting)) and point the client at it with `-server`.
 
 ### Download Pre-built Binaries
 
@@ -44,29 +52,23 @@ shasum -a 256 -c checksums.txt --ignore-missing
 
 On Linux, `sha256sum -c checksums.txt --ignore-missing` does the same.
 
-The client's default server, `wormhole.tools`, is private and requires a token. Run your own (see [Quick Start](#quick-start) or [Self-Hosting](#self-hosting)) and point the client at it with `-server`.
-
 **Other platforms:** The client also builds from source on FreeBSD, OpenBSD, NetBSD and DragonFly BSD. Windows is not supported natively; run the Linux binary under [WSL](https://learn.microsoft.com/windows/wsl/) instead. The server builds on any platform Go supports.
 
 **Linux:**
 ```bash
 tar -xzf wormhole-client-linux-amd64.tar.gz
-chmod +x wormhole
 ./wormhole -server=https://yourdomain.com -domain=myapp -local=http://localhost:3000
 ```
 
 **macOS:**
 
-The binaries are not signed with an Apple Developer certificate. After downloading, you need to remove the quarantine attribute:
+The binaries are not signed with an Apple Developer certificate, so macOS blocks a copy downloaded with a browser. Clear the quarantine flag after extracting (`xattr -c` removes all extended attributes, and does nothing on a file downloaded with `curl`, which has none):
 
 ```bash
 tar -xzf wormhole-client-darwin-arm64.tar.gz
-xattr -d com.apple.quarantine wormhole
-chmod +x wormhole
+xattr -c wormhole
 ./wormhole -server=https://yourdomain.com -domain=myapp -local=http://localhost:3000
 ```
-
-Alternatively, you can right-click the binary in Finder, select "Open", and confirm in the dialog.
 
 ### Build from Source
 
@@ -107,7 +109,11 @@ go run cmd/server/main.go -port=8080
 - `-debug`: Enable debug logging. Each request adds its header names, never header values or bodies; query strings are left out at every level
 - `-version`: Print version and exit
 
-> **Note on `-host`:** When `-host` is unset, the server falls back to a heuristic — any `Host` containing a dot is treated as a tunnel subdomain. This works for local development (`*.localhost`) and bare-IP access, but on a real domain it has two consequences: requests to your apex (e.g. `wormhole.tools/health`) are treated as a tunnel and return `502` instead of serving `/health` and `/admin`, and the apex's first label (`wormhole`) becomes a reserved subdomain that shadows any client claiming it. Set `-host` to your public hostname in production to route exactly.
+**Environment variables:**
+- `WORMHOLE_HOST`: Same as `-host`; the flag takes precedence
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: Enable Google login, see [Authentication](#authentication). Read from the environment only, to keep the secret off the command line
+
+> **Note on `-host`:** When `-host` is unset, the server falls back to a heuristic — any `Host` containing a dot is treated as a tunnel subdomain. This works for local development (`*.localhost`), but on a real domain it has two consequences: requests to your apex (e.g. `wormhole.tools/health`) are treated as a tunnel and return `502` instead of serving `/health` and `/admin`, and the apex's first label (`wormhole`) becomes a reserved subdomain that shadows any client claiming it. Set `-host` to your public hostname in production to route exactly.
 
 ### Client Options
 ```bash
@@ -119,7 +125,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 
 **Optional flags:**
 - `-domain`: Your unique subdomain name: lowercase letters, digits and hyphens, up to 63 characters, no dots. When omitted, the client picks a random 8-character one (e.g. `k3x9q2ma`), shown in the terminal and the Web UI; it stays the same across reconnects but changes on every run
-- `-server`: Server URL (default: https://wormhole.tools, a private server that requires a token)
+- `-server`: Server URL (default: https://wormhole.tools, a private server that requires a token). Use a hostname, not an IP address: the client connects to `<domain>.<server host>`, so `-server=http://192.168.1.5:8080` would dial `myapp.192.168.1.5`, which never resolves
 - `-auth-token`: Client token to connect with, instead of logging in through the browser (for scripts and CI). A rejected token makes the client exit rather than start a login
 - `-webui-port`: Port for the Web UI dashboard (default: 4040)
 - `-version`: Print version and exit
@@ -214,6 +220,8 @@ Logged in as you@gmail.com.
 If your email is on the allowlist, the client saves its token to `~/.wormhole/config` (as `AUTH_TOKEN=...`, readable only by you) and connects. Later runs use the saved token. When the server rejects it, for example after an admin removed you and added you back, the client logs in again.
 
 Each login gets its own token, so logging in on a second machine does not log out the first. To log out, delete the `AUTH_TOKEN` line.
+
+> **One token for all servers:** The config file holds a single token, which the client sends to whatever `-server` you pass. Logging in to a second server replaces the first server's token, and running against a server you do not trust hands it your token for the first. Use `-auth-token` for any server other than your usual one.
 
 The browser is sent back to a temporary listener on `127.0.0.1`, so it must run on the same machine as the client. On a machine you reach over SSH, log in on your own computer and copy `~/.wormhole/config` over, or pass the token with `-auth-token`.
 
@@ -344,7 +352,7 @@ For automatic deploys on push to main, set `FLY_API_TOKEN` as a GitHub secret.
 
 ## License
 
-Released under the MIT License.
+Released under the [MIT License](MIT-LICENSE.txt).
 
 ## Contributing
 
