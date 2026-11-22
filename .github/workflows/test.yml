@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Called by release.yml, so a tag is released only after these same checks.
+  workflow_call:
 
 permissions:
   contents: read
@@ -36,6 +38,9 @@ jobs:
   # Lives here rather than in its own workflow so `needs: test` can gate it:
   # a push to main only reaches production once the tests pass.
   # See https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/
+  #
+  # Skipped when release.yml calls this workflow: github.ref is then the
+  # caller's tag, not refs/heads/main, and no secrets are passed to it.
   deploy:
     name: Deploy app
     needs: test

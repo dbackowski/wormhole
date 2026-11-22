@@ -9,19 +9,9 @@ permissions:
   contents: read
 
 jobs:
+  # The same checks as a push to main: tidy go.mod, tests, govulncheck.
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version: stable
-
-      - name: Run tests
-        run: go test -race ./...
+    uses: ./.github/workflows/test.yml
 
   # Every target is cross-compiled on Linux: with CGO_ENABLED=0 nothing needs a
   # macOS host, and Go's linker ad-hoc signs darwin/arm64 binaries itself.
