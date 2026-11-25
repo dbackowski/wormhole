@@ -38,7 +38,7 @@ Your local server is now available at: `http://myapp.localhost:8080`
 
 ## Installation
 
-The client's default server, `wormhole.tools`, is private and requires a token. Run your own (see [Quick Start](#quick-start) or [Self-Hosting](#self-hosting)) and point the client at it with `-server`.
+The client's default server, `wormhole.tools`, is private: only Google accounts on its allowlist can log in. Run your own (see [Quick Start](#quick-start) or [Self-Hosting](#self-hosting)) and point the client at it with `-server`.
 
 ### Download Pre-built Binaries
 
@@ -125,7 +125,7 @@ go run cmd/client/main.go -server=http://localhost:8080 -domain=mysubdomain -loc
 
 **Optional flags:**
 - `-domain`: Your unique subdomain name: lowercase letters, digits and hyphens, up to 63 characters, no dots. When omitted, the client picks a random 8-character one (e.g. `k3x9q2ma`), shown in the terminal and the Web UI; it stays the same across reconnects but changes on every run
-- `-server`: Server URL (default: https://wormhole.tools, a private server that requires a token). Use a hostname, not an IP address: the client connects to `<domain>.<server host>`, so `-server=http://192.168.1.5:8080` would dial `myapp.192.168.1.5`, which never resolves
+- `-server`: Server URL (default: https://wormhole.tools, a private server open only to its allowlist). Use a hostname, not an IP address: the client connects to `<domain>.<server host>`, so `-server=http://192.168.1.5:8080` would dial `myapp.192.168.1.5`, which never resolves
 - `-auth-token`: Client token to connect with, instead of logging in through the browser (for scripts and CI). A rejected token makes the client exit rather than start a login
 - `-webui-port`: Port for the Web UI dashboard (default: 4040)
 - `-version`: Print version and exit
@@ -341,7 +341,7 @@ For automatic deploys on push to main, set `FLY_API_TOKEN` as a GitHub secret.
 - **64 concurrent requests per tunnel** - Beyond that the tunnel returns `503 Service Unavailable` until a slot frees up. A request holds its slot until its response body has been sent, so each open Server-Sent Events connection takes one. Requests reach your local app as soon as their headers arrive, so a burst opens as many connections to it at once; a server with a tiny connection queue (Python's `http.server` queues 5) may refuse some
 - **Request history keeps the last 500 requests** - Older ones drop out of the terminal view and the Web UI. Each stored body is cut to its first 64 KB; the Web UI says when one was truncated. Your app always receives the full body
 - **Redirects are passed through unchanged** - The client does not follow redirects from your local server. A `Location` header pointing at `http://localhost:3000` is sent to the browser as-is, taking it off the tunnel. Configure your app to emit relative redirects, or to build absolute URLs from the `X-Forwarded-Host` and `X-Forwarded-Proto` headers
-- **Reconnect is time-limited** - If the connection drops, the client retries with exponential backoff (500 ms up to 30 s) for 5 minutes, then exits with status 1, so a supervisor such as systemd `Restart=on-failure` can restart it. If the server rejects the token (say an admin removed you), the client stops retrying immediately; run it again to log in. Requests in flight when the connection drops fail with `502 Bad Gateway`, or are cut off if their response had started
+- **Reconnect is time-limited** - If the connection drops, the client retries with exponential backoff (500 ms up to 30 s) for 5 minutes, then exits with status 1, so a supervisor such as systemd `Restart=on-failure` can restart it. If the server rejects the token (say an admin removed you), the client stops retrying immediately; run it again to log in. It also stops at once if an admin reserved its domain for another user; run it again with another `-domain`. Requests in flight when the connection drops fail with `502 Bad Gateway`, or are cut off if their response had started
 
 ## Requirements
 
