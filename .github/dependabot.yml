@@ -14,3 +14,10 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  # The Go image the server is built on. Its PR is the cue to bump go-version
+  # in the workflows too, which Dependabot does not track.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

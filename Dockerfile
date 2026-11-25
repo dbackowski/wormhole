@@ -1,5 +1,6 @@
-ARG GO_VERSION=1
-FROM golang:${GO_VERSION}-bookworm AS builder
+# Go minor version pinned, patch releases picked up on each build. Dependabot
+# proposes the next minor; bump go-version in .github/workflows/*.yml with it.
+FROM golang:1.26-bookworm AS builder
 
 WORKDIR /usr/src/app
 COPY go.mod go.sum ./
