@@ -111,4 +111,3 @@ func TestRemoveHopByHopHeaders(t *testing.T) {
 		})
 	}
 }
-
