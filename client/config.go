@@ -71,7 +71,7 @@ func ParseFlags(version string) *Config {
 	domain := flag.String("domain", "", "Domain to register (e.g., myapp); random if omitted")
 	local := flag.String("local", "", "Local service URL to expose")
 	webUIPort := flag.Int("webui-port", common.DefaultWebUIPort, "Port for the Web UI")
-	authToken := flag.String("auth-token", "", "Authentication token for server connection")
+	authToken := flag.String("auth-token", "", "Token to use instead of browser login (scripts, CI, other servers)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 
 	flag.Parse()
