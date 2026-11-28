@@ -162,6 +162,7 @@ When the client is running, a dashboard is available at `http://localhost:4040` 
 - Inspect request/response headers and bodies
 - See query parameters and form-encoded request bodies (`application/x-www-form-urlencoded`) decoded as name/value pairs, with the raw body still shown
 - For WebSockets: see whether each socket is open, the bytes and message counts in each direction, and its recent messages (text, JSON, binary as hex, close codes)
+- Send a request to your local app again with the **Replay** button, say a webhook you are debugging, without triggering it at its source. The replay goes straight from the client to your app, never through the server, and shows in the list as a new request marked `replay`. Requests whose stored body was cut at 64 KB and WebSocket handshakes cannot be replayed. Webhook signatures that cover a timestamp, like Stripe's, fail verification once the event is older than the sender's tolerance (5 minutes for Stripe)
 - Freeze the list with the **Pause** button when requests arrive faster than you can click them; **Resume** catches up
 - Keep reading a selected request under busy traffic: its details stay open after it has left the history
 - Clear the request history with the **Clear** button (also clears the terminal view)

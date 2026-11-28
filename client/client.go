@@ -47,6 +47,7 @@ type RequestLog struct {
 	RequestBodySize  int // full size before truncation
 	ResponseBodySize int
 
+	ReplayOf string      `json:",omitempty"` // UUID of the request this one replayed, see Client.Replay
 	Stream   StreamInfo  `json:",omitzero"`
 	Messages []WSMessage `json:"-"` // served on their own, see RequestHistory.GetMessages
 }

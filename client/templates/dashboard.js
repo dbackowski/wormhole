@@ -182,7 +182,8 @@ async function refreshMessages() {
 }
 
 function matchesFilter(req, query) {
-    const text = req.Method + ' ' + req.URL + ' ' + req.StatusCode + (req.Stream ? ' websocket' : '');
+    const text = req.Method + ' ' + req.URL + ' ' + req.StatusCode + (req.Stream ? ' websocket' : '') +
+        (req.ReplayOf ? ' replay' : '');
     return text.toLowerCase().includes(query);
 }
 
@@ -210,6 +211,9 @@ function renderRequestItem(req) {
             ? '<span class="ws-badge ws-open" title="WebSocket open">ws</span>'
             : '<span class="ws-badge ws-closed" title="WebSocket closed">ws</span>';
     }
+    const replayBadge = req.ReplayOf
+        ? '<span class="ws-badge replay-badge" title="Replay of an earlier request">replay</span>'
+        : '';
 
     return '<li class="request-item' + selected + '" data-id="' + req.UUID + '"' +
         ' title="' + escapeHtml(req.URL) + '" onclick="selectRequest(\'' + req.UUID + '\')">' +
@@ -219,6 +223,7 @@ function renderRequestItem(req) {
         '<span class="method">' + escapeHtml(req.Method) + '</span>' +
         '<span class="duration" title="Time the local app took to respond">' + formatDuration(req.Duration) + '</span>' +
         wsBadge +
+        replayBadge +
         errorDot +
         '<span class="time">' + time + '</span>' +
         '</div>' +
@@ -283,6 +288,15 @@ function renderDetails(inHistory) {
     lastDetailsPayload = payload;
 
     document.getElementById('detailsTitle').textContent = req.Method + ' ' + req.URL;
+
+    // The server refuses these too; the button only says so up front.
+    const replayButton = document.getElementById('replayButton');
+    const storedBody = req.RequestBody ? atob(req.RequestBody).length : 0;
+    let replayBlocked = '';
+    if (req.Stream) replayBlocked = 'WebSocket handshakes cannot be replayed';
+    else if (req.RequestBodySize > storedBody) replayBlocked = 'Body was cut to its first 64 KB, so it cannot be replayed';
+    replayButton.disabled = Boolean(replayBlocked);
+    replayButton.title = replayBlocked || 'Send this request to your local app again';
 
     const errorSection = document.getElementById('errorSection');
     if (req.Error) {
@@ -360,6 +374,22 @@ async function countNewWhilePaused() {
             count > 0 ? 'Resume (' + count.toLocaleString() + ' new)' : 'Resume';
     } catch (err) {
         console.error('Failed to count new requests:', err);
+    }
+}
+
+// Sends the selected request to the local app again, then shows the replay.
+async function replayRequest() {
+    try {
+        const response = await fetch('/api/requests/' + encodeURIComponent(selectedId) + '/replay', { method: 'POST' });
+        if (!response.ok) {
+            alert('Replay failed: ' + (await response.text()).trim());
+            return;
+        }
+        const { id } = await response.json();
+        await refresh();
+        selectRequest(id);
+    } catch (err) {
+        console.error('Failed to replay:', err);
     }
 }
 

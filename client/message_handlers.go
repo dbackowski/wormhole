@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"io"
 	"maps"
@@ -151,6 +152,70 @@ func (c *Client) finishRecord(uuid string, reqBody, respBody *bodyCapture, err e
 		}
 	})
 	c.requestRedraw()
+}
+
+// The requests Replay refuses.
+var (
+	errReplayNotFound   = errors.New("request is no longer in the history")
+	errReplayInProgress = errors.New("request is still in progress")
+	errReplayWebSocket  = errors.New("WebSocket handshakes cannot be replayed")
+	errReplayTruncated  = errors.New("request body was cut to its first 64 KB in the history, so it cannot be replayed")
+)
+
+// Replay sends the request recorded under id to the local app again, and
+// records the result as a new entry whose UUID it returns once the response
+// headers are in. Nothing goes to the server: a replay is between this client
+// and the local app.
+func (c *Client) Replay(id string) (string, error) {
+	orig, ok := c.history.Get(id)
+	switch {
+	case !ok:
+		return "", errReplayNotFound
+	case !orig.Done:
+		return "", errReplayInProgress
+	case http.Header(orig.RequestHeaders).Get("Upgrade") != "":
+		return "", errReplayWebSocket
+	case orig.RequestBodySize > len(orig.RequestBody):
+		return "", errReplayTruncated
+	}
+
+	msg := &common.Message{
+		Type:    common.MessageTypeHTTPRequest,
+		UUID:    rand.Text(),
+		Method:  orig.Method,
+		URL:     orig.URL,
+		Headers: orig.RequestHeaders,
+	}
+	start := time.Now()
+	reqBody := &bodyCapture{}
+	// Not the dashboard's request context: the body is read after the handler
+	// has returned.
+	resp, err := c.proxy.Forward(context.Background(), msg, io.TeeReader(bytes.NewReader(orig.RequestBody), reqBody))
+
+	status, headers := http.StatusBadGateway, http.Header(nil)
+	if err == nil {
+		status, headers = resp.StatusCode, resp.Header
+	}
+	c.recordRequest(msg, status, headers, err, StreamInfo{}, time.Since(start))
+	c.history.Update(msg.UUID, func(log *RequestLog) { log.ReplayOf = id })
+
+	respBody := &bodyCapture{}
+	if err != nil {
+		respBody.Write([]byte(http.StatusText(http.StatusBadGateway))) //nolint:errcheck
+		c.finishRecord(msg.UUID, reqBody, respBody, nil, time.Since(start))
+		return msg.UUID, nil
+	}
+	// ponytail: an endless response (an event stream) is read until the app
+	// ends it or the client exits; add a cancel button if that bites.
+	go func() {
+		defer resp.Body.Close()
+		_, err := io.Copy(io.Discard, io.TeeReader(resp.Body, respBody))
+		if err != nil {
+			err = errors.New("response cut off: " + err.Error())
+		}
+		c.finishRecord(msg.UUID, reqBody, respBody, err, time.Since(start))
+	}()
+	return msg.UUID, nil
 }
 
 // bodyCapture keeps the head of a body for the history, MaxStoredBodySize

@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net"
@@ -32,6 +33,7 @@ func NewWebUI(client *Client, port int) *WebUI {
 	mux.HandleFunc("/api/requests", ui.handleRequests)
 	mux.HandleFunc("GET /api/requests/{id}", ui.handleRequest)
 	mux.HandleFunc("GET /api/requests/{id}/messages", ui.handleMessages)
+	mux.HandleFunc("POST /api/requests/{id}/replay", ui.handleReplay)
 
 	ui.server = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
@@ -116,6 +118,25 @@ func (ui *WebUI) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, log)
+}
+
+// handleReplay answers with the new entry's UUID. A POST with no body is one
+// any site's page can send here without a preflight, and localHostOnly passes
+// it, since its Host is localhost; only its Origin gives it away.
+func (ui *WebUI) handleReplay(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" && origin != "http://"+r.Host {
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
+	}
+	id, err := ui.client.Replay(r.PathValue("id"))
+	switch {
+	case errors.Is(err, errReplayNotFound):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusConflict)
+	default:
+		writeJSON(w, map[string]string{"id": id})
+	}
 }
 
 func (ui *WebUI) handleMessages(w http.ResponseWriter, r *http.Request) {

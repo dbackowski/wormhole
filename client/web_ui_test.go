@@ -3,12 +3,15 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dbackowski/wormhole/common"
 )
 
 func TestDashboardServesFiles(t *testing.T) {
@@ -359,5 +362,101 @@ func TestHandleMessages(t *testing.T) {
 	list := get("/api/requests").Body.String()
 	if strings.Contains(list, `"Messages":[`) || !strings.Contains(list, `"Stream":{"Open":true`) {
 		t.Errorf("list = %s, want Stream without the messages", list)
+	}
+}
+
+func TestReplay(t *testing.T) {
+	type seen struct{ method, url, sig, body string }
+	got := make(chan seen, 2)
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		got <- seen{r.Method, r.URL.String(), r.Header.Get("X-Signature"), string(body)}
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte("ok"))
+	}))
+	defer app.Close()
+
+	client, _, wsServer, serverConn := newTestClient(t, app.URL)
+	defer wsServer.Close()
+	defer client.Conn.Close()
+	defer serverConn.Close()
+
+	runHTTPRequest(t, client, &common.Message{
+		Type:   common.MessageTypeHTTPRequest,
+		UUID:   "orig",
+		Method: "POST",
+		URL:    "/hook?a=1",
+		Headers: map[string][]string{
+			"Host":           {"test.example.com"},
+			"X-Signature":    {"sha256=abc"},
+			"Content-Length": {"7"},
+		},
+		Body: []byte(`{"x":1}`),
+	})
+	readTunnelResponse(t, serverConn)
+	first := <-got
+
+	// Entries Replay must refuse.
+	client.history.Add(RequestLog{UUID: "cut", Done: true, Method: "POST", URL: "/", RequestBody: []byte("x"), RequestBodySize: 2})
+	client.history.Add(RequestLog{UUID: "ws", Done: true, Method: "GET", URL: "/", RequestHeaders: map[string][]string{"Upgrade": {"websocket"}}})
+	client.history.Add(RequestLog{UUID: "busy", Method: "GET", URL: "/"})
+
+	ui := NewWebUI(client, 0)
+	replay := func(id, origin string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/requests/"+id+"/replay", nil)
+		req.Host = "localhost:4040"
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		w := httptest.NewRecorder()
+		ui.server.Handler.ServeHTTP(w, req)
+		return w
+	}
+
+	for _, tc := range []struct {
+		id, origin string
+		want       int
+	}{
+		{"orig", "https://evil.example", http.StatusForbidden},
+		{"gone", "", http.StatusNotFound},
+		{"cut", "", http.StatusConflict},
+		{"ws", "", http.StatusConflict},
+		{"busy", "", http.StatusConflict},
+	} {
+		if w := replay(tc.id, tc.origin); w.Code != tc.want {
+			t.Errorf("replay %s from %q = %d, want %d", tc.id, tc.origin, w.Code, tc.want)
+		}
+	}
+
+	w := replay("orig", "http://localhost:4040")
+	if w.Code != http.StatusOK {
+		t.Fatalf("replay = %d %s, want 200", w.Code, w.Body)
+	}
+	var result struct{ ID string }
+	json.NewDecoder(w.Body).Decode(&result)
+
+	if again := <-got; again != first {
+		t.Errorf("app saw replay %+v, want the original %+v", again, first)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	var log RequestLog
+	for time.Now().Before(deadline) {
+		log, _ = client.history.Get(result.ID)
+		if log.Done {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !log.Done || log.ReplayOf != "orig" || log.StatusCode != http.StatusAccepted ||
+		string(log.ResponseBody) != "ok" || string(log.RequestBody) != `{"x":1}` {
+		t.Errorf("replay entry = %+v, want a done 202 replay of orig", log)
+	}
+
+	// The replay stays between the client and the app.
+	serverConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	var m common.Message
+	if err := serverConn.ReadJSON(&m); err == nil {
+		t.Errorf("server got %+v from a replay", m)
 	}
 }
